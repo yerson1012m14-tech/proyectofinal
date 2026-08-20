@@ -1,13 +1,10 @@
-name: xitfarge
+name: MiApp
 options:
   bundleIdPrefix: com.xitfarge
   deploymentTarget:
     iOS: "14.0"
-  xcodeVersion: "15.4"
-generateEmptyDirectories: true
-
 targets:
-  xitfarge:
+  MiApp:
     type: application
     platform: iOS
     sources:
@@ -16,11 +13,8 @@ targets:
       base:
         INFOPLIST_FILE: MiApp/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.xitfarge.app
-        PRODUCT_NAME: xitfarge
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: NO
-        TARGETED_DEVICE_FAMILY: "1,2"
-        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
     scheme:
       testTargets: []
