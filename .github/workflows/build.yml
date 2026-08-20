@@ -50,6 +50,9 @@ jobs:
 
       - name: Compilar Mi App
         run: |
+          echo "=== Available targets ==="
+          xcodebuild -project MiApp.xcodeproj -list 2>&1 || true
+          echo ""
           xcodebuild clean build \
             -project MiApp.xcodeproj \
             -target MiApp \
@@ -57,7 +60,8 @@ jobs:
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY=""
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tail -40
 
       - name: Empaquetar Mi App con el motor
         run: |
