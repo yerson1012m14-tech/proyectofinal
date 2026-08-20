@@ -27,65 +27,70 @@ jobs:
       - name: Generate Xcode Project
         run: xcodegen generate --spec project.yml
 
-      - name: Show Project Info
+      - name: List Schemes
         run: |
-          echo "=== Project files ==="
-          ls -la *.xcodeproj
-          echo ""
-          echo "=== Build settings ==="
-          xcodebuild -project MiApp.xcodeproj -scheme MiApp -showBuildSettings 2>/dev/null | grep -E "BUILT_PRODUCTS_DIR|TARGET_BUILD_DIR|WRAPPER_EXTENSION" || true
-          echo ""
-          echo "=== Schemes ==="
-          xcodebuild -project MiApp.xcodeproj -list 2>/dev/null || true
+          xcodebuild -project MiApp.xcodeproj -list
+          echo "---"
+          # Auto-create scheme if missing
+          xcodebuild -project MiApp.xcodeproj -scheme MiApp -version || true
 
       - name: Build App
         run: |
-          set -e
+          # Try building with target directly
           xcodebuild build \
             -project MiApp.xcodeproj \
-            -scheme MiApp \
+            -target MiApp \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build/derivedData \
+            -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             ENABLE_BITCODE=NO \
-            DEVELOPMENT_TEAM="" \
-            | tail -30
+            DEVELOPMENT_TEAM="" || {
+              echo "Build failed, trying with scheme..."
+              xcodebuild build \
+                -project MiApp.xcodeproj \
+                -scheme MiApp \
+                -configuration Release \
+                -sdk iphoneos \
+                -derivedDataPath build/DerivedData \
+                CODE_SIGNING_ALLOWED=NO \
+                CODE_SIGN_IDENTITY="" \
+                CODE_SIGNING_REQUIRED=NO \
+                ENABLE_BITCODE=NO \
+                DEVELOPMENT_TEAM=""
+            }
+
+      - name: Find and Package App
+        run: |
+          echo "=== Looking for .app ==="
+          find build/DerivedData -name "*.app" -type d 2>/dev/null
           
-          echo "=== Searching for .app ==="
-          find build/derivedData -name "*.app" -type d 2>/dev/null
-          find build/derivedData -name "*.app" -type d -exec ls -la {} \; 2>/dev/null || echo "No .app found in derivedData"
+          APP_PATH=$(find build/DerivedData -name "*.app" -type d | head -1)
           
-          # Also check Build/Products
-          find build/ -name "*.app" -type d 2>/dev/null || echo "No .app in build/"
-          
-          APP_PATH=$(find build/derivedData -name "*.app" -type d | head -1)
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: Could not find .app bundle"
+            echo "=== Trying Build/Products ==="
+            find build/ -name "*.app" -type d 2>/dev/null
+            APP_PATH=$(find build/ -name "*.app" -type d | head -1)
+          fi
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app bundle found anywhere"
+            echo "=== Full build directory ==="
+            find build/ -type f -name "*.app" 2>/dev/null
+            find build/ -type d 2>/dev/null | head -30
             exit 1
           fi
-          echo "APP_PATH=$APP_PATH" > build/app_path.txt
-          echo "Found app: $APP_PATH"
-
-      - name: Create IPA
-        run: |
-          set -e
-          APP_PATH=$(cat build/app_path.txt | cut -d= -f2)
-          echo "Using app at: $APP_PATH"
           
+          echo "Found app: $APP_PATH"
           mkdir -p build/ipa/Payload
           cp -r "$APP_PATH" build/ipa/Payload/
-          
-          echo "=== Payload contents ==="
-          ls -la build/ipa/Payload/
-          
           cd build/ipa
           zip -r ../MiApp.ipa Payload/
           cd ../..
-          ls -la build/MiApp.ipa
-          echo "IPA created successfully!"
+          echo "=== IPA created ==="
+          ls -lh build/MiApp.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
