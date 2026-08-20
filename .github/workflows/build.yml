@@ -24,50 +24,47 @@ jobs:
           brew untap aws/tap 2>/dev/null || true
           brew install xcodegen
 
-      - name: Generate Xcode Project
-        run: xcodegen generate --spec project.yml
+      - name: Generate Project
+        run: xcodegen generate
 
-      - name: Build App
+      - name: Debug Project
+        run: |
+          echo "=== Files ==="
+          ls -la *.xcodeproj/ 2>/dev/null || echo "No xcodeproj"
+          echo ""
+          echo "=== xcodeproj contents ==="
+          find . -name "*.pbxproj" -exec head -50 {} \; 2>/dev/null
+          echo ""
+          echo "=== Targets ==="
+          plutil -p MiApp.xcodeproj/project.pbxproj 2>/dev/null | grep -i "productType" || true
+          echo ""
+          echo "=== Available schemes ==="
+          ls MiApp.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || echo "No shared schemes"
+
+      - name: Build
         run: |
           xcodebuild build \
             -project MiApp.xcodeproj \
             -target MiApp \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build/DerivedData \
+            -derivedDataPath build/DD \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            ENABLE_BITCODE=NO \
-            DEVELOPMENT_TEAM="" \
-            2>&1 | tee build.log || true
-          
-          echo "=== Build log tail ==="
-          tail -30 build.log
-          
-          echo ""
-          echo "=== Searching for .app ==="
-          find build/DerivedData -name "*.app" -type d 2>/dev/null || true
+            CODE_SIGNING_REQUIRED=NO
 
       - name: Package IPA
         run: |
-          APP_PATH=$(find build/DerivedData -name "*.app" -type d 2>/dev/null | head -1)
-          
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app bundle found"
-            echo "=== Build directory tree ==="
-            find build/ -maxdepth 5 -type d 2>/dev/null
+          APP=$(find build/DD -name "*.app" -type d 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then
+            echo "No .app found, showing directory tree:"
+            find build/ -type d 2>/dev/null | head -40
             exit 1
           fi
-          
-          echo "Found app: $APP_PATH"
           mkdir -p build/ipa/Payload
-          cp -r "$APP_PATH" build/ipa/Payload/
-          cd build/ipa
-          zip -r ../MiApp.ipa Payload/
-          cd ../..
-          echo "=== IPA created ==="
-          ls -lh build/MiApp.ipa
+          cp -r "$APP" build/ipa/Payload/
+          cd build/ipa && zip -r ../MiApp.ipa Payload/
+          echo "IPA: $(ls -lh ../MiApp.ipa)"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
