@@ -36,9 +36,37 @@ jobs:
       - name: Generar proyecto Xcode con XcodeGen
         run: |
           xcodegen generate
+          # Auto-create shared scheme
+          mkdir -p MiApp.xcodeproj/xcshareddata/xcschemes
+          cat > MiApp.xcodeproj/xcshareddata/xcschemes/MiApp.xcscheme << 'SCHEME'
+<?xml version="1.0" encoding="UTF-8"?>
+<Scheme
+   LastUpgradeVersion = "1540"
+   version = "1.7">
+   <BuildAction
+      parallelizeBuildables = "YES"
+      buildImplicitDependencies = "YES">
+      <BuildActionEntries>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "PBXNativeTarget MiApp"
+               BuildableName = "MiApp.app"
+               BlueprintName = "MiApp"
+               ReferencedContainer = "container:MiApp.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+      </BuildActionEntries>
+   </BuildAction>
+</Scheme>
+SCHEME
           echo "=== Schemes ==="
-          find MiApp.xcodeproj -name "*.xcscheme" 2>/dev/null || echo "No xcscheme files"
-          ls -la MiApp.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || echo "No shared schemes dir"
+          ls -la MiApp.xcodeproj/xcshareddata/xcschemes/
           xcodebuild -project MiApp.xcodeproj -list 2>&1
 
       - name: Clonar y compilar el motor FilzaSlop
