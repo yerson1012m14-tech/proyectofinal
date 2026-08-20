@@ -45,33 +45,14 @@ jobs:
           make clean || true
           make package FINALPACKAGE=1 || make
           cd ..
-          echo "=== Buscando dylibs compilados ==="
-          find motor_filza -name "*.dylib" -type f 2>/dev/null || echo "No dylibs found"
-          find motor_filza/.theos -name "*.dylib" -type f 2>/dev/null || echo "No dylibs in .theos"
-          find motor_filza -path "*/layout/*" -name "*.dylib" 2>/dev/null || echo "No dylibs in layout"
+          echo "=== Dylibs encontrados ==="
+          find motor_filza -name "*.dylib" -type f 2>/dev/null || echo "Ninguno"
 
       - name: Compilar Mi App
         run: |
-          # Auto-create scheme if it doesn't exist
-          xcodebuild -project MiApp.xcodeproj -scheme MiApp -version 2>/dev/null || \
-            xcodebuild -project MiApp.xcodeproj -scheme MiApp -list 2>/dev/null || true
-          
           xcodebuild clean build \
             -project MiApp.xcodeproj \
             -scheme MiApp \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY=""
-        continue-on-error: true
-
-      - name: Compilar Mi App (fallback -target)
-        if: failure()
-        run: |
-          xcodebuild clean build \
-            -project MiApp.xcodeproj \
-            -target MiApp \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
@@ -83,45 +64,50 @@ jobs:
           set -e
           mkdir -p Payload
           
-          echo "=== Buscando .app ==="
+          # Buscar el .app
           APP_PATH=$(find build -name "MiApp.app" -type d 2>/dev/null | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No se encontro MiApp.app"
-            find build/ -maxdepth 5 -type d 2>/dev/null | head -30
+            echo "=== ERROR: No se encontro MiApp.app ==="
+            echo "=== Contenido de build/ ==="
+            find build/ -maxdepth 4 -type d 2>/dev/null
             exit 1
           fi
-          echo "App encontrada en: $APP_PATH"
+          echo "App: $APP_PATH"
           cp -r "$APP_PATH" Payload/
           
-          echo "=== Buscando motor dylib ==="
-          DYLIB_PATH=$(find motor_filza -name "FilzaApplySandboxExt.dylib" 2>/dev/null | head -n 1)
+          # Buscar el dylib del motor
+          DYLIB_PATH=""
+          for name in FilzaApplySandboxExt.dylib FilzaSlop.dylib; do
+            DYLIB_PATH=$(find motor_filza -name "$name" -type f 2>/dev/null | head -n 1)
+            if [ -n "$DYLIB_PATH" ]; then break; fi
+          done
           if [ -z "$DYLIB_PATH" ]; then
-            echo "Buscando cualquier dylib en motor_filza..."
-            DYLIB_PATH=$(find motor_filza -name "*.dylib" 2>/dev/null | head -n 1)
+            DYLIB_PATH=$(find motor_filza -name "*.dylib" -type f 2>/dev/null | head -n 1)
           fi
+          
           if [ -z "$DYLIB_PATH" ]; then
-            echo "ERROR: No se encontro ningun dylib del motor"
-            find motor_filza/ -name "*.dylib" 2>/dev/null
-            find motor_filza/.theos -type f 2>/dev/null | head -20
+            echo "=== ERROR: No se encontro dylib del motor ==="
+            echo "=== Contenido de motor_filza/ ==="
+            find motor_filza/ -maxdepth 3 -type f -name "*.dylib" -o -name "*.a" 2>/dev/null
             exit 1
           fi
+          
           DYLIB_NAME=$(basename "$DYLIB_PATH")
-          echo "Motor encontrado: $DYLIB_NAME en $DYLIB_PATH"
+          echo "Motor: $DYLIB_NAME"
           cp "$DYLIB_PATH" Payload/MiApp.app/
           
-          echo "=== Inyectando motor con insert_dylib ==="
+          # Inyectar
           insert_dylib --strip-codesig --all-yes "@executable_path/$DYLIB_NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched
           mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp
           chmod +x Payload/MiApp.app/MiApp
           
-          echo "=== Contenido del bundle ==="
+          echo "=== Bundle contents ==="
           ls -la Payload/MiApp.app/
-          echo "=== Load commands del binario ==="
-          otool -L Payload/MiApp.app/MiApp
           
+          # Crear IPA
           FECHA=$(date +%Y%m%d_%H%M%S)
           zip -qr MiApp_${FECHA}.ipa Payload/
-          echo "IPA generado: MiApp_${FECHA}.ipa"
+          echo "IPA: MiApp_${FECHA}.ipa"
           ls -lh MiApp_${FECHA}.ipa
 
       - name: Subir IPA final
