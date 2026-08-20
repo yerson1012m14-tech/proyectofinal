@@ -17,54 +17,51 @@ jobs:
         with:
           xcode-version: '15.4'
 
-      - name: Install XcodeGen
+      - name: Create App Bundle Structure
         run: |
-          export HOMEBREW_NO_INSTALL_CLEANUP=1
-          export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
-          brew untap aws/tap 2>/dev/null || true
-          brew install xcodegen
+          mkdir -p build/MiApp.app
+          mkdir -p build/MiApp.app/META-INF
 
-      - name: Generate Project
-        run: xcodegen generate
-
-      - name: Debug Project
+      - name: Compile Source
         run: |
-          echo "=== Files ==="
-          ls -la *.xcodeproj/ 2>/dev/null || echo "No xcodeproj"
-          echo ""
-          echo "=== xcodeproj contents ==="
-          find . -name "*.pbxproj" -exec head -50 {} \; 2>/dev/null
-          echo ""
-          echo "=== Targets ==="
-          plutil -p MiApp.xcodeproj/project.pbxproj 2>/dev/null | grep -i "productType" || true
-          echo ""
-          echo "=== Available schemes ==="
-          ls MiApp.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || echo "No shared schemes"
+          # Compile all .m files into a single binary
+          clang \
+            -arch arm64 \
+            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -fobjc-arc \
+            -fmodules \
+            -framework UIKit \
+            -framework Foundation \
+            -miphoneos-version-min=14.0 \
+            -o build/MiApp.app/MiApp \
+            MiApp/main.m \
+            MiApp/AppDelegate.m \
+            MiApp/ViewController.m \
+            MiApp/KeyViewController.m \
+            2>&1
 
-      - name: Build
+      - name: Create Info.plist
         run: |
-          xcodebuild build \
-            -project MiApp.xcodeproj \
-            -target MiApp \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build/DD \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO
+          cp MiApp/Info.plist build/MiApp.app/Info.plist
+
+      - name: Copy Assets
+        run: |
+          cp -r MiApp/Assets.xcassets build/MiApp.app/Assets.car 2>/dev/null || true
+          # Create a minimal Assets.car placeholder
+          touch build/MiApp.app/Assets.car
+
+      - name: Create PkgInfo
+        run: echo -n "APPL????" > build/MiApp.app/PkgInfo
 
       - name: Package IPA
         run: |
-          APP=$(find build/DD -name "*.app" -type d 2>/dev/null | head -1)
-          if [ -z "$APP" ]; then
-            echo "No .app found, showing directory tree:"
-            find build/ -type d 2>/dev/null | head -40
-            exit 1
-          fi
           mkdir -p build/ipa/Payload
-          cp -r "$APP" build/ipa/Payload/
-          cd build/ipa && zip -r ../MiApp.ipa Payload/
-          echo "IPA: $(ls -lh ../MiApp.ipa)"
+          cp -r build/MiApp.app build/ipa/Payload/
+          cd build/ipa
+          zip -r ../MiApp.ipa Payload/
+          cd ../..
+          echo "=== IPA Created ==="
+          ls -lh build/MiApp.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
