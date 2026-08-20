@@ -78,8 +78,16 @@ jobs:
             fi
           fi
           
+          echo "=== Firma ad-hoc ==="
+          codesign --force --deep --sign - Payload/MiApp.app || true
+          
+          echo "=== Contenido del bundle ==="
           ls -la Payload/MiApp.app/
-          ditto -c -k --sequesterRsrc --keepParent Payload MiApp.ipa
+          
+          # Crear IPA con la estructura correcta
+          rm -f MiApp.ipa
+          cd Payload && zip -r ../MiApp.ipa . && cd ..
+          ls -lh MiApp.ipa
 
       - name: Subir IPA
         uses: actions/upload-artifact@v4
