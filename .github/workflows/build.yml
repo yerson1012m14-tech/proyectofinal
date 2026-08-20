@@ -1,0 +1,50 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Build IPA
+        run: |
+          xcodebuild -project MiApp.xcodeproj \
+            -scheme MiApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/MiApp.xcarchive \
+            clean archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Create IPA
+        run: |
+          mkdir -p build/ipa/Payload
+          cp -r build/MiApp.xcarchive/Products/Applications/MiApp.app build/ipa/Payload/
+          cd build/ipa
+          zip -r ../MiApp.ipa Payload/
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiApp-IPA
+          path: build/MiApp.ipa
+          retention-days: 30
