@@ -1,0 +1,16 @@
+name: MiApp
+options:
+  bundleIdPrefix: com.apple.mobile
+  deploymentTarget:
+    iOS: "14.0"
+targets:
+  MiApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: MiApp
+    settings:
+      base:
+        INFOPLIST_FILE: MiApp/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.apple.mobile.MobileHouseArrest
+        CODE_SIGNING_ALLOWED: NO
