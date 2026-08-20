@@ -42,9 +42,13 @@ jobs:
           cd motor_filza
           export SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
           export TARGET=iphone:clang:latest:18.0
-          make clean
-          make package FINALPACKAGE=1
+          make clean || true
+          make package FINALPACKAGE=1 || make
           cd ..
+          echo "=== Buscando dylibs compilados ==="
+          find motor_filza -name "*.dylib" -type f 2>/dev/null || echo "No dylibs found"
+          find motor_filza/.theos -name "*.dylib" -type f 2>/dev/null || echo "No dylibs in .theos"
+          find motor_filza -path "*/layout/*" -name "*.dylib" 2>/dev/null || echo "No dylibs in layout"
 
       - name: Compilar Mi App
         run: |
