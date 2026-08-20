@@ -1,0 +1,83 @@
+name: Compilar Mi App con Motor Filza
+on: [push, workflow_dispatch]
+
+jobs:
+  build-my-app:
+    runs-on: macos-latest
+    steps:
+      - name: Clonar mi app
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias base
+        run: |
+          brew install xcodegen ldid dpkg make
+          echo "/opt/homebrew/opt/make/libexec/gnubin" >> $GITHUB_PATH
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "$HOME/theos/bin" >> $GITHUB_PATH
+
+      - name: Compilar e instalar insert_dylib
+        run: |
+          git clone https://github.com/Tyilo/insert_dylib.git
+          cd insert_dylib
+          clang insert_dylib/main.c -o insert_dylib_tool
+          sudo cp insert_dylib_tool /usr/local/bin/insert_dylib
+          sudo chmod +x /usr/local/bin/insert_dylib
+          cd ..
+
+      - name: Generar proyecto Xcode con XcodeGen
+        run: xcodegen generate
+
+      - name: Clonar y compilar el motor FilzaSlop
+        run: |
+          git clone --recursive https://github.com/0xjohnnydev/FilzaSlop.git motor_filza
+          cd motor_filza
+          export SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
+          export TARGET=iphone:clang:latest:18.0
+          make clean
+          make package FINALPACKAGE=1
+          cd ..
+
+      - name: Compilar Mi App
+        run: |
+          xcodebuild clean build \
+            -project MiApp.xcodeproj \
+            -scheme MiApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Empaquetar Mi App con el motor
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find build -name "MiApp.app" -type d | head -n 1)
+          echo "App encontrada en: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
+          
+          DYLIB_PATH=$(find motor_filza -name "FilzaApplySandboxExt.dylib" | head -n 1)
+          if [ -z "$DYLIB_PATH" ]; then
+            DYLIB_PATH=$(find motor_filza/.theos -name "*.dylib" | head -n 1)
+          fi
+          DYLIB_NAME=$(basename "$DYLIB_PATH")
+          echo "Motor encontrado: $DYLIB_NAME"
+          cp "$DYLIB_PATH" Payload/MiApp.app/
+          
+          insert_dylib --strip-codesig --all-yes "@executable_path/$DYLIB_NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched
+          mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp
+          
+          echo "=== Contenido del bundle ==="
+          ls -la Payload/MiApp.app/
+          echo "=== Load commands del binario ==="
+          otool -L Payload/MiApp.app/MiApp
+          
+          FECHA=$(date +%Y%m%d_%H%M%S)
+          zip -qr MiApp_${FECHA}.ipa Payload/
+          echo "IPA generado: MiApp_${FECHA}.ipa"
+
+      - name: Subir IPA final
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mi-App-Final
+          path: MiApp_*.ipa
