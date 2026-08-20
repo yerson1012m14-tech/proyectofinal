@@ -62,16 +62,24 @@ jobs:
           if [ -n "$DYLIB" ]; then
             echo "Motor: $DYLIB"
             cp "$DYLIB" Payload/MiApp.app/
-            git clone https://github.com/Tyilo/insert_dylib.git 2>/dev/null || true
-            if [ -d insert_dylib ]; then
-              clang insert_dylib/main.c -o insert_dylib_tool
+            if [ ! -f insert_dylib_tool ]; then
+              git clone https://github.com/Tyilo/insert_dylib.git 2>/dev/null || true
+              if [ -d insert_dylib ]; then
+                clang insert_dylib/main.c -o insert_dylib_tool 2>/dev/null || true
+              fi
+            fi
+            if [ -f insert_dylib_tool ]; then
               NAME=$(basename "$DYLIB")
-              ./insert_dylib_tool --strip-codesig --all-yes "@executable_path/$NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched 2>/dev/null && mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp && chmod +x Payload/MiApp.app/MiApp || true
+              ./insert_dylib_tool --strip-codesig --all-yes "@executable_path/$NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched 2>/dev/null
+              if [ -f Payload/MiApp.app/MiApp_patched ]; then
+                mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp
+                chmod +x Payload/MiApp.app/MiApp
+              fi
             fi
           fi
           
           ls -la Payload/MiApp.app/
-          zip -r MiApp.ipa Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload MiApp.ipa
 
       - name: Subir IPA
         uses: actions/upload-artifact@v4
