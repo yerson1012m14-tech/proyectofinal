@@ -1,10 +1,13 @@
-name: MiApp
+name: xitfarge
 options:
-  bundleIdPrefix: com.apple.mobile
+  bundleIdPrefix: com.xitfarge
   deploymentTarget:
     iOS: "14.0"
+  xcodeVersion: "15.4"
+generateEmptyDirectories: true
+
 targets:
-  MiApp:
+  xitfarge:
     type: application
     platform: iOS
     sources:
@@ -12,13 +15,12 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: MiApp/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.apple.mobile.MobileHouseArrest
+        PRODUCT_BUNDLE_IDENTIFIER: com.xitfarge.app
+        PRODUCT_NAME: xitfarge
         CODE_SIGNING_ALLOWED: NO
-
-schemes:
-  MiApp:
-    build:
-      targets:
-        MiApp: all
-    test:
-      targets: []
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    scheme:
+      testTargets: []

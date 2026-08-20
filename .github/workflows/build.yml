@@ -13,83 +13,75 @@ jobs:
         with:
           xcode-version: '15.4'
 
-      - name: Clonar y compilar el motor FilzaSlop
+      - name: Instalar dependencias
         run: |
-          brew install theos 2>/dev/null || true
           export HOMEBREW_NO_INSTALL_CLEANUP=1
-          export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
           brew untap aws/tap 2>/dev/null || true
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos || true
-          export THEOS=$HOME/theos
-          export PATH=$HOME/theos/bin:$PATH
-          git clone --recursive https://github.com/0xjohnnydev/FilzaSlop.git motor_filza || true
-          cd motor_filza
-          export SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
-          export TARGET=iphone:clang:latest:18.0
-          make clean || true
-          make package FINALPACKAGE=1 || make || true
-          cd ..
-          echo "=== Dylibs ==="
-          find motor_filza -name "*.dylib" -type f 2>/dev/null || echo "Ninguno"
+          brew install xcodegen
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos 2>/dev/null || true
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "$HOME/theos/bin" >> $GITHUB_PATH
 
-      - name: Compilar Mi App
+      - name: Clonar motor FilzaSlop
         run: |
-          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          clang \
-            -arch arm64 \
-            -isysroot "$SDK" \
-            -fobjc-arc \
-            -fmodules \
-            -framework UIKit \
-            -framework Foundation \
-            -miphoneos-version-min=14.0 \
-            -o MiApp_bin \
-            MiApp/main.m \
-            MiApp/AppDelegate.m \
-            MiApp/ViewController.m \
-            MiApp/KeyViewController.m
+          git clone --recursive https://github.com/0xjohnnydev/FilzaSlop.git motor_filza 2>/dev/null || true
+          cd motor_filza 2>/dev/null && export SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path) && export TARGET=iphone:clang:latest:18.0 && make clean 2>/dev/null; make package FINALPACKAGE=1 2>/dev/null || make 2>/dev/null || true; cd .. 2>/dev/null || true
+          echo "Dylibs:" && find motor_filza -name "*.dylib" -type f 2>/dev/null || echo "Ninguno"
+
+      - name: Generar proyecto Xcode
+        run: xcodegen generate
+
+      - name: Ver scheme generado
+        run: |
+          echo "=== xcodeproj contents ==="
+          find xitfarge.xcodeproj -name "*.xcscheme" 2>/dev/null || echo "No schemes found"
+          find xitfarge.xcodeproj -name "project.pbxproj" -exec grep -c "buildConfigurationList" {} \; 2>/dev/null
+          echo "=== Available schemes ==="
+          xcodebuild -project xitfarge.xcodeproj -list 2>&1 || true
+
+      - name: Compilar con xcodebuild
+        run: |
+          xcodebuild clean archive \
+            -project xitfarge.xcodeproj \
+            -scheme xitfarge \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/xitfarge.xcarchive \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="" \
+            ENABLE_BITCODE=NO
 
       - name: Crear IPA
         run: |
-          mkdir -p Payload/MiApp.app
-          cp MiApp_bin Payload/MiApp.app/MiApp
-          chmod +x Payload/MiApp.app/MiApp
-          cp MiApp/Info.plist Payload/MiApp.app/
-          echo -n "APPL????" > Payload/MiApp.app/PkgInfo
+          mkdir -p Payload
+          APP=$(find build/xitfarge.xcarchive/Products -name "*.app" -type d 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then
+            APP=$(find build -name "*.app" -type d 2>/dev/null | head -1)
+          fi
+          echo "App: $APP"
+          cp -r "$APP" Payload/
           
-          # Intentar inyectar motor
+          # Intentar motor
           DYLIB=$(find motor_filza -name "*.dylib" -type f 2>/dev/null | head -1)
           if [ -n "$DYLIB" ]; then
             echo "Motor: $DYLIB"
-            cp "$DYLIB" Payload/MiApp.app/
-            if [ ! -f insert_dylib_tool ]; then
-              git clone https://github.com/Tyilo/insert_dylib.git 2>/dev/null || true
-              if [ -d insert_dylib ]; then
-                clang insert_dylib/main.c -o insert_dylib_tool 2>/dev/null || true
-              fi
-            fi
-            if [ -f insert_dylib_tool ]; then
+            cp "$DYLIB" Payload/*.app/
+            git clone https://github.com/Tyilo/insert_dylib.git 2>/dev/null || true
+            if [ -d insert_dylib ]; then
+              clang insert_dylib/main.c -o insert_dylib_tool 2>/dev/null
               NAME=$(basename "$DYLIB")
-              ./insert_dylib_tool --strip-codesig --all-yes "@executable_path/$NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched 2>/dev/null
-              if [ -f Payload/MiApp.app/MiApp_patched ]; then
-                mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp
-                chmod +x Payload/MiApp.app/MiApp
-              fi
+              ./insert_dylib_tool --strip-codesig --all-yes "@executable_path/$NAME" Payload/*.app/MiApp Payload/*.app/MiApp_patched 2>/dev/null && mv Payload/*.app/MiApp_patched Payload/*.app/MiApp 2>/dev/null && chmod +x Payload/*.app/MiApp 2>/dev/null || true
             fi
           fi
           
-          echo "=== Firma ad-hoc ==="
-          codesign --force --deep --sign - Payload/MiApp.app || true
-          
-          echo "=== Contenido del bundle ==="
-          ls -la Payload/MiApp.app/
-          
-          # Crear IPA con la estructura correcta (Payload/ en la raiz del zip)
+          ls -la Payload/
           rm -f MiApp.ipa
           zip -r MiApp.ipa Payload/
           ls -lh MiApp.ipa
-          echo "=== Estructura IPA ==="
-          unzip -l MiApp.ipa | head -10
+          unzip -l MiApp.ipa | head -15
 
       - name: Subir IPA
         uses: actions/upload-artifact@v4
