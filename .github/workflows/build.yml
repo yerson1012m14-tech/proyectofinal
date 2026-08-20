@@ -18,108 +18,86 @@ jobs:
           export HOMEBREW_NO_INSTALL_CLEANUP=1
           export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
           brew untap aws/tap 2>/dev/null || true
-          brew install xcodegen ldid dpkg make
-          echo "/opt/homebrew/opt/make/libexec/gnubin" >> $GITHUB_PATH
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          echo "$HOME/theos/bin" >> $GITHUB_PATH
+          brew install ldid
 
-      - name: Compilar e instalar insert_dylib
+      - name: Clonar motor FilzaSlop
         run: |
-          git clone https://github.com/Tyilo/insert_dylib.git
-          cd insert_dylib
-          clang insert_dylib/main.c -o insert_dylib_tool
-          sudo cp insert_dylib_tool /usr/local/bin/insert_dylib
-          sudo chmod +x /usr/local/bin/insert_dylib
-          cd ..
-
-      - name: Generar proyecto Xcode con XcodeGen
-        run: |
-          xcodegen generate
-          # Auto-create shared scheme
-          mkdir -p MiApp.xcodeproj/xcshareddata/xcschemes
-          cat > MiApp.xcodeproj/xcshareddata/xcschemes/MiApp.xcscheme << 'SCHEME'
-<?xml version="1.0" encoding="UTF-8"?>
-<Scheme
-   LastUpgradeVersion = "1540"
-   version = "1.7">
-   <BuildAction
-      parallelizeBuildables = "YES"
-      buildImplicitDependencies = "YES">
-      <BuildActionEntries>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "PBXNativeTarget MiApp"
-               BuildableName = "MiApp.app"
-               BlueprintName = "MiApp"
-               ReferencedContainer = "container:MiApp.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-      </BuildActionEntries>
-   </BuildAction>
-</Scheme>
-SCHEME
-          echo "=== Schemes ==="
-          ls -la MiApp.xcodeproj/xcshareddata/xcschemes/
-          xcodebuild -project MiApp.xcodeproj -list 2>&1
-
-      - name: Clonar y compilar el motor FilzaSlop
-        run: |
-          git clone --recursive https://github.com/0xjohnnydev/FilzaSlop.git motor_filza || true
-          cd motor_filza || exit 0
-          export SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
-          export TARGET=iphone:clang:latest:18.0
-          make clean || true
-          make package FINALPACKAGE=1 || make || true
-          cd ..
-          echo "=== Dylibs ==="
-          find motor_filza -name "*.dylib" -type f 2>/dev/null || echo "Ninguno"
+          git clone --recursive https://github.com/0xjohnnydev/FilzaSlop.git motor_filza 2>/dev/null || true
+          if [ -d motor_filza ]; then
+            cd motor_filza
+            export SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
+            export TARGET=iphone:clang:latest:18.0
+            make clean 2>/dev/null || true
+            make package FINALPACKAGE=1 2>/dev/null || make 2>/dev/null || true
+            cd ..
+          fi
+          echo "Dylibs:" && find motor_filza -name "*.dylib" -type f 2>/dev/null || echo "Ninguno"
 
       - name: Compilar Mi App
         run: |
-          xcodebuild clean archive \
-            -project MiApp.xcodeproj \
-            -scheme MiApp \
-            -configuration Release \
-            -sdk iphoneos \
-            -archivePath build/MiApp.xcarchive \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            DEVELOPMENT_TEAM="" \
-            ENABLE_BITCODE=NO
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          clang \
+            -arch arm64 \
+            -isysroot "$SDK" \
+            -fobjc-arc \
+            -fmodules \
+            -framework UIKit \
+            -framework Foundation \
+            -miphoneos-version-min=14.0 \
+            -o MiApp_bin \
+            MiApp/main.m \
+            MiApp/AppDelegate.m \
+            MiApp/ViewController.m \
+            MiApp/KeyViewController.m
 
-      - name: Empaquetar Mi App con el motor
+      - name: Empaquetar y firmar IPA
         run: |
-          mkdir -p Payload
-          APP_PATH=$(find build/MiApp.xcarchive -name "MiApp.app" -type d 2>/dev/null | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "Buscando cualquier .app..."
-            APP_PATH=$(find build -name "*.app" -type d 2>/dev/null | head -n 1)
-          fi
-          echo "App: $APP_PATH"
-          cp -r "$APP_PATH" Payload/
+          # Crear bundle
+          rm -rf Payload MiApp.ipa
+          mkdir -p Payload/MiApp.app
+          cp MiApp_bin Payload/MiApp.app/MiApp
+          chmod +x Payload/MiApp.app/MiApp
+          cp MiApp/Info.plist Payload/MiApp.app/
+          # Resolver variables del Info.plist
+          sed -i '' 's/$(EXECUTABLE_NAME)/MiApp/g' Payload/MiApp.app/Info.plist
+          sed -i '' 's/$(PRODUCT_BUNDLE_IDENTIFIER)/com.xitfarge.app/g' Payload/MiApp.app/Info.plist
+          sed -i '' 's/$(PRODUCT_NAME)/xitfarge/g' Payload/MiApp.app/Info.plist
+          echo -n "APPL????" > Payload/MiApp.app/PkgInfo
           
-          DYLIB_PATH=$(find motor_filza -name "*.dylib" -type f 2>/dev/null | head -n 1)
-          if [ -n "$DYLIB_PATH" ]; then
-            echo "Motor: $DYLIB_PATH"
-            cp "$DYLIB_PATH" Payload/MiApp.app/
-            DYLIB_NAME=$(basename "$DYLIB_PATH")
-            insert_dylib --strip-codesig --all-yes "@executable_path/$DYLIB_NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched
-            mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp
-            chmod +x Payload/MiApp.app/MiApp
+          # Inyectar motor si existe
+          DYLIB=$(find motor_filza -name "*.dylib" -type f 2>/dev/null | head -1)
+          if [ -n "$DYLIB" ]; then
+            echo "Motor: $DYLIB"
+            cp "$DYLIB" Payload/MiApp.app/
+            git clone https://github.com/Tyilo/insert_dylib.git 2>/dev/null
+            if [ -d insert_dylib ]; then
+              clang insert_dylib/main.c -o insert_dylib_tool
+              NAME=$(basename "$DYLIB")
+              ./insert_dylib_tool --strip-codesig --all-yes "@executable_path/$NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched 2>/dev/null && mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp && chmod +x Payload/MiApp.app/MiApp || true
+            fi
           fi
+          
+          # Crear entitlements
+          cat > entitlements.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.security.app-sandbox</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+          
+          # Firmar con ldid
+          ldid -S entitlements.plist Payload/MiApp.app/MiApp || ldid -S Payload/MiApp.app/MiApp || codesign --force --deep --sign - Payload/MiApp.app || true
           
           echo "=== Bundle ==="
           ls -la Payload/MiApp.app/
-          rm -f MiApp.ipa
+          echo "=== Firmado ==="
+          ldid -e Payload/MiApp.app/MiApp 2>/dev/null || codesign -dvv Payload/MiApp.app 2>/dev/null || echo "Verificacion no disponible"
+          
+          # Crear IPA
           zip -r MiApp.ipa Payload/
           ls -lh MiApp.ipa
 
