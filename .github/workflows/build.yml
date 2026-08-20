@@ -50,8 +50,17 @@ jobs:
 
       - name: Create IPA
         run: |
+          echo "=== Finding .app in archive ==="
+          find build/MiApp.xcarchive -name '*.app' -type d 2>/dev/null || echo "No .app found"
+          ls -la build/MiApp.xcarchive/Products/Applications/ 2>/dev/null || echo "Applications dir not found"
+          APP_PATH=$(find build/MiApp.xcarchive -name '*.app' -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found in archive"
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
           mkdir -p build/ipa/Payload
-          cp -r build/MiApp.xcarchive/Products/Applications/MiApp.app build/ipa/Payload/
+          cp -r "$APP_PATH" build/ipa/Payload/
           cd build/ipa
           zip -r ../MiApp.ipa Payload/
           ls -la ../MiApp.ipa
