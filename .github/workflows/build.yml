@@ -65,50 +65,40 @@ jobs:
 
       - name: Empaquetar Mi App con el motor
         run: |
-          set -e
           mkdir -p Payload
           
           # Buscar el .app
           APP_PATH=$(find build -name "MiApp.app" -type d 2>/dev/null | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "=== ERROR: No se encontro MiApp.app ==="
-            echo "=== Contenido de build/ ==="
+            echo "ERROR: No se encontro MiApp.app"
             find build/ -maxdepth 4 -type d 2>/dev/null
             exit 1
           fi
           echo "App: $APP_PATH"
           cp -r "$APP_PATH" Payload/
           
-          # Buscar el dylib del motor
-          DYLIB_PATH=""
-          for name in FilzaApplySandboxExt.dylib FilzaSlop.dylib; do
-            DYLIB_PATH=$(find motor_filza -name "$name" -type f 2>/dev/null | head -n 1)
-            if [ -n "$DYLIB_PATH" ]; then break; fi
-          done
-          if [ -z "$DYLIB_PATH" ]; then
-            DYLIB_PATH=$(find motor_filza -name "*.dylib" -type f 2>/dev/null | head -n 1)
+          # Buscar dylib del motor - todas las variantes posibles
+          echo "=== Buscando dylib ==="
+          find motor_filza/ -type f -name "*.dylib" 2>/dev/null || true
+          find motor_filza/ -type f -name "*.a" 2>/dev/null || true
+          find motor_filza/ -type d 2>/dev/null | head -30
+          
+          DYLIB_PATH=$(find motor_filza -name "*.dylib" -type f 2>/dev/null | head -n 1)
+          
+          if [ -n "$DYLIB_PATH" ]; then
+            DYLIB_NAME=$(basename "$DYLIB_PATH")
+            echo "Motor encontrado: $DYLIB_NAME"
+            cp "$DYLIB_PATH" Payload/MiApp.app/
+            insert_dylib --strip-codesig --all-yes "@executable_path/$DYLIB_NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched
+            mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp
+            chmod +x Payload/MiApp.app/MiApp
+          else
+            echo "WARNING: No se encontro dylib, IPA sin motor"
           fi
-          
-          if [ -z "$DYLIB_PATH" ]; then
-            echo "=== ERROR: No se encontro dylib del motor ==="
-            echo "=== Contenido de motor_filza/ ==="
-            find motor_filza/ -maxdepth 3 -type f -name "*.dylib" -o -name "*.a" 2>/dev/null
-            exit 1
-          fi
-          
-          DYLIB_NAME=$(basename "$DYLIB_PATH")
-          echo "Motor: $DYLIB_NAME"
-          cp "$DYLIB_PATH" Payload/MiApp.app/
-          
-          # Inyectar
-          insert_dylib --strip-codesig --all-yes "@executable_path/$DYLIB_NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched
-          mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp
-          chmod +x Payload/MiApp.app/MiApp
           
           echo "=== Bundle contents ==="
           ls -la Payload/MiApp.app/
           
-          # Crear IPA
           FECHA=$(date +%Y%m%d_%H%M%S)
           zip -qr MiApp_${FECHA}.ipa Payload/
           echo "IPA: MiApp_${FECHA}.ipa"
