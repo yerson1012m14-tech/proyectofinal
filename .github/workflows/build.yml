@@ -27,16 +27,8 @@ jobs:
       - name: Generate Xcode Project
         run: xcodegen generate --spec project.yml
 
-      - name: List Schemes
-        run: |
-          xcodebuild -project MiApp.xcodeproj -list
-          echo "---"
-          # Auto-create scheme if missing
-          xcodebuild -project MiApp.xcodeproj -scheme MiApp -version || true
-
       - name: Build App
         run: |
-          # Try building with target directly
           xcodebuild build \
             -project MiApp.xcodeproj \
             -target MiApp \
@@ -47,39 +39,24 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             ENABLE_BITCODE=NO \
-            DEVELOPMENT_TEAM="" || {
-              echo "Build failed, trying with scheme..."
-              xcodebuild build \
-                -project MiApp.xcodeproj \
-                -scheme MiApp \
-                -configuration Release \
-                -sdk iphoneos \
-                -derivedDataPath build/DerivedData \
-                CODE_SIGNING_ALLOWED=NO \
-                CODE_SIGN_IDENTITY="" \
-                CODE_SIGNING_REQUIRED=NO \
-                ENABLE_BITCODE=NO \
-                DEVELOPMENT_TEAM=""
-            }
+            DEVELOPMENT_TEAM="" \
+            2>&1 | tee build.log || true
+          
+          echo "=== Build log tail ==="
+          tail -30 build.log
+          
+          echo ""
+          echo "=== Searching for .app ==="
+          find build/DerivedData -name "*.app" -type d 2>/dev/null || true
 
-      - name: Find and Package App
+      - name: Package IPA
         run: |
-          echo "=== Looking for .app ==="
-          find build/DerivedData -name "*.app" -type d 2>/dev/null
-          
-          APP_PATH=$(find build/DerivedData -name "*.app" -type d | head -1)
+          APP_PATH=$(find build/DerivedData -name "*.app" -type d 2>/dev/null | head -1)
           
           if [ -z "$APP_PATH" ]; then
-            echo "=== Trying Build/Products ==="
-            find build/ -name "*.app" -type d 2>/dev/null
-            APP_PATH=$(find build/ -name "*.app" -type d | head -1)
-          fi
-          
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app bundle found anywhere"
-            echo "=== Full build directory ==="
-            find build/ -type f -name "*.app" 2>/dev/null
-            find build/ -type d 2>/dev/null | head -30
+            echo "ERROR: No .app bundle found"
+            echo "=== Build directory tree ==="
+            find build/ -maxdepth 5 -type d 2>/dev/null
             exit 1
           fi
           
