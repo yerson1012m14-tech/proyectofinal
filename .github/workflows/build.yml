@@ -27,43 +27,65 @@ jobs:
       - name: Generate Xcode Project
         run: xcodegen generate --spec project.yml
 
-      - name: List generated project
+      - name: Show Project Info
         run: |
-          ls -la *.xcodeproj 2>/dev/null || echo "No xcodeproj found"
-          ls -la *.xcworkspace 2>/dev/null || echo "No xcworkspace found"
-          xcodebuild -list -project MiApp.xcodeproj 2>/dev/null || xcodebuild -list -project *.xcodeproj 2>/dev/null || echo "Could not list project"
+          echo "=== Project files ==="
+          ls -la *.xcodeproj
+          echo ""
+          echo "=== Build settings ==="
+          xcodebuild -project MiApp.xcodeproj -scheme MiApp -showBuildSettings 2>/dev/null | grep -E "BUILT_PRODUCTS_DIR|TARGET_BUILD_DIR|WRAPPER_EXTENSION" || true
+          echo ""
+          echo "=== Schemes ==="
+          xcodebuild -project MiApp.xcodeproj -list 2>/dev/null || true
 
-      - name: Build Archive
+      - name: Build App
         run: |
-          xcodebuild clean archive \
+          set -e
+          xcodebuild build \
             -project MiApp.xcodeproj \
             -scheme MiApp \
             -configuration Release \
             -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -archivePath build/MiApp.xcarchive \
+            -derivedDataPath build/derivedData \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             ENABLE_BITCODE=NO \
-            DEVELOPMENT_TEAM="" 2>&1 | tail -50
+            DEVELOPMENT_TEAM="" \
+            | tail -30
+          
+          echo "=== Searching for .app ==="
+          find build/derivedData -name "*.app" -type d 2>/dev/null
+          find build/derivedData -name "*.app" -type d -exec ls -la {} \; 2>/dev/null || echo "No .app found in derivedData"
+          
+          # Also check Build/Products
+          find build/ -name "*.app" -type d 2>/dev/null || echo "No .app in build/"
+          
+          APP_PATH=$(find build/derivedData -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: Could not find .app bundle"
+            exit 1
+          fi
+          echo "APP_PATH=$APP_PATH" > build/app_path.txt
+          echo "Found app: $APP_PATH"
 
       - name: Create IPA
         run: |
-          echo "=== Finding .app in archive ==="
-          find build/MiApp.xcarchive -name '*.app' -type d 2>/dev/null || echo "No .app found"
-          ls -la build/MiApp.xcarchive/Products/Applications/ 2>/dev/null || echo "Applications dir not found"
-          APP_PATH=$(find build/MiApp.xcarchive -name '*.app' -type d | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app found in archive"
-            exit 1
-          fi
-          echo "Found app at: $APP_PATH"
+          set -e
+          APP_PATH=$(cat build/app_path.txt | cut -d= -f2)
+          echo "Using app at: $APP_PATH"
+          
           mkdir -p build/ipa/Payload
           cp -r "$APP_PATH" build/ipa/Payload/
+          
+          echo "=== Payload contents ==="
+          ls -la build/ipa/Payload/
+          
           cd build/ipa
           zip -r ../MiApp.ipa Payload/
-          ls -la ../MiApp.ipa
+          cd ../..
+          ls -la build/MiApp.ipa
+          echo "IPA created successfully!"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
