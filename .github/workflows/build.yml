@@ -76,21 +76,39 @@ jobs:
 
       - name: Empaquetar Mi App con el motor
         run: |
+          set -e
           mkdir -p Payload
-          APP_PATH=$(find build -name "MiApp.app" -type d | head -n 1)
+          
+          echo "=== Buscando .app ==="
+          APP_PATH=$(find build -name "MiApp.app" -type d 2>/dev/null | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No se encontro MiApp.app"
+            find build/ -maxdepth 5 -type d 2>/dev/null | head -30
+            exit 1
+          fi
           echo "App encontrada en: $APP_PATH"
           cp -r "$APP_PATH" Payload/
           
-          DYLIB_PATH=$(find motor_filza -name "FilzaApplySandboxExt.dylib" | head -n 1)
+          echo "=== Buscando motor dylib ==="
+          DYLIB_PATH=$(find motor_filza -name "FilzaApplySandboxExt.dylib" 2>/dev/null | head -n 1)
           if [ -z "$DYLIB_PATH" ]; then
-            DYLIB_PATH=$(find motor_filza/.theos -name "*.dylib" | head -n 1)
+            echo "Buscando cualquier dylib en motor_filza..."
+            DYLIB_PATH=$(find motor_filza -name "*.dylib" 2>/dev/null | head -n 1)
+          fi
+          if [ -z "$DYLIB_PATH" ]; then
+            echo "ERROR: No se encontro ningun dylib del motor"
+            find motor_filza/ -name "*.dylib" 2>/dev/null
+            find motor_filza/.theos -type f 2>/dev/null | head -20
+            exit 1
           fi
           DYLIB_NAME=$(basename "$DYLIB_PATH")
-          echo "Motor encontrado: $DYLIB_NAME"
+          echo "Motor encontrado: $DYLIB_NAME en $DYLIB_PATH"
           cp "$DYLIB_PATH" Payload/MiApp.app/
           
+          echo "=== Inyectando motor con insert_dylib ==="
           insert_dylib --strip-codesig --all-yes "@executable_path/$DYLIB_NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched
           mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp
+          chmod +x Payload/MiApp.app/MiApp
           
           echo "=== Contenido del bundle ==="
           ls -la Payload/MiApp.app/
@@ -100,6 +118,7 @@ jobs:
           FECHA=$(date +%Y%m%d_%H%M%S)
           zip -qr MiApp_${FECHA}.ipa Payload/
           echo "IPA generado: MiApp_${FECHA}.ipa"
+          ls -lh MiApp_${FECHA}.ipa
 
       - name: Subir IPA final
         uses: actions/upload-artifact@v4
