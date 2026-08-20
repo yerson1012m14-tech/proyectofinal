@@ -52,7 +52,7 @@ jobs:
         run: |
           xcodebuild clean build \
             -project MiApp.xcodeproj \
-            -scheme MiApp \
+            -target MiApp \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
