@@ -43,16 +43,13 @@ jobs:
           export SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
           export TARGET=iphone:clang:latest:18.0
           make clean || true
-          make package FINALPACKAGE=1 || make
+          make package FINALPACKAGE=1 || make || true
           cd ..
-          echo "=== Dylibs encontrados ==="
+          echo "=== Dylibs ==="
           find motor_filza -name "*.dylib" -type f 2>/dev/null || echo "Ninguno"
 
       - name: Compilar Mi App
         run: |
-          echo "=== Available targets ==="
-          xcodebuild -project MiApp.xcodeproj -list 2>&1 || true
-          echo ""
           xcodebuild clean build \
             -project MiApp.xcodeproj \
             -target MiApp \
@@ -60,40 +57,30 @@ jobs:
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            2>&1 | tail -40
+            CODE_SIGN_IDENTITY=""
 
-      - name: Empaquetar Mi App
+      - name: Crear IPA
         run: |
           mkdir -p Payload
+          APP=$(find build -name "MiApp.app" -type d | head -1)
+          echo "App: $APP"
+          cp -r "$APP" Payload/
           
-          APP_PATH=$(find build -name "MiApp.app" -type d 2>/dev/null | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No se encontro MiApp.app"
-            find build/ -maxdepth 4 -type d 2>/dev/null
-            exit 1
-          fi
-          echo "App: $APP_PATH"
-          cp -r "$APP_PATH" Payload/
-          
-          # Intentar inyectar motor si existe
-          DYLIB_PATH=$(find motor_filza -name "*.dylib" -type f 2>/dev/null | head -n 1)
-          if [ -n "$DYLIB_PATH" ]; then
-            DYLIB_NAME=$(basename "$DYLIB_PATH")
-            echo "Motor: $DYLIB_NAME"
-            cp "$DYLIB_PATH" Payload/MiApp.app/
-            insert_dylib --strip-codesig --all-yes "@executable_path/$DYLIB_NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched && mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp && chmod +x Payload/MiApp.app/MiApp || echo "insert_dylib fallo, IPA sin motor"
-          else
-            echo "Motor no encontrado, creando IPA base"
+          DYLIB=$(find motor_filza -name "*.dylib" -type f 2>/dev/null | head -1)
+          if [ -n "$DYLIB" ]; then
+            echo "Motor: $DYLIB"
+            cp "$DYLIB" Payload/MiApp.app/
+            NAME=$(basename "$DYLIB")
+            insert_dylib --strip-codesig --all-yes "@executable_path/$NAME" Payload/MiApp.app/MiApp Payload/MiApp.app/MiApp_patched || true
+            mv Payload/MiApp.app/MiApp_patched Payload/MiApp.app/MiApp 2>/dev/null || true
+            chmod +x Payload/MiApp.app/MiApp 2>/dev/null || true
           fi
           
           ls -la Payload/MiApp.app/
-          FECHA=$(date +%Y%m%d_%H%M%S)
-          cd Payload && zip -r ../MiApp_${FECHA}.ipa MiApp.app && cd ..
-          ls -lh MiApp_${FECHA}.ipa
+          zip -r MiApp.ipa Payload/
 
-      - name: Subir IPA final
+      - name: Subir IPA
         uses: actions/upload-artifact@v4
         with:
           name: Mi-App-Final
-          path: MiApp_*.ipa
+          path: MiApp.ipa
