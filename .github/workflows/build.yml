@@ -84,10 +84,12 @@ jobs:
           echo "=== Contenido del bundle ==="
           ls -la Payload/MiApp.app/
           
-          # Crear IPA con la estructura correcta
+          # Crear IPA con la estructura correcta (Payload/ en la raiz del zip)
           rm -f MiApp.ipa
-          cd Payload && zip -r ../MiApp.ipa . && cd ..
+          zip -r MiApp.ipa Payload/
           ls -lh MiApp.ipa
+          echo "=== Estructura IPA ==="
+          unzip -l MiApp.ipa | head -10
 
       - name: Subir IPA
         uses: actions/upload-artifact@v4
