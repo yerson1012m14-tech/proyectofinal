@@ -18,22 +18,35 @@ jobs:
           xcode-version: '15.4'
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          export HOMEBREW_NO_INSTALL_CLEANUP=1
+          export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
+          brew untap aws/tap 2>/dev/null || true
+          brew install xcodegen
 
       - name: Generate Xcode Project
-        run: xcodegen generate
+        run: xcodegen generate --spec project.yml
 
-      - name: Build IPA
+      - name: List generated project
         run: |
-          xcodebuild -project MiApp.xcodeproj \
+          ls -la *.xcodeproj 2>/dev/null || echo "No xcodeproj found"
+          ls -la *.xcworkspace 2>/dev/null || echo "No xcworkspace found"
+          xcodebuild -list -project MiApp.xcodeproj 2>/dev/null || xcodebuild -list -project *.xcodeproj 2>/dev/null || echo "Could not list project"
+
+      - name: Build Archive
+        run: |
+          xcodebuild clean archive \
+            -project MiApp.xcodeproj \
             -scheme MiApp \
             -configuration Release \
             -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -archivePath build/MiApp.xcarchive \
-            clean archive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO \
+            ENABLE_BITCODE=NO \
+            DEVELOPMENT_TEAM="" 2>&1 | tail -50
 
       - name: Create IPA
         run: |
@@ -41,6 +54,7 @@ jobs:
           cp -r build/MiApp.xcarchive/Products/Applications/MiApp.app build/ipa/Payload/
           cd build/ipa
           zip -r ../MiApp.ipa Payload/
+          ls -la ../MiApp.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
