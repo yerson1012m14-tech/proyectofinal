@@ -11,6 +11,7 @@
 @property (nonatomic, strong) UIButton *protChevron;
 @property (nonatomic, strong) UIView *langOptions;
 @property (nonatomic, strong) UIView *protOptions;
+@property (nonatomic, strong) UISwitch *protSwitch;
 @end
 
 @implementation SettingsViewController
@@ -102,16 +103,18 @@
     ];
     
     for (int i = 0; i < 3; i++) {
-        UIView *row = [[UIView alloc] init];
-        row.translatesAutoresizingMaskIntoConstraints = NO;
-        row.tag = 200 + i;
-        [self.langOptions addSubview:row];
+        // Botón completo de fila (para que toda la fila sea clickeable)
+        UIButton *rowBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+        rowBtn.translatesAutoresizingMaskIntoConstraints = NO;
+        rowBtn.tag = 200 + i;
+        [rowBtn addTarget:self action:@selector(selectLang:) forControlEvents:UIControlEventTouchUpInside];
+        [self.langOptions addSubview:rowBtn];
         
         UIView *flagCircle = [[UIView alloc] init];
         flagCircle.translatesAutoresizingMaskIntoConstraints = NO;
         flagCircle.backgroundColor = flagColors[i];
         flagCircle.layer.cornerRadius = 14;
-        [row addSubview:flagCircle];
+        [rowBtn addSubview:flagCircle];
         
         UILabel *flagLabel = [[UILabel alloc] init];
         flagLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -126,31 +129,31 @@
         lt.text = langs[i];
         lt.textColor = white;
         lt.font = [UIFont systemFontOfSize:15];
-        [row addSubview:lt];
+        [rowBtn addSubview:lt];
         
         UIButton *radio = [UIButton buttonWithType:UIButtonTypeCustom];
         radio.translatesAutoresizingMaskIntoConstraints = NO;
         radio.tag = 300 + i;
+        radio.userInteractionEnabled = NO; // El botón padre maneja el toque
         [radio setImage:[UIImage systemImageNamed:(i == self.selectedLanguage ? @"largecircle.fill.circle" : @"circle")] forState:UIControlStateNormal];
         [radio setTintColor:(i == self.selectedLanguage ? red : muted)];
-        [radio addTarget:self action:@selector(selectLang:) forControlEvents:UIControlEventTouchUpInside];
-        [row addSubview:radio];
+        [rowBtn addSubview:radio];
         
         [NSLayoutConstraint activateConstraints:@[
-            [row.topAnchor constraintEqualToAnchor:self.langOptions.topAnchor constant:(i * 52)],
-            [row.leadingAnchor constraintEqualToAnchor:self.langOptions.leadingAnchor],
-            [row.trailingAnchor constraintEqualToAnchor:self.langOptions.trailingAnchor],
-            [row.heightAnchor constraintEqualToConstant:52],
-            [flagCircle.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:16],
-            [flagCircle.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+            [rowBtn.topAnchor constraintEqualToAnchor:self.langOptions.topAnchor constant:(i * 52)],
+            [rowBtn.leadingAnchor constraintEqualToAnchor:self.langOptions.leadingAnchor],
+            [rowBtn.trailingAnchor constraintEqualToAnchor:self.langOptions.trailingAnchor],
+            [rowBtn.heightAnchor constraintEqualToConstant:52],
+            [flagCircle.leadingAnchor constraintEqualToAnchor:rowBtn.leadingAnchor constant:16],
+            [flagCircle.centerYAnchor constraintEqualToAnchor:rowBtn.centerYAnchor],
             [flagCircle.widthAnchor constraintEqualToConstant:28],
             [flagCircle.heightAnchor constraintEqualToConstant:28],
             [flagLabel.centerXAnchor constraintEqualToAnchor:flagCircle.centerXAnchor],
             [flagLabel.centerYAnchor constraintEqualToAnchor:flagCircle.centerYAnchor],
             [lt.leadingAnchor constraintEqualToAnchor:flagCircle.trailingAnchor constant:12],
-            [lt.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
-            [radio.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-16],
-            [radio.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+            [lt.centerYAnchor constraintEqualToAnchor:rowBtn.centerYAnchor],
+            [radio.trailingAnchor constraintEqualToAnchor:rowBtn.trailingAnchor constant:-16],
+            [radio.centerYAnchor constraintEqualToAnchor:rowBtn.centerYAnchor],
             [radio.widthAnchor constraintEqualToConstant:22],
             [radio.heightAnchor constraintEqualToConstant:22],
         ]];
@@ -189,12 +192,12 @@
     self.protOptions.layer.masksToBounds = YES;
     [protCard addSubview:self.protOptions];
     
-    UISwitch *protSwitch = [[UISwitch alloc] init];
-    protSwitch.translatesAutoresizingMaskIntoConstraints = NO;
-    protSwitch.on = self.screenProtection;
-    protSwitch.onTintColor = red;
-    [protSwitch addTarget:self action:@selector(toggleProtSwitch:) forControlEvents:UIControlEventValueChanged];
-    [self.protOptions addSubview:protSwitch];
+    self.protSwitch = [[UISwitch alloc] init];
+    self.protSwitch.translatesAutoresizingMaskIntoConstraints = NO;
+    self.protSwitch.on = self.screenProtection;
+    self.protSwitch.onTintColor = red;
+    [self.protSwitch addTarget:self action:@selector(toggleProtSwitch:) forControlEvents:UIControlEventValueChanged];
+    [self.protOptions addSubview:self.protSwitch];
     
     [NSLayoutConstraint activateConstraints:@[
         [self.protOptions.topAnchor constraintEqualToAnchor:protIcon.bottomAnchor constant:12],
@@ -202,9 +205,9 @@
         [self.protOptions.trailingAnchor constraintEqualToAnchor:protCard.trailingAnchor],
         [self.protOptions.bottomAnchor constraintEqualToAnchor:protCard.bottomAnchor constant:-16],
         
-        [protSwitch.centerXAnchor constraintEqualToAnchor:self.protOptions.centerXAnchor],
-        [protSwitch.topAnchor constraintEqualToAnchor:self.protOptions.topAnchor constant:16],
-        [protSwitch.bottomAnchor constraintEqualToAnchor:self.protOptions.bottomAnchor constant:-16],
+        [self.protSwitch.centerXAnchor constraintEqualToAnchor:self.protOptions.centerXAnchor],
+        [self.protSwitch.topAnchor constraintEqualToAnchor:self.protOptions.topAnchor constant:16],
+        [self.protSwitch.bottomAnchor constraintEqualToAnchor:self.protOptions.bottomAnchor constant:-16],
     ]];
     
     // ===== CONSTRAINTS PRINCIPALES =====
@@ -304,7 +307,7 @@
 }
 
 - (void)selectLang:(UIButton *)btn {
-    NSInteger idx = btn.tag - 300;
+    NSInteger idx = btn.tag - 200;
     self.selectedLanguage = idx;
     UIColor *red = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
     UIColor *muted = [UIColor colorWithWhite:0.50 alpha:1.0];
@@ -327,7 +330,6 @@
     [d setBool:self.screenProtection forKey:@"screenProtection"];
     [d synchronize];
     
-    // 🔔 Notificar al AppDelegate para que active/desactive la protección de captura
     [[NSNotificationCenter defaultCenter] postNotificationName:@"ProtectionSettingChanged" object:nil];
     
     if (self.onSettingsChanged) self.onSettingsChanged();
