@@ -1,5 +1,4 @@
 #import "ViewController.h"
-#import "Translations.h"
 #import <dlfcn.h>
 
 static void asegurarMotor(void) {
@@ -34,14 +33,12 @@ static void ponerIcono(UITableViewCell *c, NSString *nombre, UIColor *tinte) {
 static UIColor *colorFondo(void) { return [UIColor colorWithRed:0.02 green:0.02 blue:0.03 alpha:1.0]; }
 static UIColor *colorCard(void) { return [UIColor colorWithRed:0.08 green:0.08 blue:0.10 alpha:1.0]; }
 static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0]; }
-static UIColor *rojo(void) { return [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0]; }
 static UIColor *textoBlanco(void) { return [UIColor colorWithWhite:0.96 alpha:1.0]; }
 static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]; }
 
 #pragma mark - Visor de texto
-@interface TextViewVC : UIViewController <UITextViewDelegate>
+@interface TextViewVC : UIViewController
 @property (nonatomic, strong) NSString *ruta;
-@property (nonatomic, strong) UITextView *textView;
 @end
 
 @implementation TextViewVC
@@ -50,28 +47,29 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     [super viewDidLoad];
     self.view.backgroundColor = colorFondo();
     self.title = self.ruta.lastPathComponent;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     
-    self.textView = [[UITextView alloc] initWithFrame:self.view.bounds];
-    self.textView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.textView.editable = NO;
-    self.textView.selectable = YES;
-    self.textView.textColor = textoBlanco();
-    self.textView.backgroundColor = colorFondo();
-    self.textView.font = [UIFont fontWithName:@"Menlo" size:11];
-    self.textView.contentInset = UIEdgeInsetsMake(10, 10, 10, 10);
-    [self.view addSubview:self.textView];
+    UITextView *tv = [[UITextView alloc] initWithFrame:self.view.bounds];
+    tv.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    tv.editable = NO;
+    tv.selectable = YES;
+    tv.textColor = textoBlanco();
+    tv.backgroundColor = colorFondo();
+    tv.font = [UIFont fontWithName:@"Menlo" size:11];
+    tv.contentInset = UIEdgeInsetsMake(10, 10, 10, 10);
+    [self.view addSubview:tv];
     
     NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:self.ruta error:nil];
     unsigned long long size = [[attrs objectForKey:@"NSFileSize"] unsignedLongLongValue];
     
     if (size > 2 * 1024 * 1024) {
-        self.textView.text = [NSString stringWithFormat:@"(archivo demasiado grande: %@)", fmtSize(size)];
-        self.textView.textColor = rojo();
+        tv.text = [NSString stringWithFormat:@"(archivo demasiado grande: %@)", fmtSize(size)];
+        tv.textColor = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
     } else {
         NSData *d = [NSData dataWithContentsOfFile:self.ruta];
         NSString *s = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
-        self.textView.text = s ?: [NSString stringWithFormat:@"(binario, %@)", fmtSize(size)];
-        if (!s) self.textView.textColor = textoGris();
+        tv.text = s ?: [NSString stringWithFormat:@"(binario, %@)", fmtSize(size)];
+        if (!s) tv.textColor = textoGris();
     }
 }
 
@@ -110,9 +108,8 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     
     UIBarButtonItem *flex = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
     UIBarButtonItem *newFolderBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"folder.badge.plus"] style:UIBarButtonItemStylePlain target:self action:@selector(crearCarpeta)];
-    UIBarButtonItem *deleteBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"trash"] style:UIBarButtonItemStylePlain target:self action:@selector(eliminarSeleccionado)];
     
-    toolbar.items = @[flex, deleteBtn, flex, newFolderBtn, flex];
+    toolbar.items = @[flex, newFolderBtn, flex];
     
     [NSLayoutConstraint activateConstraints:@[
         [toolbar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
@@ -143,23 +140,6 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
                 [errAlert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
                 [self presentViewController:errAlert animated:YES completion:nil];
             }
-        }
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)eliminarSeleccionado {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Eliminar" message:@"¿Qué quieres eliminar?" preferredStyle:UIAlertControllerStyleActionSheet];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Carpeta actual" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
-        if ([self.ruta isEqualToString:@"/"]) return;
-        NSError *err = nil;
-        if ([[NSFileManager defaultManager] removeItemAtPath:self.ruta error:&err]) {
-            [self.navigationController popViewControllerAnimated:YES];
-        } else {
-            UIAlertController *errAlert = [UIAlertController alertControllerWithTitle:@"Error" message:err.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
-            [errAlert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-            [self presentViewController:errAlert animated:YES completion:nil];
         }
     }]];
     [self presentViewController:alert animated:YES completion:nil];
@@ -262,7 +242,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 
 @end
 
-#pragma mark - Pantalla principal
+#pragma mark - Pantalla principal (Explorador)
 @interface ViewController () <UITableViewDataSource, UITableViewDelegate, UITextFieldDelegate>
 @property (nonatomic, strong) UITableView *tv;
 @property (nonatomic, strong) UITextField *campo;
@@ -275,7 +255,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = colorFondo();
-    self.title = @"MiFilza";
+    self.title = @"Explorar";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
     
     UIBarButtonItem *refreshBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.clockwise"] style:UIBarButtonItemStylePlain target:self action:@selector(cargarApps)];
@@ -363,7 +343,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     [self.apps removeAllObjects];
     [self.apps addObjectsFromArray:[set array]];
     [self.apps sortUsingSelector:@selector(localizedStandardCompare:)];
-    self.title = [NSString stringWithFormat:@"MiFilza (%lu)", (unsigned long)self.apps.count];
+    self.title = [NSString stringWithFormat:@"Explorar (%lu)", (unsigned long)self.apps.count];
     self.vacioLabel.hidden = (self.apps.count != 0);
     [self.tv reloadData];
 }
