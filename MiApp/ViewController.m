@@ -248,7 +248,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 @property (nonatomic, strong) UITextField *campo;
 @property (nonatomic, strong) NSMutableArray *apps;
 @property (nonatomic, strong) UILabel *vacioLabel;
-@property (nonatomic, assign) BOOL isLoading;
+@property (nonatomic, assign) BOOL hasProcessedAutoOpen;
 @end
 
 @implementation ViewController
@@ -258,7 +258,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     self.view.backgroundColor = colorFondo();
     self.title = @"Explorar";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
-    self.isLoading = NO;
+    self.hasProcessedAutoOpen = NO;
     
     UIBarButtonItem *refreshBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.clockwise"] style:UIBarButtonItemStylePlain target:self action:@selector(cargarApps)];
     refreshBtn.tintColor = acento();
@@ -318,11 +318,30 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self cargarApps];
+    
+    // ✅ Verificar si hay un bundle ID pendiente de abrir
+    [self procesarAutoOpen];
+}
+
+- (void)procesarAutoOpen {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *bundleID = [defaults stringForKey:@"AutoOpenBundleID"];
+    
+    if (bundleID && !self.hasProcessedAutoOpen) {
+        self.hasProcessedAutoOpen = YES;
+        
+        // Limpiar el valor para que no se abra de nuevo
+        [defaults removeObjectForKey:@"AutoOpenBundleID"];
+        [defaults synchronize];
+        
+        // Abrir el contenedor después de un pequeño delay
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self abrirContenedor:bundleID];
+        });
+    }
 }
 
 - (void)irARaiz {
-    if (self.isLoading) return;
-    self.isLoading = YES;
     @try {
         asegurarMotor();
         FileBrowserVC *fb = [FileBrowserVC new];
@@ -331,13 +350,9 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     } @catch (NSException *exception) {
         NSLog(@"Error al ir a raíz: %@", exception);
     }
-    self.isLoading = NO;
 }
 
 - (void)cargarApps {
-    if (self.isLoading) return;
-    self.isLoading = YES;
-    
     @try {
         NSMutableOrderedSet *set = [NSMutableOrderedSet new];
         Class ws = NSClassFromString(@"LSApplicationWorkspace");
@@ -365,8 +380,6 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     } @catch (NSException *exception) {
         NSLog(@"Error al cargar apps: %@", exception);
     }
-    
-    self.isLoading = NO;
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)tf {
@@ -402,22 +415,13 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     [self abrirContenedor:self.apps[ip.row]];
 }
 
-// Método público seguro (llamado desde HomeViewController)
-- (void)abrirContenedorSeguro:(NSString *)bid {
-    [self abrirContenedor:bid];
-}
-
 - (void)abrirContenedor:(NSString *)bid {
-    if (self.isLoading) return;
-    
-    bid = [bid stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    if (!bid.length) return;
-    
-    self.isLoading = YES;
-    
     @try {
+        bid = [bid stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (!bid.length) return;
+        
         // Limpiar navegación de forma segura
-        if (self.navigationController) {
+        if (self.navigationController && self.navigationController.viewControllers.count > 1) {
             [self.navigationController popToRootViewControllerAnimated:NO];
         }
         
@@ -432,7 +436,6 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
                 preferredStyle:UIAlertControllerStyleAlert];
             [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:a animated:YES completion:nil];
-            self.isLoading = NO;
             return;
         }
         
@@ -442,8 +445,6 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     } @catch (NSException *exception) {
         NSLog(@"Error al abrir contenedor: %@", exception);
     }
-    
-    self.isLoading = NO;
 }
 
 @end
