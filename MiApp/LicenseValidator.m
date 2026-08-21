@@ -19,6 +19,12 @@ static NSString * const kLicenseAPIURL =
 
 + (NSString *)deviceIdentifier {
 
+    /*
+     * Identificador por proveedor de Apple.
+     *
+     * Dos iPhones diferentes, incluso siendo el mismo modelo,
+     * tendrán normalmente valores diferentes.
+     */
     NSUUID *identifier =
         [UIDevice currentDevice].identifierForVendor;
 
@@ -26,7 +32,7 @@ static NSString * const kLicenseAPIURL =
         return identifier.UUIDString;
     }
 
-    return @"unknown-device";
+    return nil;
 }
 
 + (void)validateKey:(NSString *)key
@@ -51,6 +57,17 @@ static NSString * const kLicenseAPIURL =
     NSString *deviceID =
         [self deviceIdentifier];
 
+    if (deviceID.length == 0) {
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion(NO, @"device_unavailable", nil);
+            }
+        });
+
+        return;
+    }
+
     NSURL *url =
         [NSURL URLWithString:kLicenseAPIURL];
 
@@ -65,6 +82,10 @@ static NSString * const kLicenseAPIURL =
         return;
     }
 
+    /*
+     * La key y el ID del dispositivo viajan por HTTPS.
+     * El servidor almacena solamente el hash del deviceId.
+     */
     NSDictionary *payload = @{
         @"key": normalizedKey,
         @"deviceId": deviceID
@@ -73,9 +94,10 @@ static NSString * const kLicenseAPIURL =
     NSError *jsonError = nil;
 
     NSData *jsonData =
-        [NSJSONSerialization dataWithJSONObject:payload
-                                        options:0
-                                          error:&jsonError];
+        [NSJSONSerialization
+            dataWithJSONObject:payload
+                        options:0
+                          error:&jsonError];
 
     if (!jsonData) {
 
@@ -94,10 +116,10 @@ static NSString * const kLicenseAPIURL =
     request.HTTPMethod = @"POST";
 
     [request setValue:@"application/json"
-   forHTTPHeaderField:@"Content-Type"];
+        forHTTPHeaderField:@"Content-Type"];
 
     [request setValue:@"application/json"
-   forHTTPHeaderField:@"Accept"];
+        forHTTPHeaderField:@"Accept"];
 
     request.HTTPBody = jsonData;
 
@@ -114,7 +136,24 @@ static NSString * const kLicenseAPIURL =
             if (error) {
 
                 if (completion) {
-                    completion(NO, @"network_error", nil);
+                    completion(NO,
+                               @"network_error",
+                               nil);
+                }
+
+                return;
+            }
+
+            NSHTTPURLResponse *httpResponse =
+                (NSHTTPURLResponse *)response;
+
+            if (httpResponse.statusCode < 200 ||
+                httpResponse.statusCode >= 300) {
+
+                if (completion) {
+                    completion(NO,
+                               @"server_error",
+                               nil);
                 }
 
                 return;
@@ -123,7 +162,9 @@ static NSString * const kLicenseAPIURL =
             if (!data) {
 
                 if (completion) {
-                    completion(NO, @"empty_response", nil);
+                    completion(NO,
+                               @"empty_response",
+                               nil);
                 }
 
                 return;
@@ -138,10 +179,13 @@ static NSString * const kLicenseAPIURL =
                     error:&parseError];
 
             if (parseError ||
-                ![object isKindOfClass:[NSDictionary class]]) {
+                ![object isKindOfClass:
+                    [NSDictionary class]]) {
 
                 if (completion) {
-                    completion(NO, @"invalid_response", nil);
+                    completion(NO,
+                               @"invalid_response",
+                               nil);
                 }
 
                 return;
@@ -154,17 +198,21 @@ static NSString * const kLicenseAPIURL =
                 [json[@"valid"] boolValue];
 
             NSString *reason =
-                [json[@"reason"] isKindOfClass:[NSString class]]
+                [json[@"reason"] isKindOfClass:
+                    [NSString class]]
                     ? json[@"reason"]
                     : nil;
 
             NSString *expiresAt =
-                [json[@"expiresAt"] isKindOfClass:[NSString class]]
+                [json[@"expiresAt"] isKindOfClass:
+                    [NSString class]]
                     ? json[@"expiresAt"]
                     : nil;
 
             if (completion) {
-                completion(valid, reason, expiresAt);
+                completion(valid,
+                           reason,
+                           expiresAt);
             }
         });
     }];
