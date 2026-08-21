@@ -1,17 +1,23 @@
 #import "MainSettingsViewController.h"
 #import "Translations.h"
+#import "ScreenProtectionManager.h"
 
 @interface MainSettingsViewController ()
 
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) NSTimer *licenseTimer;
+@property (nonatomic, assign) BOOL languageExpanded;
 
 @end
 
 @implementation MainSettingsViewController
 
+#pragma mark - Lifecycle
+
 - (void)viewDidLoad {
     [super viewDidLoad];
+
+    self.languageExpanded = NO;
 
     self.view.backgroundColor =
         [UIColor colorWithRed:0.02
@@ -19,19 +25,12 @@
                          blue:0.03
                         alpha:1.0];
 
-    self.title = @"Ajustes";
-
-    self.navigationItem.largeTitleDisplayMode =
-        UINavigationItemLargeTitleDisplayModeAlways;
-
     self.tableView =
         [[UITableView alloc]
-            initWithFrame:self.view.bounds
+            initWithFrame:CGRectZero
                     style:UITableViewStyleGrouped];
 
-    self.tableView.autoresizingMask =
-        UIViewAutoresizingFlexibleWidth |
-        UIViewAutoresizingFlexibleHeight;
+    self.tableView.translatesAutoresizingMaskIntoConstraints = NO;
 
     self.tableView.backgroundColor =
         [UIColor colorWithRed:0.02
@@ -47,18 +46,56 @@
 
     [self.view addSubview:self.tableView];
 
+    [NSLayoutConstraint activateConstraints:@[
+        [self.tableView.topAnchor
+            constraintEqualToAnchor:self.view.topAnchor],
+
+        [self.tableView.leadingAnchor
+            constraintEqualToAnchor:self.view.leadingAnchor],
+
+        [self.tableView.trailingAnchor
+            constraintEqualToAnchor:self.view.trailingAnchor],
+
+        [self.tableView.bottomAnchor
+            constraintEqualToAnchor:self.view.bottomAnchor]
+    ]];
+
     self.licenseTimer =
         [NSTimer scheduledTimerWithTimeInterval:1.0
                                          target:self
                                        selector:@selector(updateLicenseCard)
                                        userInfo:nil
                                         repeats:YES];
+
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(languageDidChange:)
+               name:TranslationsLanguageDidChangeNotification
+             object:nil];
+
+    /*
+     * Aplicar el estado guardado al abrir ajustes.
+     */
+    if ([self screenProtectionEnabled]) {
+
+        [[ScreenProtectionManager shared]
+            enableProtection];
+
+    } else {
+
+        [[ScreenProtectionManager shared]
+            disableProtection];
+    }
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
 
+    self.title =
+        [Translations tr:@"settings"];
+
     [self.tableView reloadData];
+
     [self updateLicenseCard];
 }
 
@@ -70,41 +107,106 @@
 }
 
 - (void)dealloc {
+
     [self.licenseTimer invalidate];
+
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:self];
 }
 
-#pragma mark - Helpers
+#pragma mark - Appearance
 
 - (UIColor *)accentColor {
-    return [UIColor colorWithRed:0.20
-                           green:1.00
-                            blue:0.50
+
+    return [UIColor colorWithRed:0.95
+                           green:0.08
+                            blue:0.10
                            alpha:1.0];
 }
 
+- (UIColor *)panelColor {
+
+    return [UIColor colorWithRed:0.06
+                           green:0.06
+                            blue:0.08
+                           alpha:1.0];
+}
+
+#pragma mark - Language
+
 - (NSString *)currentLanguageName {
 
-    NSInteger language =
-        [[NSUserDefaults standardUserDefaults]
-            integerForKey:@"selectedLanguage"];
-
-    switch (language) {
+    switch ([Translations currentLanguage]) {
 
         case 1:
-            return @"English";
+            return [Translations tr:@"english"];
 
         case 2:
-            return @"Português";
+            return [Translations tr:@"portuguese"];
 
         default:
-            return @"Español";
+            return [Translations tr:@"spanish"];
     }
 }
+
+- (void)languageDidChange:(NSNotification *)notification {
+
+    self.title =
+        [Translations tr:@"settings"];
+
+    [self.tableView reloadData];
+
+    [self updateLicenseCard];
+}
+
+- (void)selectLanguage:(NSInteger)language {
+
+    [Translations setLanguage:language];
+
+    self.languageExpanded = NO;
+
+    [self.tableView reloadSections:
+        [NSIndexSet indexSetWithIndex:1]
+                   withRowAnimation:
+                       UITableViewRowAnimationAutomatic];
+}
+
+#pragma mark - Protection
 
 - (BOOL)screenProtectionEnabled {
 
     return [[NSUserDefaults standardUserDefaults]
         boolForKey:@"screenProtection"];
+}
+
+- (void)screenProtectionChanged:
+    (UISwitch *)sender {
+
+    BOOL enabled =
+        sender.isOn;
+
+    [[NSUserDefaults standardUserDefaults]
+        setBool:enabled
+        forKey:@"screenProtection"];
+
+    [[NSUserDefaults standardUserDefaults]
+        synchronize];
+
+    if (enabled) {
+
+        [[ScreenProtectionManager shared]
+            enableProtection];
+
+    } else {
+
+        [[ScreenProtectionManager shared]
+            disableProtection];
+    }
+
+    [self.tableView reloadSections:
+        [NSIndexSet indexSetWithIndex:1]
+                   withRowAnimation:
+                       UITableViewRowAnimationNone];
 }
 
 #pragma mark - License
@@ -143,52 +245,40 @@
     return date;
 }
 
-- (BOOL)licenseIsExpired {
+- (NSString *)licenseRemaining {
 
     NSDate *expiration =
         [self licenseExpirationDate];
 
     if (!expiration) {
-        return NO;
-    }
-
-    return [expiration timeIntervalSinceNow] <= 0;
-}
-
-- (NSString *)licenseTimeRemaining {
-
-    NSDate *expiration =
-        [self licenseExpirationDate];
-
-    if (!expiration) {
-        return @"SIN VENCIMIENTO";
+        return [Translations tr:@"no_expiration"];
     }
 
     NSTimeInterval remaining =
         [expiration timeIntervalSinceNow];
 
     if (remaining <= 0) {
-        return @"EXPIRADA";
+        return [Translations tr:@"license_expired"];
     }
 
-    NSInteger totalSeconds =
+    NSInteger total =
         (NSInteger)remaining;
 
     NSInteger days =
-        totalSeconds / 86400;
+        total / 86400;
 
-    totalSeconds %= 86400;
+    total %= 86400;
 
     NSInteger hours =
-        totalSeconds / 3600;
+        total / 3600;
 
-    totalSeconds %= 3600;
+    total %= 3600;
 
     NSInteger minutes =
-        totalSeconds / 60;
+        total / 60;
 
     NSInteger seconds =
-        totalSeconds % 60;
+        total % 60;
 
     return [NSString stringWithFormat:
         @"%02ldd %02ldh %02ldm %02lds",
@@ -204,7 +294,7 @@
         [self licenseExpirationDate];
 
     if (!expiration) {
-        return @"Sin fecha de vencimiento";
+        return @"";
     }
 
     NSDateFormatter *formatter =
@@ -217,13 +307,26 @@
         @"dd/MM/yyyy · HH:mm:ss";
 
     return [NSString stringWithFormat:
-        @"Vence: %@",
+        @"%@: %@",
+        [Translations tr:@"expires"],
         [formatter stringFromDate:expiration]];
+}
+
+- (BOOL)licenseExpired {
+
+    NSDate *expiration =
+        [self licenseExpirationDate];
+
+    if (!expiration) {
+        return NO;
+    }
+
+    return [expiration timeIntervalSinceNow] <= 0;
 }
 
 #pragma mark - License Card
 
-- (UITableViewCell *)licenseCardCellForTableView:
+- (UITableViewCell *)licenseCell:
     (UITableView *)tableView {
 
     static NSString *identifier =
@@ -247,10 +350,8 @@
             UITableViewCellSelectionStyleNone;
     }
 
-    for (UIView *subview in
-         cell.contentView.subviews) {
-
-        [subview removeFromSuperview];
+    for (UIView *view in cell.contentView.subviews) {
+        [view removeFromSuperview];
     }
 
     UIColor *accent =
@@ -259,164 +360,99 @@
     UIView *card =
         [[UIView alloc] init];
 
-    card.translatesAutoresizingMaskIntoConstraints =
-        NO;
+    card.translatesAutoresizingMaskIntoConstraints = NO;
 
     card.backgroundColor =
-        [UIColor colorWithRed:0.055
-                        green:0.055
-                         blue:0.075
-                        alpha:1.0];
+        [self panelColor];
 
     card.layer.cornerRadius = 20.0;
 
     card.layer.borderWidth = 1.0;
 
     card.layer.borderColor =
-        [accent colorWithAlphaComponent:0.18].CGColor;
-
-    card.layer.shadowColor =
-        UIColor.blackColor.CGColor;
-
-    card.layer.shadowOpacity = 0.25;
-    card.layer.shadowRadius = 14.0;
-    card.layer.shadowOffset =
-        CGSizeMake(0, 8);
+        [accent colorWithAlphaComponent:0.25].CGColor;
 
     [cell.contentView addSubview:card];
 
-    UIImageView *iconView =
-        [[UIImageView alloc]
-            initWithImage:
-                [UIImage systemImageNamed:
-                    @"checkmark.shield.fill"]];
-
-    iconView.translatesAutoresizingMaskIntoConstraints =
-        NO;
-
-    iconView.tintColor =
-        accent;
-
-    iconView.contentMode =
-        UIViewContentModeScaleAspectFit;
-
-    [card addSubview:iconView];
-
-    UILabel *titleLabel =
+    UILabel *title =
         [[UILabel alloc] init];
 
-    titleLabel.translatesAutoresizingMaskIntoConstraints =
-        NO;
+    title.translatesAutoresizingMaskIntoConstraints = NO;
 
-    titleLabel.text =
-        @"LICENCIA ACTIVA";
+    title.text =
+        [self licenseExpired]
+            ? [Translations tr:@"license_expired"]
+            : [Translations tr:@"license_active"];
 
-    titleLabel.textColor =
-        UIColor.whiteColor;
+    title.textColor =
+        [self licenseExpired]
+            ? [UIColor systemRedColor]
+            : UIColor.whiteColor;
 
-    titleLabel.font =
-        [UIFont systemFontOfSize:15.0
+    title.font =
+        [UIFont systemFontOfSize:14.0
                           weight:UIFontWeightBold];
 
-    titleLabel.textAlignment =
+    title.textAlignment =
         NSTextAlignmentCenter;
 
-    [card addSubview:titleLabel];
+    [card addSubview:title];
 
-    UILabel *timerLabel =
+    UILabel *timer =
         [[UILabel alloc] init];
 
-    timerLabel.translatesAutoresizingMaskIntoConstraints =
-        NO;
+    timer.translatesAutoresizingMaskIntoConstraints = NO;
 
-    timerLabel.tag = 8001;
+    timer.tag = 8001;
 
-    timerLabel.text =
-        [self licenseTimeRemaining];
+    timer.text =
+        [self licenseRemaining];
 
-    timerLabel.textColor =
-        accent;
+    timer.textColor =
+        [self licenseExpired]
+            ? [UIColor systemRedColor]
+            : accent;
 
-    timerLabel.font =
-        [UIFont monospacedSystemFontOfSize:29.0
+    timer.font =
+        [UIFont monospacedSystemFontOfSize:26.0
                                     weight:UIFontWeightBold];
 
-    timerLabel.textAlignment =
+    timer.textAlignment =
         NSTextAlignmentCenter;
 
-    timerLabel.adjustsFontSizeToFitWidth =
-        YES;
+    timer.adjustsFontSizeToFitWidth = YES;
+    timer.minimumScaleFactor = 0.55;
 
-    timerLabel.minimumScaleFactor = 0.60;
+    [card addSubview:timer];
 
-    [card addSubview:timerLabel];
-
-    UILabel *expiresLabel =
+    UILabel *expires =
         [[UILabel alloc] init];
 
-    expiresLabel.translatesAutoresizingMaskIntoConstraints =
-        NO;
+    expires.translatesAutoresizingMaskIntoConstraints = NO;
 
-    expiresLabel.tag = 8002;
+    expires.tag = 8002;
 
-    expiresLabel.text =
+    expires.text =
         [self licenseExpirationText];
 
-    expiresLabel.textColor =
-        [UIColor colorWithWhite:0.55
-                          alpha:1.0];
+    expires.textColor =
+        [UIColor colorWithWhite:0.52 alpha:1.0];
 
-    expiresLabel.font =
+    expires.font =
         [UIFont monospacedSystemFontOfSize:12.0
                                     weight:UIFontWeightMedium];
 
-    expiresLabel.textAlignment =
+    expires.textAlignment =
         NSTextAlignmentCenter;
 
-    [card addSubview:expiresLabel];
-
-    BOOL expired =
-        [self licenseIsExpired];
-
-    if (expired) {
-
-        titleLabel.text =
-            @"LICENCIA EXPIRADA";
-
-        titleLabel.textColor =
-            [UIColor systemRedColor];
-
-        timerLabel.textColor =
-            [UIColor systemRedColor];
-
-        iconView.image =
-            [UIImage systemImageNamed:
-                @"xmark.shield.fill"];
-
-        iconView.tintColor =
-            [UIColor systemRedColor];
-    }
-
-    if (!expired &&
-        [self licenseExpirationDate] == nil) {
-
-        titleLabel.text =
-            @"LICENCIA ACTIVA";
-
-        timerLabel.text =
-            @"SIN VENCIMIENTO";
-
-        timerLabel.font =
-            [UIFont systemFontOfSize:21.0
-                              weight:UIFontWeightBold];
-    }
+    [card addSubview:expires];
 
     [NSLayoutConstraint activateConstraints:@[
 
         [card.topAnchor
             constraintEqualToAnchor:
                 cell.contentView.topAnchor
-                constant:4.0],
+                constant:5.0],
 
         [card.leadingAnchor
             constraintEqualToAnchor:
@@ -433,78 +469,63 @@
                 cell.contentView.bottomAnchor
                 constant:-8.0],
 
-        [iconView.topAnchor
+        [title.topAnchor
             constraintEqualToAnchor:
                 card.topAnchor
                 constant:18.0],
 
-        [iconView.centerXAnchor
-            constraintEqualToAnchor:
-                card.centerXAnchor],
-
-        [iconView.widthAnchor
-            constraintEqualToConstant:24.0],
-
-        [iconView.heightAnchor
-            constraintEqualToConstant:24.0],
-
-        [titleLabel.topAnchor
-            constraintEqualToAnchor:
-                iconView.bottomAnchor
-                constant:7.0],
-
-        [titleLabel.leadingAnchor
+        [title.leadingAnchor
             constraintEqualToAnchor:
                 card.leadingAnchor
-                constant:20.0],
+                constant:15.0],
 
-        [titleLabel.trailingAnchor
+        [title.trailingAnchor
             constraintEqualToAnchor:
                 card.trailingAnchor
-                constant:-20.0],
+                constant:-15.0],
 
-        [titleLabel.heightAnchor
+        [title.heightAnchor
             constraintEqualToConstant:20.0],
 
-        [timerLabel.topAnchor
+        [timer.topAnchor
             constraintEqualToAnchor:
-                titleLabel.bottomAnchor
-                constant:7.0],
+                title.bottomAnchor
+                constant:5.0],
 
-        [timerLabel.leadingAnchor
-            constraintEqualToAnchor:
-                card.leadingAnchor
-                constant:12.0],
-
-        [timerLabel.trailingAnchor
-            constraintEqualToAnchor:
-                card.trailingAnchor
-                constant:-12.0],
-
-        [timerLabel.heightAnchor
-            constraintEqualToConstant:38.0],
-
-        [expiresLabel.topAnchor
-            constraintEqualToAnchor:
-                timerLabel.bottomAnchor
-                constant:2.0],
-
-        [expiresLabel.leadingAnchor
+        [timer.leadingAnchor
             constraintEqualToAnchor:
                 card.leadingAnchor
-                constant:20.0],
+                constant:10.0],
 
-        [expiresLabel.trailingAnchor
+        [timer.trailingAnchor
             constraintEqualToAnchor:
                 card.trailingAnchor
-                constant:-20.0],
+                constant:-10.0],
 
-        [expiresLabel.bottomAnchor
+        [timer.heightAnchor
+            constraintEqualToConstant:40.0],
+
+        [expires.topAnchor
+            constraintEqualToAnchor:
+                timer.bottomAnchor
+                constant:0.0],
+
+        [expires.leadingAnchor
+            constraintEqualToAnchor:
+                card.leadingAnchor
+                constant:15.0],
+
+        [expires.trailingAnchor
+            constraintEqualToAnchor:
+                card.trailingAnchor
+                constant:-15.0],
+
+        [expires.bottomAnchor
             constraintEqualToAnchor:
                 card.bottomAnchor
-                constant:-18.0],
+                constant:-16.0],
 
-        [expiresLabel.heightAnchor
+        [expires.heightAnchor
             constraintEqualToConstant:18.0]
     ]];
 
@@ -513,127 +534,34 @@
 
 - (void)updateLicenseCard {
 
-    NSIndexPath *indexPath =
+    NSIndexPath *path =
         [NSIndexPath indexPathForRow:0
                            inSection:0];
 
     UITableViewCell *cell =
         [self.tableView
-            cellForRowAtIndexPath:indexPath];
+            cellForRowAtIndexPath:path];
 
     if (!cell) {
         return;
     }
 
-    UILabel *timerLabel =
+    UILabel *timer =
         (UILabel *)
-            [cell.contentView
-                viewWithTag:8001];
+            [cell.contentView viewWithTag:8001];
 
-    UILabel *expiresLabel =
+    UILabel *expires =
         (UILabel *)
-            [cell.contentView
-                viewWithTag:8002];
+            [cell.contentView viewWithTag:8002];
 
-    if ([timerLabel isKindOfClass:[UILabel class]]) {
+    timer.text =
+        [self licenseRemaining];
 
-        timerLabel.text =
-            [self licenseTimeRemaining];
-
-        if ([self licenseIsExpired]) {
-
-            timerLabel.textColor =
-                [UIColor systemRedColor];
-
-        } else {
-
-            timerLabel.textColor =
-                [self accentColor];
-        }
-    }
-
-    if ([expiresLabel isKindOfClass:[UILabel class]]) {
-
-        expiresLabel.text =
-            [self licenseExpirationText];
-    }
+    expires.text =
+        [self licenseExpirationText];
 }
 
-#pragma mark - Language
-
-- (void)showLanguagePicker {
-
-    NSString *current =
-        [self currentLanguageName];
-
-    UIAlertController *alert =
-        [UIAlertController
-            alertControllerWithTitle:@"Idioma"
-            message:
-                [NSString stringWithFormat:
-                    @"Actual: %@",
-                    current]
-            preferredStyle:
-                UIAlertControllerStyleActionSheet];
-
-    NSArray<NSString *> *languages = @[
-        @"Español",
-        @"English",
-        @"Português"
-    ];
-
-    for (NSInteger i = 0;
-         i < languages.count;
-         i++) {
-
-        NSString *language =
-            languages[i];
-
-        [alert addAction:
-            [UIAlertAction
-                actionWithTitle:language
-                style:UIAlertActionStyleDefault
-                handler:^(UIAlertAction *action) {
-
-                    [[NSUserDefaults standardUserDefaults]
-                        setInteger:i
-                        forKey:@"selectedLanguage"];
-
-                    [[NSUserDefaults standardUserDefaults]
-                        synchronize];
-
-                    [Translations setLanguage:i];
-
-                    [self.tableView reloadData];
-
-                    [self updateLicenseCard];
-                }]];
-    }
-
-    [alert addAction:
-        [UIAlertAction
-            actionWithTitle:@"Cancelar"
-            style:UIAlertActionStyleCancel
-            handler:nil]];
-
-    if (alert.popoverPresentationController) {
-
-        alert.popoverPresentationController.sourceView =
-            self.view;
-
-        alert.popoverPresentationController.sourceRect =
-            CGRectMake(CGRectGetMidX(self.view.bounds),
-                       CGRectGetMidY(self.view.bounds),
-                       1.0,
-                       1.0);
-    }
-
-    [self presentViewController:alert
-                       animated:YES
-                     completion:nil];
-}
-
-#pragma mark - UITableViewDataSource
+#pragma mark - Data Source
 
 - (NSInteger)numberOfSectionsInTableView:
     (UITableView *)tableView {
@@ -651,7 +579,7 @@ numberOfRowsInSection:
     }
 
     if (section == 1) {
-        return 2;
+        return self.languageExpanded ? 5 : 2;
     }
 
     return 1;
@@ -663,108 +591,140 @@ numberOfRowsInSection:
     (NSIndexPath *)indexPath {
 
     if (indexPath.section == 0) {
-
-        return [self
-            licenseCardCellForTableView:
-                tableView];
+        return [self licenseCell:tableView];
     }
 
-    static NSString *cellId =
-        @"MainSettingsCell";
+    static NSString *cellID =
+        @"SettingsCell";
 
     UITableViewCell *cell =
-        [tableView
-            dequeueReusableCellWithIdentifier:
-                cellId];
+        [tableView dequeueReusableCellWithIdentifier:
+            cellID];
 
     if (!cell) {
 
         cell =
             [[UITableViewCell alloc]
-                initWithStyle:
-                    UITableViewCellStyleValue1
-                reuseIdentifier:
-                    cellId];
+                initWithStyle:UITableViewCellStyleSubtitle
+                reuseIdentifier:cellID];
 
         cell.backgroundColor =
-            [UIColor colorWithRed:0.08
-                            green:0.08
-                             blue:0.10
-                            alpha:1.0];
-
-        cell.layer.cornerRadius = 12.0;
+            [self panelColor];
 
         cell.selectionStyle =
             UITableViewCellSelectionStyleDefault;
     }
-
-    UIColor *accent =
-        [self accentColor];
-
-    cell.textLabel.textColor =
-        UIColor.whiteColor;
-
-    cell.detailTextLabel.textColor =
-        [UIColor colorWithWhite:0.55
-                          alpha:1.0];
-
-    cell.imageView.tintColor =
-        accent;
 
     cell.accessoryType =
         UITableViewCellAccessoryNone;
 
     cell.accessoryView = nil;
 
+    cell.textLabel.text = nil;
+    cell.detailTextLabel.text = nil;
+    cell.imageView.image = nil;
+
+    cell.textLabel.textColor =
+        UIColor.whiteColor;
+
+    cell.detailTextLabel.textColor =
+        [UIColor colorWithWhite:0.55 alpha:1.0];
+
+    cell.imageView.tintColor =
+        [self accentColor];
+
+    /*
+     * PREFERENCIAS
+     */
     if (indexPath.section == 1) {
 
         if (indexPath.row == 0) {
 
             cell.imageView.image =
-                [UIImage systemImageNamed:
-                    @"globe"];
+                [UIImage systemImageNamed:@"globe"];
 
             cell.textLabel.text =
-                @"Idioma";
+                [Translations tr:@"language"];
 
             cell.detailTextLabel.text =
                 [self currentLanguageName];
 
             cell.accessoryType =
-                UITableViewCellAccessoryDisclosureIndicator;
+                self.languageExpanded
+                    ? UITableViewCellAccessoryNone
+                    : UITableViewCellAccessoryDisclosureIndicator;
 
-        } else {
+            return cell;
+        }
+
+        /*
+         * Idiomas expandidos
+         */
+        if (self.languageExpanded &&
+            indexPath.row >= 1 &&
+            indexPath.row <= 3) {
+
+            NSInteger language =
+                indexPath.row - 1;
+
+            NSString *name = nil;
+
+            if (language == 0) {
+                name = [Translations tr:@"spanish"];
+            } else if (language == 1) {
+                name = [Translations tr:@"english"];
+            } else {
+                name = [Translations tr:@"portuguese"];
+            }
+
+            cell.imageView.image =
+                [UIImage systemImageNamed:@"globe"];
+
+            cell.textLabel.text =
+                name;
+
+            cell.detailTextLabel.text =
+                nil;
+
+            cell.accessoryType =
+                ([Translations currentLanguage] == language)
+                    ? UITableViewCellAccessoryCheckmark
+                    : UITableViewCellAccessoryNone;
+
+            return cell;
+        }
+
+        /*
+         * Protección
+         */
+        BOOL protectionRow =
+            (!self.languageExpanded &&
+             indexPath.row == 1) ||
+            (self.languageExpanded &&
+             indexPath.row == 4);
+
+        if (protectionRow) {
 
             cell.imageView.image =
                 [UIImage systemImageNamed:
-                    @"record.circle"];
+                    @"shield.lefthalf.filled"];
 
             cell.textLabel.text =
-                @"Ocultar al grabar";
-
-            BOOL enabled =
-                [self screenProtectionEnabled];
+                [Translations tr:@"protection"];
 
             cell.detailTextLabel.text =
-                enabled
-                    ? @"Activado"
-                    : @"Desactivado";
+                [Translations tr:@"protection_desc"];
 
-            cell.detailTextLabel.textColor =
-                enabled
-                    ? accent
-                    : [UIColor colorWithWhite:0.45
-                                        alpha:1.0];
+            cell.detailTextLabel.numberOfLines = 2;
 
             UISwitch *toggle =
                 [[UISwitch alloc] init];
 
-            toggle.on = enabled;
+            toggle.on =
+                [self screenProtectionEnabled];
 
             toggle.onTintColor =
-                accent;
-
-            toggle.tag = 9001;
+                [self accentColor];
 
             [toggle addTarget:self
                        action:@selector(
@@ -774,19 +734,26 @@ numberOfRowsInSection:
 
             cell.accessoryView =
                 toggle;
-        }
 
-    } else {
+            return cell;
+        }
+    }
+
+    /*
+     * INFORMACIÓN
+     */
+    if (indexPath.section == 2) {
 
         cell.imageView.image =
-            [UIImage systemImageNamed:
-                @"info.circle"];
+            [UIImage systemImageNamed:@"info.circle"];
 
         cell.textLabel.text =
-            @"Versión de la App";
+            [Translations tr:@"app_version"];
 
         cell.detailTextLabel.text =
             @"1.0.0";
+
+        return cell;
     }
 
     return cell;
@@ -798,14 +765,14 @@ numberOfRowsInSection:
     (NSInteger)section {
 
     if (section == 0) {
-        return @"LICENCIA";
+        return [Translations tr:@"license"];
     }
 
     if (section == 1) {
-        return @"PREFERENCIAS";
+        return [Translations tr:@"preferences"];
     }
 
-    return @"INFORMACIÓN";
+    return [Translations tr:@"information"];
 }
 
 - (CGFloat)tableView:
@@ -814,41 +781,20 @@ heightForRowAtIndexPath:
     (NSIndexPath *)indexPath {
 
     if (indexPath.section == 0) {
-        return 168.0;
+        return 165.0;
     }
 
-    return 56.0;
+    if (indexPath.section == 1 &&
+        self.languageExpanded &&
+        indexPath.row == 4) {
+
+        return 86.0;
+    }
+
+    return 64.0;
 }
 
-- (CGFloat)tableView:
-    (UITableView *)tableView
-heightForHeaderInSection:
-    (NSInteger)section {
-
-    return 34.0;
-}
-
-#pragma mark - Protection
-
-- (void)screenProtectionChanged:
-    (UISwitch *)sender {
-
-    [[NSUserDefaults standardUserDefaults]
-        setBool:sender.isOn
-        forKey:@"screenProtection"];
-
-    [[NSUserDefaults standardUserDefaults]
-        synchronize];
-
-    [self.tableView reloadRowsAtIndexPaths:@[
-        [NSIndexPath indexPathForRow:1
-                           inSection:1]
-    ]
-                          withRowAnimation:
-                              UITableViewRowAnimationNone];
-}
-
-#pragma mark - UITableViewDelegate
+#pragma mark - Delegate
 
 - (void)tableView:
     (UITableView *)tableView
@@ -861,7 +807,23 @@ heightForHeaderInSection:
     if (indexPath.section == 1 &&
         indexPath.row == 0) {
 
-        [self showLanguagePicker];
+        self.languageExpanded =
+            !self.languageExpanded;
+
+        [tableView reloadSections:
+            [NSIndexSet indexSetWithIndex:1]
+             withRowAnimation:
+                 UITableViewRowAnimationAutomatic];
+
+        return;
+    }
+
+    if (indexPath.section == 1 &&
+        self.languageExpanded &&
+        indexPath.row >= 1 &&
+        indexPath.row <= 3) {
+
+        [self selectLanguage:indexPath.row - 1];
     }
 }
 
