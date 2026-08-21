@@ -1,9 +1,11 @@
 #import "AppDelegate.h"
 #import "ViewController.h"
 #import "LicenseViewController.h"
+#import "Translations.h"
 
 @interface AppDelegate ()
 @property (nonatomic, strong) UIWindow *lockWindow;
+@property (nonatomic, strong) UIView *protectionView;
 @end
 
 @implementation AppDelegate
@@ -28,13 +30,45 @@
     self.window.rootViewController = nav;
     [self.window makeKeyAndVisible];
     
-    // Aplicar protección de pantalla si está activada
-    [self applyScreenProtection];
+    // Cargar configuración
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSInteger lang = [d integerForKey:@"selectedLanguage"];
+    BOOL protection = [d boolForKey:@"screenProtection"];
     
-    // Mostrar pantalla de licencia si no hay una válida
+    [Translations setLanguage:lang];
+    
+    if (protection) {
+        [self setupProtection];
+    }
+    
     [self mostrarPantallaLicencia];
     
     return YES;
+}
+
+- (void)setupProtection {
+    self.protectionView = [[UIView alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    self.protectionView.backgroundColor = [UIColor blackColor];
+    self.protectionView.tag = 9999;
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(hideScreen)
+                                                 name:UIApplicationWillResignActiveNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(showScreen)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
+}
+
+- (void)hideScreen {
+    if (!self.protectionView.superview) {
+        [self.window addSubview:self.protectionView];
+    }
+}
+
+- (void)showScreen {
+    [self.protectionView removeFromSuperview];
 }
 
 - (void)mostrarPantallaLicencia {
@@ -59,37 +93,6 @@
     self.lockWindow.windowLevel = UIWindowLevelAlert + 1;
     [self.lockWindow makeKeyAndVisible];
     [self.lockWindow.rootViewController presentViewController:licenseVC animated:YES completion:nil];
-}
-
-- (void)applyScreenProtection {
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    BOOL protection = [d boolForKey:@"screenProtection"];
-    
-    if (protection) {
-        // Observar cuando la app va a segundo plano (posible captura)
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(hideScreen)
-                                                     name:UIApplicationWillResignActiveNotification
-                                                   object:nil];
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(showScreen)
-                                                     name:UIApplicationDidBecomeActiveNotification
-                                                   object:nil];
-    }
-}
-
-- (void)hideScreen {
-    // Pantalla negra al salir de la app
-    UIView *blackView = [[UIView alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    blackView.backgroundColor = [UIColor blackColor];
-    blackView.tag = 9999;
-    [self.window addSubview:blackView];
-}
-
-- (void)showScreen {
-    // Quitar pantalla negra al volver
-    UIView *blackView = [self.window viewWithTag:9999];
-    [blackView removeFromSuperview];
 }
 
 - (BOOL)validarFormatoLicencia:(NSString *)licencia {
