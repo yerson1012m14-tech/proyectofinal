@@ -46,7 +46,7 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
     tv.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     tv.editable = NO;
     tv.textColor = acento();
-    tv.backgroundColor = [UIColor blackColor];
+    tv.backgroundColor = [UIColor colorWithWhite:0.05 alpha:1.0]; // Fondo más oscuro
     tv.font = [UIFont fontWithName:@"Menlo" size:11];
     tv.contentInset = UIEdgeInsetsMake(10, 10, 10, 10);
     NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:self.ruta error:nil];
@@ -69,19 +69,60 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
 @property (nonatomic, strong) UITableView *tv;
 @end
 @implementation FileBrowserVC
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = colorFondo();
     self.title = self.ruta.lastPathComponent;
-    self.tv = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStylePlain];
+    
+    self.tv = [[UITableView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, self.view.bounds.size.height - 50)];
     self.tv.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.tv.backgroundColor = colorFondo();
     self.tv.separatorColor = [UIColor colorWithWhite:0.2 alpha:1.0];
+    self.tv.separatorInset = UIEdgeInsetsMake(0, 15, 0, 15);
     self.tv.dataSource = self;
     self.tv.delegate = self;
     [self.view addSubview:self.tv];
+
+    // --- NUEVA BARRA DE HERRAMIENTAS INFERIOR ---
+    UIToolbar *toolbar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, self.view.bounds.size.height - 50, self.view.bounds.size.width, 50)];
+    toolbar.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    toolbar.barTintColor = [UIColor blackColor];
+    toolbar.tintColor = acento();
+    
+    UIBarButtonItem *flex = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    UIBarButtonItem *newFolderBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"folder.badge.plus"] style:UIBarButtonItemStylePlain target:self action:@selector(crearCarpeta)];
+    
+    toolbar.items = @[flex, newFolderBtn, flex];
+    [self.view addSubview:toolbar];
+    
     [self recargar];
 }
+
+- (void)crearCarpeta {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Nueva carpeta" message:@"Escribe el nombre" preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"nombre";
+        tf.textColor = [UIColor whiteColor];
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Crear" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSString *name = alert.textFields.firstObject.text;
+        if (name.length > 0) {
+            NSString *newPath = [self.ruta stringByAppendingPathComponent:name];
+            NSError *err = nil;
+            if ([[NSFileManager defaultManager] createDirectoryAtPath:newPath withIntermediateDirectories:NO attributes:nil error:&err]) {
+                [self recargar];
+            } else {
+                UIAlertController *errAlert = [UIAlertController alertControllerWithTitle:@"Error" message:err.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+                [errAlert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+                [self presentViewController:errAlert animated:YES completion:nil];
+            }
+        }
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 - (void)recargar {
     NSMutableArray *dirs = [NSMutableArray new], *files = [NSMutableArray new];
     NSArray *all = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:self.ruta error:nil];
@@ -97,11 +138,13 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
     self.items = fin;
     [self.tv reloadData];
 }
+
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return self.items.count; }
+
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip {
     UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"c"];
     if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"c"];
-    c.backgroundColor = colorFondo();
+    c.backgroundColor = [UIColor colorWithWhite:0.08 alpha:1.0]; // Fondo de celda mejorado
     c.selectedBackgroundView = [UIView new];
     c.selectedBackgroundView.backgroundColor = [UIColor colorWithWhite:0.15 alpha:1.0];
     NSString *n = self.items[ip.row];
@@ -109,6 +152,9 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
     c.textLabel.font = [UIFont fontWithName:@"Menlo" size:13];
     c.detailTextLabel.font = [UIFont fontWithName:@"Menlo" size:10];
     c.detailTextLabel.textColor = [UIColor grayColor];
+    c.layer.cornerRadius = 8; // Bordes redondeados
+    c.clipsToBounds = YES;
+    
     if ([n isEqualToString:@".."]) {
         ponerIcono(c, @"arrow.uturn.left", [UIColor grayColor]);
         c.textLabel.textColor = [UIColor grayColor];
@@ -128,11 +174,13 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
     }
     return c;
 }
+
 - (BOOL)esDir:(NSString *)n {
     BOOL isDir = NO;
     [[NSFileManager defaultManager] fileExistsAtPath:[self.ruta stringByAppendingPathComponent:n] isDirectory:&isDir];
     return isDir;
 }
+
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [t deselectRowAtIndexPath:ip animated:YES];
     NSString *n = self.items[ip.row];
@@ -146,6 +194,27 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
         TextViewVC *tv = [TextViewVC new];
         tv.ruta = full;
         [self.navigationController pushViewController:tv animated:YES];
+    }
+}
+
+// --- NUEVO: Deslizar para eliminar ---
+- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSString *n = self.items[indexPath.row];
+    return ![n isEqualToString:@".."];
+}
+
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (editingStyle == UITableViewCellEditingStyleDelete) {
+        NSString *n = self.items[indexPath.row];
+        NSString *fullPath = [self.ruta stringByAppendingPathComponent:n];
+        NSError *err = nil;
+        if ([[NSFileManager defaultManager] removeItemAtPath:fullPath error:&err]) {
+            [self recargar];
+        } else {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error" message:err.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        }
     }
 }
 @end
@@ -164,11 +233,21 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
     self.view.backgroundColor = colorFondo();
     self.title = @"MiFilza";
 
+    // --- NUEVOS BOTONES ---
+    UIBarButtonItem *refreshBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.clockwise"] style:UIBarButtonItemStylePlain target:self action:@selector(cargarApps)];
+    refreshBtn.tintColor = acento();
+    
+    UIBarButtonItem *rootBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"folder"] style:UIBarButtonItemStylePlain target:self action:@selector(irARaiz)];
+    rootBtn.tintColor = acento();
+    
+    self.navigationItem.rightBarButtonItems = @[refreshBtn, rootBtn];
+
     self.apps = [NSMutableArray new];
     self.tv = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStylePlain];
     self.tv.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.tv.backgroundColor = colorFondo();
     self.tv.separatorColor = [UIColor colorWithWhite:0.2 alpha:1.0];
+    self.tv.separatorInset = UIEdgeInsetsMake(0, 15, 0, 15); // Mejora visual
     self.tv.dataSource = self;
     self.tv.delegate = self;
 
@@ -208,6 +287,14 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
     [self cargarApps];
 }
 
+// --- NUEVA ACCIÓN ---
+- (void)irARaiz {
+    asegurarMotor();
+    FileBrowserVC *fb = [FileBrowserVC new];
+    fb.ruta = @"/";
+    [self.navigationController pushViewController:fb animated:YES];
+}
+
 - (void)cargarApps {
     NSMutableOrderedSet *set = [NSMutableOrderedSet new];
     @try {
@@ -228,6 +315,7 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
         }
     } @catch (NSException *e) {}
 
+    [self.apps removeAllObjects];
     [self.apps addObjectsFromArray:[set array]];
     [self.apps sortUsingSelector:@selector(localizedStandardCompare:)];
     self.title = [NSString stringWithFormat:@"MiFilza (%lu)", (unsigned long)self.apps.count];
@@ -245,7 +333,7 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip {
     UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"a"];
     if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"a"];
-    c.backgroundColor = colorFondo();
+    c.backgroundColor = [UIColor colorWithWhite:0.08 alpha:1.0]; // Fondo mejorado
     c.selectedBackgroundView = [UIView new];
     c.selectedBackgroundView.backgroundColor = [UIColor colorWithWhite:0.15 alpha:1.0];
     c.textLabel.text = self.apps[ip.row];
@@ -256,8 +344,11 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
     c.detailTextLabel.font = [UIFont fontWithName:@"Menlo" size:10];
     ponerIcono(c, @"app.fill", acento());
     c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    c.layer.cornerRadius = 8; // Bordes redondeados
+    c.clipsToBounds = YES;
     return c;
 }
+
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [t deselectRowAtIndexPath:ip animated:YES];
     [self abrirContenedor:self.apps[ip.row]];
@@ -271,7 +362,7 @@ static UIColor *acento(void) { return [UIColor colorWithRed:0.2 green:1.0 blue:0
     @try { p = containerPath(bid); } @catch (NSException *e) { p = nil; }
     if (!p) {
         UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Sin contenedor"
-            message:[NSString stringWithFormat:@"%@ no devolvio ruta (no instalada?)", bid]
+            message:[NSString stringWithFormat:@"%@ no devolvió ruta (no instalada?)", bid]
             preferredStyle:UIAlertControllerStyleAlert];
         [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:a animated:YES completion:nil];
