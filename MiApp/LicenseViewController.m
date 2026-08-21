@@ -281,7 +281,8 @@
     [self.view endEditing:YES];
     NSString *input = [self.licenseField.text uppercaseString];
     
-    if ([self validarFormatoLicencia:input]) {
+    // ✅ AHORA USA LicenseValidator para validar contra la lista de claves
+    if ([LicenseValidator isValidKey:input]) {
         [[NSUserDefaults standardUserDefaults] setObject:input forKey:@"MiFilzaLicenseKey"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         
@@ -295,12 +296,6 @@
         [alert addAction:[UIAlertAction actionWithTitle:[Translations tr:@"retry"] style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
     }
-}
-
-- (BOOL)validarFormatoLicencia:(NSString *)licencia {
-    NSString *regex = @"^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$";
-    NSPredicate *predicado = [NSPredicate predicateWithFormat:@"SELF MATCHES %@", regex];
-    return [predicado evaluateWithObject:licencia];
 }
 
 #pragma mark - Keyboard
