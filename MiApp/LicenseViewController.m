@@ -35,7 +35,6 @@
     UIColor *fieldFill = [UIColor colorWithWhite:0.065 alpha:1.0];
     UIColor *red = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
     
-    // ===== GLOWS DE FONDO =====
     UIView *topGlow = [[UIView alloc] init];
     topGlow.translatesAutoresizingMaskIntoConstraints = NO;
     topGlow.backgroundColor = [red colorWithAlphaComponent:0.055];
@@ -52,7 +51,6 @@
     bottomGlow.userInteractionEnabled = NO;
     [self.view addSubview:bottomGlow];
     
-    // ===== LOGO =====
     UILabel *brand = [[UILabel alloc] init];
     brand.translatesAutoresizingMaskIntoConstraints = NO;
     brand.textAlignment = NSTextAlignmentCenter;
@@ -63,7 +61,6 @@
     brand.minimumScaleFactor = 0.75;
     [self.view addSubview:brand];
     
-    // Línea roja
     UIView *brandLine = [[UIView alloc] init];
     brandLine.translatesAutoresizingMaskIntoConstraints = NO;
     brandLine.backgroundColor = red;
@@ -74,7 +71,6 @@
     brandLine.layer.shadowOffset = CGSizeZero;
     [self.view addSubview:brandLine];
     
-    // Subtítulo con letterSpacing (iOS 17+)
     UILabel *subtitle = [[UILabel alloc] init];
     subtitle.translatesAutoresizingMaskIntoConstraints = NO;
     subtitle.text = @"LICENSE ACTIVATION";
@@ -84,7 +80,6 @@
     subtitle.textAlignment = NSTextAlignmentCenter;
     [self.view addSubview:subtitle];
     
-    // ===== CAMPO DE TEXTO =====
     self.licenseField = [[UITextField alloc] init];
     self.licenseField.translatesAutoresizingMaskIntoConstraints = NO;
     self.licenseField.backgroundColor = fieldFill;
@@ -114,7 +109,6 @@
         }];
     [self.view addSubview:self.licenseField];
     
-    // ===== BOTÓN =====
     self.buttonShadow = [[UIView alloc] init];
     self.buttonShadow.translatesAutoresizingMaskIntoConstraints = NO;
     self.buttonShadow.backgroundColor = [red colorWithAlphaComponent:0.16];
@@ -137,7 +131,6 @@
     [self.continueButton addTarget:self action:@selector(activateLicense) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.continueButton];
     
-    // Gradiente del botón
     self.buttonGradient = [CAGradientLayer layer];
     self.buttonGradient.colors = @[
         (id)[UIColor colorWithRed:0.98 green:0.12 blue:0.14 alpha:1.0].CGColor,
@@ -148,7 +141,6 @@
     self.buttonGradient.cornerRadius = 14.0;
     [self.continueButton.layer insertSublayer:self.buttonGradient atIndex:0];
     
-    // ===== CONSTRAINTS =====
     [NSLayoutConstraint activateConstraints:@[
         [topGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [topGlow.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:-220],
@@ -210,20 +202,15 @@
 #pragma mark - Animaciones
 
 - (void)animateEntrance {
-    self.brand.alpha = 0;
     self.licenseField.alpha = 0;
     self.continueButton.alpha = 0;
     self.buttonShadow.alpha = 0;
     
-    [UIView animateWithDuration:0.6 delay:0.0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:0 animations:^{
-        self.brand.alpha = 1;
-    } completion:nil];
-    
-    [UIView animateWithDuration:0.6 delay:0.3 usingSpringWithDamping:0.75 initialSpringVelocity:0.3 options:0 animations:^{
+    [UIView animateWithDuration:0.6 delay:0.0 usingSpringWithDamping:0.75 initialSpringVelocity:0.3 options:0 animations:^{
         self.licenseField.alpha = 1;
     } completion:nil];
     
-    [UIView animateWithDuration:0.6 delay:0.5 usingSpringWithDamping:0.7 initialSpringVelocity:0.4 options:0 animations:^{
+    [UIView animateWithDuration:0.6 delay:0.2 usingSpringWithDamping:0.7 initialSpringVelocity:0.4 options:0 animations:^{
         self.continueButton.alpha = 1;
         self.buttonShadow.alpha = 1;
     } completion:nil];
