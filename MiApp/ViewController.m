@@ -248,6 +248,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 @property (nonatomic, strong) UITextField *campo;
 @property (nonatomic, strong) NSMutableArray *apps;
 @property (nonatomic, strong) UILabel *vacioLabel;
+@property (nonatomic, assign) BOOL isLoading;
 @end
 
 @implementation ViewController
@@ -257,6 +258,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     self.view.backgroundColor = colorFondo();
     self.title = @"Explorar";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
+    self.isLoading = NO;
     
     UIBarButtonItem *refreshBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.clockwise"] style:UIBarButtonItemStylePlain target:self action:@selector(cargarApps)];
     refreshBtn.tintColor = acento();
@@ -315,20 +317,29 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    // Recargar apps al volver a esta pestaña
     [self cargarApps];
 }
 
 - (void)irARaiz {
-    asegurarMotor();
-    FileBrowserVC *fb = [FileBrowserVC new];
-    fb.ruta = @"/";
-    [self.navigationController pushViewController:fb animated:YES];
+    if (self.isLoading) return;
+    self.isLoading = YES;
+    @try {
+        asegurarMotor();
+        FileBrowserVC *fb = [FileBrowserVC new];
+        fb.ruta = @"/";
+        [self.navigationController pushViewController:fb animated:YES];
+    } @catch (NSException *exception) {
+        NSLog(@"Error al ir a raíz: %@", exception);
+    }
+    self.isLoading = NO;
 }
 
 - (void)cargarApps {
-    NSMutableOrderedSet *set = [NSMutableOrderedSet new];
+    if (self.isLoading) return;
+    self.isLoading = YES;
+    
     @try {
+        NSMutableOrderedSet *set = [NSMutableOrderedSet new];
         Class ws = NSClassFromString(@"LSApplicationWorkspace");
         if (ws && [ws respondsToSelector:@selector(defaultWorkspace)]) {
             id workspace = [ws performSelector:@selector(defaultWorkspace)];
@@ -344,14 +355,18 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
                 }
             }
         }
-    } @catch (NSException *e) {}
+        
+        [self.apps removeAllObjects];
+        [self.apps addObjectsFromArray:[set array]];
+        [self.apps sortUsingSelector:@selector(localizedStandardCompare:)];
+        self.title = [NSString stringWithFormat:@"Explorar (%lu)", (unsigned long)self.apps.count];
+        self.vacioLabel.hidden = (self.apps.count != 0);
+        [self.tv reloadData];
+    } @catch (NSException *exception) {
+        NSLog(@"Error al cargar apps: %@", exception);
+    }
     
-    [self.apps removeAllObjects];
-    [self.apps addObjectsFromArray:[set array]];
-    [self.apps sortUsingSelector:@selector(localizedStandardCompare:)];
-    self.title = [NSString stringWithFormat:@"Explorar (%lu)", (unsigned long)self.apps.count];
-    self.vacioLabel.hidden = (self.apps.count != 0);
-    [self.tv reloadData];
+    self.isLoading = NO;
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)tf {
@@ -387,28 +402,48 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     [self abrirContenedor:self.apps[ip.row]];
 }
 
+// Método público seguro (llamado desde HomeViewController)
+- (void)abrirContenedorSeguro:(NSString *)bid {
+    [self abrirContenedor:bid];
+}
+
 - (void)abrirContenedor:(NSString *)bid {
+    if (self.isLoading) return;
+    
     bid = [bid stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
     if (!bid.length) return;
     
-    // ✅ FIX: Limpiar el stack de navegación antes de abrir
-    // Esto evita que se acumulen vistas al volver desde otra pestaña
-    [self.navigationController popToRootViewControllerAnimated:NO];
+    self.isLoading = YES;
     
-    asegurarMotor();
-    NSString *p = nil;
-    @try { p = containerPath(bid); } @catch (NSException *e) { p = nil; }
-    if (!p) {
-        UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Sin contenedor"
-            message:[NSString stringWithFormat:@"%@ no devolvió ruta (no instalada?)", bid]
-            preferredStyle:UIAlertControllerStyleAlert];
-        [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:a animated:YES completion:nil];
-        return;
+    @try {
+        // Limpiar navegación de forma segura
+        if (self.navigationController) {
+            [self.navigationController popToRootViewControllerAnimated:NO];
+        }
+        
+        asegurarMotor();
+        
+        NSString *p = nil;
+        @try { p = containerPath(bid); } @catch (NSException *e) { p = nil; }
+        
+        if (!p) {
+            UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Sin contenedor"
+                message:[NSString stringWithFormat:@"%@ no devolvió ruta (no instalada?)", bid]
+                preferredStyle:UIAlertControllerStyleAlert];
+            [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:a animated:YES completion:nil];
+            self.isLoading = NO;
+            return;
+        }
+        
+        FileBrowserVC *fb = [FileBrowserVC new];
+        fb.ruta = p;
+        [self.navigationController pushViewController:fb animated:YES];
+    } @catch (NSException *exception) {
+        NSLog(@"Error al abrir contenedor: %@", exception);
     }
-    FileBrowserVC *fb = [FileBrowserVC new];
-    fb.ruta = p;
-    [self.navigationController pushViewController:fb animated:YES];
+    
+    self.isLoading = NO;
 }
 
 @end
