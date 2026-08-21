@@ -12,8 +12,7 @@ static NSString * const kLicenseAPIURL =
         @"^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$";
 
     NSPredicate *predicate =
-        [NSPredicate predicateWithFormat:
-            @"SELF MATCHES %@", regex];
+        [NSPredicate predicateWithFormat:@"SELF MATCHES %@", regex];
 
     return [predicate evaluateWithObject:key];
 }
@@ -27,11 +26,6 @@ static NSString * const kLicenseAPIURL =
         return identifier.UUIDString;
     }
 
-    /*
-     * Fallback.
-     *
-     * No guardamos secretos ni usamos UDID.
-     */
     return @"unknown-device";
 }
 
@@ -100,10 +94,10 @@ static NSString * const kLicenseAPIURL =
     request.HTTPMethod = @"POST";
 
     [request setValue:@"application/json"
-    forHTTPHeaderField:@"Content-Type"];
+   forHTTPHeaderField:@"Content-Type"];
 
     [request setValue:@"application/json"
-    forHTTPHeaderField:@"Accept"];
+   forHTTPHeaderField:@"Accept"];
 
     request.HTTPBody = jsonData;
 
@@ -111,48 +105,50 @@ static NSString * const kLicenseAPIURL =
         [[NSURLSession sharedSession]
             dataTaskWithRequest:request
               completionHandler:
-        ^(NSData * _Nullable data,
-          NSURLResponse * _Nullable response,
-          NSError * _Nullable error) {
+    ^(NSData * _Nullable data,
+      NSURLResponse * _Nullable response,
+      NSError * _Nullable error) {
 
         dispatch_async(dispatch_get_main_queue(), ^{
 
             if (error) {
+
                 if (completion) {
-                    completion(NO,
-                              @"network_error",
-                              nil);
+                    completion(NO, @"network_error", nil);
                 }
+
                 return;
             }
 
             if (!data) {
+
                 if (completion) {
-                    completion(NO,
-                              @"empty_response",
-                              nil);
+                    completion(NO, @"empty_response", nil);
                 }
+
                 return;
             }
 
             NSError *parseError = nil;
 
-            NSDictionary *json =
+            id object =
                 [NSJSONSerialization
                     JSONObjectWithData:data
                     options:0
                     error:&parseError];
 
-            if (![json isKindOfClass:[NSDictionary class]]) {
+            if (parseError ||
+                ![object isKindOfClass:[NSDictionary class]]) {
 
                 if (completion) {
-                    completion(NO,
-                              @"invalid_response",
-                              nil);
+                    completion(NO, @"invalid_response", nil);
                 }
 
                 return;
             }
+
+            NSDictionary *json =
+                (NSDictionary *)object;
 
             BOOL valid =
                 [json[@"valid"] boolValue];
@@ -168,9 +164,7 @@ static NSString * const kLicenseAPIURL =
                     : nil;
 
             if (completion) {
-                completion(valid,
-                           reason,
-                           expiresAt);
+                completion(valid, reason, expiresAt);
             }
         });
     }];
