@@ -1,6 +1,8 @@
 #import "HomeViewController.h"
 
 @interface HomeViewController ()
+@property (nonatomic, strong) UIButton *btnNormal;
+@property (nonatomic, strong) UIButton *btnMax;
 @end
 
 @implementation HomeViewController
@@ -19,6 +21,7 @@
     UIColor *red = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
     UIColor *green = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
     
+    // Glow superior
     UIView *topGlow = [[UIView alloc] init];
     topGlow.translatesAutoresizingMaskIntoConstraints = NO;
     topGlow.backgroundColor = [red colorWithAlphaComponent:0.055];
@@ -27,6 +30,7 @@
     topGlow.userInteractionEnabled = NO;
     [self.view addSubview:topGlow];
     
+    // Glow inferior
     UIView *bottomGlow = [[UIView alloc] init];
     bottomGlow.translatesAutoresizingMaskIntoConstraints = NO;
     bottomGlow.backgroundColor = [green colorWithAlphaComponent:0.045];
@@ -35,6 +39,7 @@
     bottomGlow.userInteractionEnabled = NO;
     [self.view addSubview:bottomGlow];
     
+    // Logo XITFORGE
     UILabel *logo = [[UILabel alloc] init];
     logo.translatesAutoresizingMaskIntoConstraints = NO;
     logo.text = @"XITFORGE";
@@ -43,6 +48,7 @@
     logo.textAlignment = NSTextAlignmentCenter;
     [self.view addSubview:logo];
     
+    // Línea roja bajo el logo
     UIView *line = [[UIView alloc] init];
     line.translatesAutoresizingMaskIntoConstraints = NO;
     line.backgroundColor = red;
@@ -53,105 +59,105 @@
     line.layer.shadowOffset = CGSizeZero;
     [self.view addSubview:line];
     
-    UILabel *welcome = [[UILabel alloc] init];
-    welcome.translatesAutoresizingMaskIntoConstraints = NO;
-    welcome.text = @"Bienvenido";
-    welcome.textColor = white;
-    welcome.font = [UIFont systemFontOfSize:22.0 weight:UIFontWeightSemibold];
-    welcome.textAlignment = NSTextAlignmentCenter;
-    [self.view addSubview:welcome];
+    // Pregunta "¿EN CUAL JUEGAS?"
+    UILabel *pregunta = [[UILabel alloc] init];
+    pregunta.translatesAutoresizingMaskIntoConstraints = NO;
+    pregunta.text = @"¿EN CUAL JUEGAS?";
+    pregunta.textColor = white;
+    pregunta.font = [UIFont systemFontOfSize:20.0 weight:UIFontWeightBold];
+    pregunta.textAlignment = NSTextAlignmentCenter;
+    [self.view addSubview:pregunta];
     
-    UILabel *subtitle = [[UILabel alloc] init];
-    subtitle.translatesAutoresizingMaskIntoConstraints = NO;
-    subtitle.text = @"Explorador de archivos para iOS";
-    subtitle.textColor = muted;
-    subtitle.font = [UIFont systemFontOfSize:14.0];
-    subtitle.textAlignment = NSTextAlignmentCenter;
-    [self.view addSubview:subtitle];
+    // Botón FREE FIRE NORMAL
+    self.btnNormal = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.btnNormal.translatesAutoresizingMaskIntoConstraints = NO;
+    self.btnNormal.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:1.0];
+    self.btnNormal.layer.cornerRadius = 14.0;
+    self.btnNormal.layer.borderWidth = 1.5;
+    self.btnNormal.layer.borderColor = red.CGColor;
+    self.btnNormal.layer.shadowColor = red.CGColor;
+    self.btnNormal.layer.shadowOpacity = 0.25;
+    self.btnNormal.layer.shadowRadius = 10.0;
+    self.btnNormal.layer.shadowOffset = CGSizeZero;
+    [self.btnNormal setTitle:@"FREE FIRE\nNORMAL" forState:UIControlStateNormal];
+    [self.btnNormal.titleLabel setFont:[UIFont boldSystemFontOfSize:14]];
+    [self.btnNormal setTitleColor:white forState:UIControlStateNormal];
+    [self.btnNormal.titleLabel setNumberOfLines:2];
+    [self.btnNormal.titleLabel setTextAlignment:NSTextAlignmentCenter];
+    [self.btnNormal addTarget:self action:@selector(btnNormalTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.btnNormal];
     
-    UIView *infoCard = [[UIView alloc] init];
-    infoCard.translatesAutoresizingMaskIntoConstraints = NO;
-    infoCard.backgroundColor = [UIColor colorWithRed:0.08 green:0.08 blue:0.10 alpha:1.0];
-    infoCard.layer.cornerRadius = 16;
-    infoCard.clipsToBounds = YES;
-    [self.view addSubview:infoCard];
+    // Botón FREE FIRE MAX
+    self.btnMax = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.btnMax.translatesAutoresizingMaskIntoConstraints = NO;
+    self.btnMax.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:1.0];
+    self.btnMax.layer.cornerRadius = 14.0;
+    self.btnMax.layer.borderWidth = 1.5;
+    self.btnMax.layer.borderColor = green.CGColor;
+    self.btnMax.layer.shadowColor = green.CGColor;
+    self.btnMax.layer.shadowOpacity = 0.25;
+    self.btnMax.layer.shadowRadius = 10.0;
+    self.btnMax.layer.shadowOffset = CGSizeZero;
+    [self.btnMax setTitle:@"FREE FIRE\nMAX" forState:UIControlStateNormal];
+    [self.btnMax.titleLabel setFont:[UIFont boldSystemFontOfSize:14]];
+    [self.btnMax setTitleColor:white forState:UIControlStateNormal];
+    [self.btnMax.titleLabel setNumberOfLines:2];
+    [self.btnMax.titleLabel setTextAlignment:NSTextAlignmentCenter];
+    [self.btnMax addTarget:self action:@selector(btnMaxTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.btnMax];
     
-    UIImageView *infoIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"info.circle.fill"]];
-    infoIcon.translatesAutoresizingMaskIntoConstraints = NO;
-    infoIcon.tintColor = green;
-    [infoCard addSubview:infoIcon];
-    
-    UILabel *infoTitle = [[UILabel alloc] init];
-    infoTitle.translatesAutoresizingMaskIntoConstraints = NO;
-    infoTitle.text = @"CARACTERÍSTICAS";
-    infoTitle.textColor = white;
-    infoTitle.font = [UIFont boldSystemFontOfSize:13];
-    [infoCard addSubview:infoTitle];
-    
-    UILabel *infoText = [[UILabel alloc] init];
-    infoText.translatesAutoresizingMaskIntoConstraints = NO;
-    infoText.text = @"• Explora el sistema de archivos\n• Accede a contenedores de apps\n• Edita archivos de configuración\n• Crea y elimina carpetas";
-    infoText.textColor = muted;
-    infoText.font = [UIFont systemFontOfSize:12];
-    infoText.numberOfLines = 0;
-    [infoCard addSubview:infoText];
-    
-    UILabel *version = [[UILabel alloc] init];
-    version.translatesAutoresizingMaskIntoConstraints = NO;
-    version.text = @"v1.0.0";
-    version.textColor = [UIColor colorWithWhite:0.30 alpha:1.0];
-    version.font = [UIFont fontWithName:@"Menlo" size:11];
-    version.textAlignment = NSTextAlignmentCenter;
-    [self.view addSubview:version];
-    
+    // Constraints
     [NSLayoutConstraint activateConstraints:@[
+        // Glow superior
         [topGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [topGlow.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:-220],
         [topGlow.widthAnchor constraintEqualToConstant:340],
         [topGlow.heightAnchor constraintEqualToConstant:340],
         
+        // Glow inferior
         [bottomGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [bottomGlow.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor constant:170],
         [bottomGlow.widthAnchor constraintEqualToConstant:300],
         [bottomGlow.heightAnchor constraintEqualToConstant:300],
         
+        // Logo
         [logo.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [logo.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:40],
         
+        // Línea roja
         [line.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [line.topAnchor constraintEqualToAnchor:logo.bottomAnchor constant:12],
         [line.widthAnchor constraintEqualToConstant:60],
         [line.heightAnchor constraintEqualToConstant:2],
         
-        [welcome.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [welcome.topAnchor constraintEqualToAnchor:line.bottomAnchor constant:40],
+        // Pregunta
+        [pregunta.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [pregunta.topAnchor constraintEqualToAnchor:line.bottomAnchor constant:50],
+        [pregunta.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:20],
+        [pregunta.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-20],
         
-        [subtitle.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [subtitle.topAnchor constraintEqualToAnchor:welcome.bottomAnchor constant:8],
-        [subtitle.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:20],
-        [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-20],
+        // Botón FREE FIRE NORMAL (izquierda)
+        [self.btnNormal.centerYAnchor constraintEqualToAnchor:self.btnMax.centerYAnchor],
+        [self.btnNormal.trailingAnchor constraintEqualToAnchor:self.view.centerXAnchor constant:-8],
+        [self.btnNormal.widthAnchor constraintEqualToConstant:140],
+        [self.btnNormal.heightAnchor constraintEqualToConstant:80],
         
-        [infoCard.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [infoCard.topAnchor constraintEqualToAnchor:subtitle.bottomAnchor constant:40],
-        [infoCard.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:20],
-        [infoCard.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-20],
-        
-        [infoIcon.topAnchor constraintEqualToAnchor:infoCard.topAnchor constant:16],
-        [infoIcon.leadingAnchor constraintEqualToAnchor:infoCard.leadingAnchor constant:16],
-        [infoIcon.widthAnchor constraintEqualToConstant:22],
-        [infoIcon.heightAnchor constraintEqualToConstant:22],
-        
-        [infoTitle.leadingAnchor constraintEqualToAnchor:infoIcon.trailingAnchor constant:10],
-        [infoTitle.topAnchor constraintEqualToAnchor:infoIcon.topAnchor],
-        
-        [infoText.topAnchor constraintEqualToAnchor:infoIcon.bottomAnchor constant:12],
-        [infoText.leadingAnchor constraintEqualToAnchor:infoCard.leadingAnchor constant:16],
-        [infoText.trailingAnchor constraintEqualToAnchor:infoCard.trailingAnchor constant:-16],
-        [infoText.bottomAnchor constraintEqualToAnchor:infoCard.bottomAnchor constant:-16],
-        
-        [version.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [version.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-10],
+        // Botón FREE FIRE MAX (derecha)
+        [self.btnMax.centerYAnchor constraintEqualToAnchor:self.btnNormal.centerYAnchor],
+        [self.btnMax.leadingAnchor constraintEqualToAnchor:self.view.centerXAnchor constant:8],
+        [self.btnMax.widthAnchor constraintEqualToConstant:140],
+        [self.btnMax.heightAnchor constraintEqualToConstant:80],
     ]];
+}
+
+#pragma mark - Acciones de botones
+
+- (void)btnNormalTapped {
+    // Por ahora no hace nada, después me dices qué hacer
+}
+
+- (void)btnMaxTapped {
+    // Por ahora no hace nada, después me dices qué hacer
 }
 
 @end
