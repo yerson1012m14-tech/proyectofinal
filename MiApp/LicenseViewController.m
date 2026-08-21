@@ -131,7 +131,6 @@
     buttonShadow.userInteractionEnabled = NO;
     [self.view insertSubview:buttonShadow belowSubview:self.continueButton];
     
-    // Botón de configuración
     self.settingsButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.settingsButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.settingsButton setImage:[UIImage systemImageNamed:@"gearshape.fill"] forState:UIControlStateNormal];
@@ -220,15 +219,15 @@
 - (void)showSettings {
     UIAlertController *settingsAlert = [UIAlertController alertControllerWithTitle:@"Configuración" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     
-    UIAlertAction *langES = [UIAlertAction actionWithTitle:@"🇪🇸 Español" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    UIAlertAction *langES = [UIAlertAction actionWithTitle:@"🇪 Español" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         self.selectedLanguage = 0;
         [self saveSettings];
     }];
-    UIAlertAction *langEN = [UIAlertAction actionWithTitle:@"🇺 English" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    UIAlertAction *langEN = [UIAlertAction actionWithTitle:@"🇸 English" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         self.selectedLanguage = 1;
         [self saveSettings];
     }];
-    UIAlertAction *langPT = [UIAlertAction actionWithTitle:@"🇷 Português" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    UIAlertAction *langPT = [UIAlertAction actionWithTitle:@"🇧🇷 Português" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         self.selectedLanguage = 2;
         [self saveSettings];
     }];
@@ -244,17 +243,17 @@
         [self saveSettings];
         [self applyTheme];
     }];
-    UIAlertAction *bgGray = [UIAlertAction actionWithTitle:@" Fondo Gris" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    UIAlertAction *bgGray = [UIAlertAction actionWithTitle:@"⚫ Fondo Gris" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         self.selectedBgColor = 1;
         [self saveSettings];
         [self applyTheme];
     }];
-    UIAlertAction *bgBlue = [UIAlertAction actionWithTitle:@" Fondo Azul" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    UIAlertAction *bgBlue = [UIAlertAction actionWithTitle:@"🔵 Fondo Azul" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         self.selectedBgColor = 2;
         [self saveSettings];
         [self applyTheme];
     }];
-    UIAlertAction *bgPurple = [UIAlertAction actionWithTitle:@"🟣 Fondo Morado" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    UIAlertAction *bgPurple = [UIAlertAction actionWithTitle:@" Fondo Morado" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         self.selectedBgColor = 3;
         [self saveSettings];
         [self applyTheme];
