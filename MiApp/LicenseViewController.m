@@ -37,10 +37,13 @@
     [logoContainer addSubview:logoRight];
     [self.view addSubview:logoContainer];
     
-    // Línea roja sutil debajo del logo (como en tu imagen)
+    // Línea roja sutil debajo del logo
     UIView *lineView = [[UIView alloc] init];
     lineView.backgroundColor = redColor;
     lineView.translatesAutoresizingMaskIntoConstraints = NO;
+    // CORRECCIÓN: Configurar el redondeo AQUÍ, fuera del array de constraints
+    lineView.layer.cornerRadius = 1.5;
+    lineView.layer.masksToBounds = YES; 
     [self.view addSubview:lineView];
     
     // 2. CAMPO DE TEXTO (con formato automático de guiones)
@@ -92,12 +95,11 @@
         [logoRight.centerYAnchor constraintEqualToAnchor:logoContainer.centerYAnchor],
         [logoContainer.trailingAnchor constraintEqualToAnchor:logoRight.trailingAnchor],
         
-        // Línea roja debajo del logo
+        // Línea roja debajo del logo (SIN la línea de cornerRadius aquí)
         [lineView.topAnchor constraintEqualToAnchor:logoContainer.bottomAnchor constant:8],
         [lineView.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [lineView.widthAnchor constraintEqualToConstant:120],
         [lineView.heightAnchor constraintEqualToConstant:3],
-        [lineView.layer setValue:@(1.5) forKeyPath:@"cornerRadius"], // Redondear puntas de la línea
         
         // Campo de texto
         [self.licenseField.topAnchor constraintEqualToAnchor:lineView.bottomAnchor constant:50],
@@ -116,19 +118,15 @@
 #pragma mark - Lógica de Auto-formato con guiones (XXXX-XXXX-XXXX-XXXX)
 
 - (BOOL)textField:(UITextField *)textField shouldChangeCharactersInRange:(NSRange)range replacementString:(NSString *)string {
-    // Obtener el texto actual y aplicar el reemplazo
     NSString *currentText = textField.text;
     NSString *newText = [currentText stringByReplacingCharactersInRange:range withString:string];
     
-    // Eliminar cualquier carácter que no sea alfanumérico
     newText = [[newText componentsSeparatedByCharactersInSet:[[NSCharacterSet alphanumericCharacterSet] invertedSet]] componentsJoinedByString:@""];
     
-    // Limitar a 16 caracteres
     if (newText.length > 16) {
         return NO;
     }
     
-    // Insertar guiones automáticamente
     NSMutableString *formattedString = [NSMutableString string];
     for (int i = 0; i < newText.length; i++) {
         unichar character = [newText characterAtIndex:i];
@@ -139,7 +137,7 @@
     }
     
     textField.text = formattedString;
-    return NO; // Evita que se aplique el cambio predeterminado
+    return NO;
 }
 
 #pragma mark - Acción del botón
