@@ -249,6 +249,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 @property (nonatomic, strong) NSMutableArray *apps;
 @property (nonatomic, strong) UILabel *vacioLabel;
 @property (nonatomic, assign) BOOL hasProcessedAutoOpen;
+@property (nonatomic, assign) BOOL isViewReady;
 @end
 
 @implementation ViewController
@@ -259,6 +260,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     self.title = @"Explorar";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
     self.hasProcessedAutoOpen = NO;
+    self.isViewReady = NO;
     
     UIBarButtonItem *refreshBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.clockwise"] style:UIBarButtonItemStylePlain target:self action:@selector(cargarApps)];
     refreshBtn.tintColor = acento();
@@ -318,36 +320,61 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self cargarApps];
-    
-    // Verificar si hay un bundle ID pendiente de abrir
-    [self procesarAutoOpen];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    // Resetear el flag cuando la vista aparece completamente
-    // para permitir que funcione de nuevo si el usuario vuelve a Inicio
-    if (!self.navigationController || self.navigationController.topViewController == self) {
-        self.hasProcessedAutoOpen = NO;
-    }
+    
+    // Marcar que la vista está completamente lista
+    self.isViewReady = YES;
+    
+    // Procesar auto-open solo cuando la vista esté completamente visible
+    [self procesarAutoOpen];
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    // No resetear el flag aquí, solo cuando volvemos al root
 }
 
 - (void)procesarAutoOpen {
+    // Solo procesar si la vista está completamente lista y no hemos procesado ya
+    if (!self.isViewReady || self.hasProcessedAutoOpen) {
+        return;
+    }
+    
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *bundleID = [defaults stringForKey:@"AutoOpenBundleID"];
     
-    if (bundleID && !self.hasProcessedAutoOpen) {
-        self.hasProcessedAutoOpen = YES;
-        
-        // Limpiar el valor inmediatamente
-        [defaults removeObjectForKey:@"AutoOpenBundleID"];
-        [defaults synchronize];
-        
-        // Esperar a que la vista esté completamente cargada
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [self abrirContenedorDesdeAutoOpen:bundleID];
-        });
+    if (!bundleID || bundleID.length == 0) {
+        return;
     }
+    
+    // Marcar como procesado inmediatamente
+    self.hasProcessedAutoOpen = YES;
+    
+    // Limpiar el valor
+    [defaults removeObjectForKey:@"AutoOpenBundleID"];
+    [defaults synchronize];
+    
+    // Verificar que el navigationController está en un estado válido
+    if (!self.navigationController) {
+        return;
+    }
+    
+    // Solo hacer el push si estamos en el root del navigationController
+    if (self.navigationController.topViewController != self) {
+        return;
+    }
+    
+    // Esperar un poco más para asegurar que todo está listo
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        @try {
+            [self abrirContenedorDesdeAutoOpen:bundleID];
+        } @catch (NSException *exception) {
+            NSLog(@"Error en auto-open: %@", exception);
+        }
+    });
 }
 
 - (void)abrirContenedorDesdeAutoOpen:(NSString *)bid {
@@ -355,7 +382,11 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
         bid = [bid stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         if (!bid.length) return;
         
-        // NO hacer popToRoot aquí, ya estamos en la raíz
+        // Verificar nuevamente que estamos en el root
+        if (self.navigationController.topViewController != self) {
+            return;
+        }
+        
         asegurarMotor();
         
         NSString *p = nil;
