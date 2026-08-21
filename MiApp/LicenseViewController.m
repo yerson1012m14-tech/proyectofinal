@@ -1,5 +1,6 @@
 #import "LicenseViewController.h"
 #import "SettingsViewController.h"
+#import "Translations.h"
 #import <QuartzCore/QuartzCore.h>
 
 @interface LicenseViewController () <UITextFieldDelegate>
@@ -9,8 +10,6 @@
 @property (nonatomic, strong) UIButton *settingsButton;
 @property (nonatomic, assign) NSInteger selectedLanguage;
 @property (nonatomic, assign) BOOL screenProtection;
-@property (nonatomic, assign) NSInteger selectedBgColor;
-@property (nonatomic, assign) NSInteger selectedTextColor;
 @end
 
 @implementation LicenseViewController
@@ -18,7 +17,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     [self loadSettings];
-    [self applyTheme];
+    [Translations setLanguage:self.selectedLanguage];
     [self setupUI];
 }
 
@@ -26,10 +25,11 @@
 
 - (void)setupUI {
     UIColor *white = [UIColor colorWithWhite:0.96 alpha:1.0];
-    UIColor *muted = [UIColor colorWithWhite:0.50 alpha:1.0];
     UIColor *fieldBorder = [UIColor colorWithWhite:0.20 alpha:1.0];
     UIColor *fieldFill = [UIColor colorWithWhite:0.065 alpha:1.0];
     UIColor *red = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
+    
+    self.view.backgroundColor = [UIColor blackColor];
     
     UIView *topGlow = [[UIView alloc] init];
     topGlow.translatesAutoresizingMaskIntoConstraints = NO;
@@ -70,6 +70,7 @@
     self.licenseField = [[UITextField alloc] init];
     self.licenseField.translatesAutoresizingMaskIntoConstraints = NO;
     self.licenseField.backgroundColor = fieldFill;
+    self.licenseField.textColor = white;
     self.licenseField.font = [UIFont monospacedSystemFontOfSize:17.0 weight:UIFontWeightMedium];
     self.licenseField.textAlignment = NSTextAlignmentCenter;
     self.licenseField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
@@ -100,7 +101,7 @@
     self.continueButton.layer.cornerRadius = 14.0;
     self.continueButton.layer.masksToBounds = YES;
     
-    [self.continueButton setAttributedTitle:[[NSAttributedString alloc] initWithString:@"CONTINUAR"
+    [self.continueButton setAttributedTitle:[[NSAttributedString alloc] initWithString:[Translations tr:@"continue"]
         attributes:@{
             NSFontAttributeName: [UIFont systemFontOfSize:15.0 weight:UIFontWeightBold],
             NSForegroundColorAttributeName: [UIColor whiteColor],
@@ -131,7 +132,6 @@
     buttonShadow.userInteractionEnabled = NO;
     [self.view insertSubview:buttonShadow belowSubview:self.continueButton];
     
-    // Botón de configuración
     self.settingsButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.settingsButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.settingsButton setImage:[UIImage systemImageNamed:@"gearshape.fill"] forState:UIControlStateNormal];
@@ -204,16 +204,12 @@
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     self.selectedLanguage = [d integerForKey:@"selectedLanguage"];
     self.screenProtection = [d boolForKey:@"screenProtection"];
-    self.selectedBgColor = [d integerForKey:@"selectedBgColor"];
-    self.selectedTextColor = [d integerForKey:@"selectedTextColor"];
 }
 
 - (void)saveSettings {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     [d setInteger:self.selectedLanguage forKey:@"selectedLanguage"];
     [d setBool:self.screenProtection forKey:@"screenProtection"];
-    [d setInteger:self.selectedBgColor forKey:@"selectedBgColor"];
-    [d setInteger:self.selectedTextColor forKey:@"selectedTextColor"];
     [d synchronize];
 }
 
@@ -221,16 +217,13 @@
     SettingsViewController *svc = [[SettingsViewController alloc] init];
     svc.selectedLanguage = self.selectedLanguage;
     svc.screenProtection = self.screenProtection;
-    svc.selectedBgColor = self.selectedBgColor;
-    svc.selectedTextColor = self.selectedTextColor;
     
     svc.onSettingsChanged = ^{
         self.selectedLanguage = svc.selectedLanguage;
         self.screenProtection = svc.screenProtection;
-        self.selectedBgColor = svc.selectedBgColor;
-        self.selectedTextColor = svc.selectedTextColor;
         [self saveSettings];
-        [self applyTheme];
+        [Translations setLanguage:self.selectedLanguage];
+        [self updateButtonText];
     };
     
     svc.modalPresentationStyle = UIModalPresentationPageSheet;
@@ -242,28 +235,13 @@
     [self presentViewController:svc animated:YES completion:nil];
 }
 
-- (void)applyTheme {
-    NSArray *bgColors = @[
-        [UIColor colorWithRed:0.018 green:0.018 blue:0.022 alpha:1.0],
-        [UIColor colorWithRed:0.10 green:0.10 blue:0.12 alpha:1.0],
-        [UIColor colorWithRed:0.02 green:0.05 blue:0.15 alpha:1.0],
-        [UIColor colorWithRed:0.08 green:0.02 blue:0.12 alpha:1.0]
-    ];
-    
-    NSArray *textColors = @[
-        [UIColor colorWithWhite:0.96 alpha:1.0],
-        [UIColor colorWithWhite:0.60 alpha:1.0],
-        [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0],
-        [UIColor colorWithRed:0.20 green:0.90 blue:0.30 alpha:1.0]
-    ];
-    
-    UIColor *bgColor = bgColors[self.selectedBgColor];
-    UIColor *txtColor = textColors[self.selectedTextColor];
-    
-    self.view.backgroundColor = bgColor;
-    if (self.licenseField) {
-        self.licenseField.textColor = txtColor;
-    }
+- (void)updateButtonText {
+    [self.continueButton setAttributedTitle:[[NSAttributedString alloc] initWithString:[Translations tr:@"continue"]
+        attributes:@{
+            NSFontAttributeName: [UIFont systemFontOfSize:15.0 weight:UIFontWeightBold],
+            NSForegroundColorAttributeName: [UIColor whiteColor],
+            NSKernAttributeName: @1.5
+        }] forState:UIControlStateNormal];
 }
 
 #pragma mark - License formatting
@@ -312,10 +290,10 @@
             self.onLicenseValidated();
         }
     } else {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Clave no válida"
-            message:@"Ingresa una clave con el formato XXXX-XXXX-XXXX-XXXX."
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:[Translations tr:@"invalid_key"]
+            message:[Translations tr:@"key_format"]
             preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Reintentar" style:UIAlertActionStyleDefault handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:[Translations tr:@"retry"] style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
     }
 }
