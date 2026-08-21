@@ -17,7 +17,6 @@
 
 - (void)setupUI {
     UIColor *white = [UIColor colorWithWhite:0.96 alpha:1.0];
-    UIColor *muted = [UIColor colorWithWhite:0.50 alpha:1.0];
     UIColor *red = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
     UIColor *green = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
     
@@ -79,6 +78,7 @@
     self.btnNormal.layer.shadowOpacity = 0.25;
     self.btnNormal.layer.shadowRadius = 10.0;
     self.btnNormal.layer.shadowOffset = CGSizeZero;
+    
     [self.btnNormal setTitle:@"FREE FIRE\nNORMAL" forState:UIControlStateNormal];
     [self.btnNormal.titleLabel setFont:[UIFont boldSystemFontOfSize:14]];
     [self.btnNormal setTitleColor:white forState:UIControlStateNormal];
@@ -98,6 +98,7 @@
     self.btnMax.layer.shadowOpacity = 0.25;
     self.btnMax.layer.shadowRadius = 10.0;
     self.btnMax.layer.shadowOffset = CGSizeZero;
+    
     [self.btnMax setTitle:@"FREE FIRE\nMAX" forState:UIControlStateNormal];
     [self.btnMax.titleLabel setFont:[UIFont boldSystemFontOfSize:14]];
     [self.btnMax setTitleColor:white forState:UIControlStateNormal];
@@ -108,23 +109,21 @@
     
     // Constraints
     [NSLayoutConstraint activateConstraints:@[
-        // Glow superior
+        // Glows
         [topGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [topGlow.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:-220],
         [topGlow.widthAnchor constraintEqualToConstant:340],
         [topGlow.heightAnchor constraintEqualToConstant:340],
         
-        // Glow inferior
         [bottomGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [bottomGlow.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor constant:170],
         [bottomGlow.widthAnchor constraintEqualToConstant:300],
         [bottomGlow.heightAnchor constraintEqualToConstant:300],
         
-        // Logo
+        // Logo y línea
         [logo.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [logo.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:40],
         
-        // Línea roja
         [line.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [line.topAnchor constraintEqualToAnchor:logo.bottomAnchor constant:12],
         [line.widthAnchor constraintEqualToConstant:60],
@@ -136,14 +135,14 @@
         [pregunta.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:20],
         [pregunta.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-20],
         
-        // Botón FREE FIRE NORMAL (izquierda)
-        [self.btnNormal.centerYAnchor constraintEqualToAnchor:self.btnMax.centerYAnchor],
+        // Botón FREE FIRE NORMAL (Izquierda)
+        [self.btnNormal.topAnchor constraintEqualToAnchor:pregunta.bottomAnchor constant:40],
         [self.btnNormal.trailingAnchor constraintEqualToAnchor:self.view.centerXAnchor constant:-8],
         [self.btnNormal.widthAnchor constraintEqualToConstant:140],
         [self.btnNormal.heightAnchor constraintEqualToConstant:80],
         
-        // Botón FREE FIRE MAX (derecha)
-        [self.btnMax.centerYAnchor constraintEqualToAnchor:self.btnNormal.centerYAnchor],
+        // Botón FREE FIRE MAX (Derecha)
+        [self.btnMax.topAnchor constraintEqualToAnchor:pregunta.bottomAnchor constant:40],
         [self.btnMax.leadingAnchor constraintEqualToAnchor:self.view.centerXAnchor constant:8],
         [self.btnMax.widthAnchor constraintEqualToConstant:140],
         [self.btnMax.heightAnchor constraintEqualToConstant:80],
@@ -153,11 +152,11 @@
 #pragma mark - Acciones de botones
 
 - (void)btnNormalTapped {
-    // Por ahora no hace nada, después me dices qué hacer
+    // Por ahora no hace nada
 }
 
 - (void)btnMaxTapped {
-    // Por ahora no hace nada, después me dices qué hacer
+    // Por ahora no hace nada
 }
 
 @end
