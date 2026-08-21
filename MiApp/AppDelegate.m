@@ -31,13 +31,11 @@
     self.window.rootViewController = nav;
     [self.window makeKeyAndVisible];
     
-    // Cargar protección
     self.protectionEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"screenProtection"];
     if (self.protectionEnabled) {
         [self setupProtection];
     }
     
-    // Escuchar cambios
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(protectionChanged)
                                                  name:@"ProtectionChanged"
@@ -57,9 +55,10 @@
     [self.window addSubview:self.protectionView];
     [self.window bringSubviewToFront:self.protectionView];
     
+    // ✅ FIX: usar la constante NSString en vez de la propiedad de clase
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(screenCaptureDidChange)
-                                                 name:UIScreen.capturedDidChangeNotification
+                                                 name:UIScreenCapturedDidChangeNotification
                                                object:nil];
     
     [[NSNotificationCenter defaultCenter] addObserver:self
