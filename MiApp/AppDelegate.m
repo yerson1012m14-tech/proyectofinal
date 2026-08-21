@@ -127,7 +127,7 @@ static NSString * const kScreenProtectionKey =
              * Volvemos a preparar la protección.
              */
             [[ScreenProtectionManager shared]
-                refreshProtection];
+                enableProtection];
         });
     };
 
