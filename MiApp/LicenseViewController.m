@@ -4,6 +4,8 @@
 @interface LicenseViewController () <UITextFieldDelegate>
 
 @property (nonatomic, strong) UITextField *licenseField;
+@property (nonatomic, strong) UIButton *continueButton;
+@property (nonatomic, strong) CAGradientLayer *buttonGradient;
 
 @end
 
@@ -11,220 +13,253 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor colorWithRed:0.015 green:0.015 blue:0.02 alpha:1.0];
+    self.view.backgroundColor = [UIColor colorWithRed:0.018 green:0.018 blue:0.022 alpha:1.0];
     [self setupUI];
 }
 
 #pragma mark - UI
 
 - (void)setupUI {
-    UIColor *redColor = [UIColor colorWithRed:0.95 green:0.04 blue:0.08 alpha:1.0];
-    UIColor *softWhite = [UIColor colorWithWhite:0.96 alpha:1.0];
-    UIColor *mutedWhite = [UIColor colorWithWhite:0.62 alpha:1.0];
-    UIColor *fieldFill = [UIColor colorWithRed:0.035 green:0.035 blue:0.045 alpha:0.96];
+    UIColor *white = [UIColor colorWithWhite:0.96 alpha:1.0];
+    UIColor *muted = [UIColor colorWithWhite:0.50 alpha:1.0];
+    UIColor *fieldBorder = [UIColor colorWithWhite:0.20 alpha:1.0];
+    UIColor *fieldFill = [UIColor colorWithWhite:0.065 alpha:1.0];
+    UIColor *red = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
 
-    // Fondo con degradado muy sutil.
-    CAGradientLayer *backgroundGradient = [CAGradientLayer layer];
-    backgroundGradient.frame = self.view.bounds;
-    backgroundGradient.colors = @[
-        (__bridge id)[UIColor colorWithRed:0.012 green:0.012 blue:0.016 alpha:1.0].CGColor,
-        (__bridge id)[UIColor colorWithRed:0.025 green:0.012 blue:0.016 alpha:1.0].CGColor,
-        (__bridge id)[UIColor colorWithRed:0.008 green:0.008 blue:0.012 alpha:1.0].CGColor
-    ];
-    backgroundGradient.startPoint = CGPointMake(0.5, 0.0);
-    backgroundGradient.endPoint = CGPointMake(0.5, 1.0);
-    [self.view.layer insertSublayer:backgroundGradient atIndex:0];
+    // Very subtle red ambient glow. Kept behind everything and intentionally restrained.
+    UIView *topGlow = [[UIView alloc] init];
+    topGlow.translatesAutoresizingMaskIntoConstraints = NO;
+    topGlow.backgroundColor = [red colorWithAlphaComponent:0.055];
+    topGlow.layer.cornerRadius = 170.0;
+    topGlow.layer.masksToBounds = YES;
+    topGlow.userInteractionEnabled = NO;
+    [self.view addSubview:topGlow];
 
-    // Contenedor central para mantener todo perfectamente alineado.
-    UIStackView *contentStack = [[UIStackView alloc] init];
-    contentStack.axis = UILayoutConstraintAxisVertical;
-    contentStack.alignment = UIStackViewAlignmentFill;
-    contentStack.distribution = UIStackViewDistributionFill;
-    contentStack.spacing = 0;
-    contentStack.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:contentStack];
+    UIView *bottomGlow = [[UIView alloc] init];
+    bottomGlow.translatesAutoresizingMaskIntoConstraints = NO;
+    bottomGlow.backgroundColor = [red colorWithAlphaComponent:0.045];
+    bottomGlow.layer.cornerRadius = 150.0;
+    bottomGlow.layer.masksToBounds = YES;
+    bottomGlow.userInteractionEnabled = NO;
+    [self.view addSubview:bottomGlow];
 
-    // MARK: Logo
-    UIStackView *logoStack = [[UIStackView alloc] init];
-    logoStack.axis = UILayoutConstraintAxisHorizontal;
-    logoStack.alignment = UIStackViewAlignmentCenter;
-    logoStack.spacing = 0;
-    logoStack.translatesAutoresizingMaskIntoConstraints = NO;
+    UILabel *brand = [[UILabel alloc] init];
+    brand.translatesAutoresizingMaskIntoConstraints = NO;
+    brand.textAlignment = NSTextAlignmentCenter;
+    brand.text = @"XITFARGE";
+    brand.textColor = white;
+    brand.font = [UIFont systemFontOfSize:31.0 weight:UIFontWeightBold];
+    brand.adjustsFontSizeToFitWidth = YES;
+    brand.minimumScaleFactor = 0.75;
+    [self.view addSubview:brand];
 
-    UILabel *logoLeft = [[UILabel alloc] init];
-    logoLeft.text = @"XIT";
-    logoLeft.font = [UIFont systemFontOfSize:42 weight:UIFontWeightHeavy];
-    logoLeft.textColor = softWhite;
-    logoLeft.textAlignment = NSTextAlignmentRight;
-    logoLeft.translatesAutoresizingMaskIntoConstraints = NO;
+    // Red underline gives the brand a clean signature without adding extra UI clutter.
+    UIView *brandLine = [[UIView alloc] init];
+    brandLine.translatesAutoresizingMaskIntoConstraints = NO;
+    brandLine.backgroundColor = red;
+    brandLine.layer.cornerRadius = 1.0;
+    brandLine.layer.shadowColor = red.CGColor;
+    brandLine.layer.shadowOpacity = 0.30;
+    brandLine.layer.shadowRadius = 5.0;
+    brandLine.layer.shadowOffset = CGSizeZero;
+    [self.view addSubview:brandLine];
 
-    UILabel *logoRight = [[UILabel alloc] init];
-    logoRight.text = @"FARGE";
-    logoRight.font = [UIFont systemFontOfSize:42 weight:UIFontWeightHeavy];
-    logoRight.textColor = redColor;
-    logoRight.textAlignment = NSTextAlignmentLeft;
-    logoRight.translatesAutoresizingMaskIntoConstraints = NO;
+    UILabel *instruction = [[UILabel alloc] init];
+    instruction.translatesAutoresizingMaskIntoConstraints = NO;
+    instruction.text = @"Ingresa tu clave para continuar";
+    instruction.textAlignment = NSTextAlignmentCenter;
+    instruction.textColor = white;
+    instruction.font = [UIFont systemFontOfSize:17.0 weight:UIFontWeightSemibold];
+    instruction.adjustsFontSizeToFitWidth = YES;
+    instruction.minimumScaleFactor = 0.85;
+    [self.view addSubview:instruction];
 
-    [logoStack addArrangedSubview:logoLeft];
-    [logoStack addArrangedSubview:logoRight];
-    [contentStack addArrangedSubview:logoStack];
+    UILabel *hint = [[UILabel alloc] init];
+    hint.translatesAutoresizingMaskIntoConstraints = NO;
+    hint.text = @"Tu clave tiene el formato  XXXX-XXXX-XXXX-XXXX";
+    hint.textAlignment = NSTextAlignmentCenter;
+    hint.textColor = muted;
+    hint.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
+    [self.view addSubview:hint];
 
-    // Línea roja luminosa debajo del logo.
-    UIView *logoGlow = [[UIView alloc] init];
-    logoGlow.backgroundColor = redColor;
-    logoGlow.layer.cornerRadius = 1.5;
-    logoGlow.layer.shadowColor = redColor.CGColor;
-    logoGlow.layer.shadowOpacity = 0.9;
-    logoGlow.layer.shadowRadius = 10.0;
-    logoGlow.layer.shadowOffset = CGSizeZero;
-    logoGlow.translatesAutoresizingMaskIntoConstraints = NO;
-    [contentStack addArrangedSubview:logoGlow];
-
-    // MARK: Texto principal
-    UILabel *promptTop = [[UILabel alloc] init];
-    promptTop.text = @"INGRESA TU CLAVE DE LICENCIA";
-    promptTop.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-    promptTop.textColor = mutedWhite;
-    promptTop.textAlignment = NSTextAlignmentCenter;
-    promptTop.translatesAutoresizingMaskIntoConstraints = NO;
-    [contentStack addArrangedSubview:promptTop];
-
-    UILabel *promptBottom = [[UILabel alloc] init];
-    promptBottom.text = @"para continuar";
-    promptBottom.font = [UIFont systemFontOfSize:25 weight:UIFontWeightSemibold];
-    promptBottom.textColor = softWhite;
-    promptBottom.textAlignment = NSTextAlignmentCenter;
-    promptBottom.translatesAutoresizingMaskIntoConstraints = NO;
-    [contentStack addArrangedSubview:promptBottom];
-
-    // MARK: Campo de licencia
     self.licenseField = [[UITextField alloc] init];
+    self.licenseField.translatesAutoresizingMaskIntoConstraints = NO;
     self.licenseField.backgroundColor = fieldFill;
-    self.licenseField.layer.cornerRadius = 16.0;
-    self.licenseField.layer.borderWidth = 1.0;
-    self.licenseField.layer.borderColor = [redColor colorWithAlphaComponent:0.72].CGColor;
-    self.licenseField.layer.shadowColor = redColor.CGColor;
-    self.licenseField.layer.shadowOpacity = 0.14;
-    self.licenseField.layer.shadowRadius = 14.0;
-    self.licenseField.layer.shadowOffset = CGSizeZero;
-    self.licenseField.textColor = softWhite;
-    self.licenseField.font = [UIFont monospacedSystemFontOfSize:17 weight:UIFontWeightMedium];
+    self.licenseField.textColor = white;
+    self.licenseField.font = [UIFont monospacedSystemFontOfSize:17.0 weight:UIFontWeightMedium];
     self.licenseField.textAlignment = NSTextAlignmentCenter;
     self.licenseField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
     self.licenseField.autocorrectionType = UITextAutocorrectionTypeNo;
     self.licenseField.spellCheckingType = UITextSpellCheckingTypeNo;
+    self.licenseField.smartQuotesType = UITextSmartQuotesTypeNo;
+    self.licenseField.smartDashesType = UITextSmartDashesTypeNo;
     self.licenseField.keyboardType = UIKeyboardTypeASCIICapable;
     self.licenseField.returnKeyType = UIReturnKeyDone;
     self.licenseField.delegate = self;
+    self.licenseField.layer.cornerRadius = 14.0;
+    self.licenseField.layer.borderWidth = 1.0;
+    self.licenseField.layer.borderColor = fieldBorder.CGColor;
+    self.licenseField.layer.shadowColor = [UIColor blackColor].CGColor;
+    self.licenseField.layer.shadowOpacity = 0.25;
+    self.licenseField.layer.shadowRadius = 16.0;
+    self.licenseField.layer.shadowOffset = CGSizeMake(0, 8);
     self.licenseField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"XXXX-XXXX-XXXX-XXXX"
-                                                                                attributes:@{
-        NSForegroundColorAttributeName: [UIColor colorWithWhite:0.34 alpha:1.0],
-        NSFontAttributeName: [UIFont monospacedSystemFontOfSize:17 weight:UIFontWeightMedium]
+                                                                                 attributes:@{
+        NSForegroundColorAttributeName: [UIColor colorWithWhite:0.30 alpha:1.0],
+        NSFontAttributeName: [UIFont monospacedSystemFontOfSize:17.0 weight:UIFontWeightMedium]
     }];
-    self.licenseField.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.licenseField];
 
-    UIImageView *keyIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"key.fill"]];
-    keyIcon.tintColor = redColor;
-    keyIcon.contentMode = UIViewContentModeCenter;
-    keyIcon.frame = CGRectMake(0, 0, 50, 30);
-    self.licenseField.leftView = keyIcon;
-    self.licenseField.leftViewMode = UITextFieldViewModeAlways;
+    self.continueButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.continueButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.continueButton setTitle:@"CONTINUAR" forState:UIControlStateNormal];
+    [self.continueButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.continueButton.titleLabel.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightBold];
+    self.continueButton.layer.cornerRadius = 14.0;
+    self.continueButton.layer.masksToBounds = YES;
+    [self.continueButton addTarget:self action:@selector(activateLicense) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.continueButton];
 
-    [contentStack addArrangedSubview:self.licenseField];
+    self.buttonGradient = [CAGradientLayer layer];
+    self.buttonGradient.colors = @[
+        (id)[UIColor colorWithRed:0.98 green:0.12 blue:0.14 alpha:1.0].CGColor,
+        (id)[UIColor colorWithRed:0.72 green:0.03 blue:0.05 alpha:1.0].CGColor
+    ];
+    self.buttonGradient.startPoint = CGPointMake(0.0, 0.5);
+    self.buttonGradient.endPoint = CGPointMake(1.0, 0.5);
+    self.buttonGradient.cornerRadius = 14.0;
+    [self.continueButton.layer insertSublayer:self.buttonGradient atIndex:0];
 
-    // MARK: Botón
-    UIButton *activateButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    [activateButton setTitle:@"CONTINUAR" forState:UIControlStateNormal];
-    [activateButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    activateButton.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
-    activateButton.backgroundColor = redColor;
-    activateButton.layer.cornerRadius = 16.0;
-    activateButton.layer.shadowColor = redColor.CGColor;
-    activateButton.layer.shadowOpacity = 0.34;
-    activateButton.layer.shadowRadius = 18.0;
-    activateButton.layer.shadowOffset = CGSizeMake(0, 8);
-    activateButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [activateButton addTarget:self action:@selector(activateLicense) forControlEvents:UIControlEventTouchUpInside];
-    [contentStack addArrangedSubview:activateButton];
+    UIView *buttonShadow = [[UIView alloc] init];
+    buttonShadow.translatesAutoresizingMaskIntoConstraints = NO;
+    buttonShadow.backgroundColor = [red colorWithAlphaComponent:0.16];
+    buttonShadow.layer.cornerRadius = 28.0;
+    buttonShadow.layer.shadowColor = red.CGColor;
+    buttonShadow.layer.shadowOpacity = 0.35;
+    buttonShadow.layer.shadowRadius = 20.0;
+    buttonShadow.layer.shadowOffset = CGSizeZero;
+    buttonShadow.userInteractionEnabled = NO;
+    [self.view insertSubview:buttonShadow belowSubview:self.continueButton];
 
-    // MARK: Pie pequeño
     UILabel *footer = [[UILabel alloc] init];
-    footer.text = @"Tu licencia. Tu acceso.";
-    footer.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
-    footer.textColor = [UIColor colorWithWhite:0.34 alpha:1.0];
-    footer.textAlignment = NSTextAlignmentCenter;
     footer.translatesAutoresizingMaskIntoConstraints = NO;
-    [contentStack addArrangedSubview:footer];
+    footer.text = @"Acceso seguro • XITFARGE";
+    footer.textAlignment = NSTextAlignmentCenter;
+    footer.textColor = [muted colorWithAlphaComponent:0.75];
+    footer.font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightRegular];
+    [self.view addSubview:footer];
 
-    // ---- Auto Layout ----
     [NSLayoutConstraint activateConstraints:@[
-        [contentStack.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:26],
-        [contentStack.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-26],
-        [contentStack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor constant:-15],
-        [contentStack.widthAnchor constraintLessThanOrEqualToConstant:520],
+        // Ambient glows
+        [topGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [topGlow.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:-220],
+        [topGlow.widthAnchor constraintEqualToConstant:340],
+        [topGlow.heightAnchor constraintEqualToConstant:340],
+        [bottomGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [bottomGlow.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor constant:170],
+        [bottomGlow.widthAnchor constraintEqualToConstant:300],
+        [bottomGlow.heightAnchor constraintEqualToConstant:300],
 
-        [logoStack.heightAnchor constraintEqualToConstant:52],
-        [logoGlow.widthAnchor constraintEqualToConstant:150],
-        [logoGlow.heightAnchor constraintEqualToConstant:3],
-        [logoGlow.centerXAnchor constraintEqualToAnchor:contentStack.centerXAnchor],
+        // Centered content
+        [brand.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [brand.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:108],
+        [brand.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:30],
+        [brand.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-30],
+        [brand.heightAnchor constraintEqualToConstant:38],
 
-        [promptTop.topAnchor constraintEqualToAnchor:logoGlow.bottomAnchor constant:38],
-        [promptTop.heightAnchor constraintEqualToConstant:22],
-        [promptBottom.topAnchor constraintEqualToAnchor:promptTop.bottomAnchor constant:2],
-        [promptBottom.heightAnchor constraintEqualToConstant:36],
+        [brandLine.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [brandLine.topAnchor constraintEqualToAnchor:brand.bottomAnchor constant:12],
+        [brandLine.widthAnchor constraintEqualToConstant:44],
+        [brandLine.heightAnchor constraintEqualToConstant:2],
 
-        [self.licenseField.topAnchor constraintEqualToAnchor:promptBottom.bottomAnchor constant:28],
-        [self.licenseField.heightAnchor constraintEqualToConstant:62],
+        [instruction.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [instruction.topAnchor constraintEqualToAnchor:brandLine.bottomAnchor constant:58],
+        [instruction.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:28],
+        [instruction.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-28],
+        [instruction.heightAnchor constraintEqualToConstant:24],
 
-        [activateButton.topAnchor constraintEqualToAnchor:self.licenseField.bottomAnchor constant:16],
-        [activateButton.heightAnchor constraintEqualToConstant:58],
+        [hint.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [hint.topAnchor constraintEqualToAnchor:instruction.bottomAnchor constant:9],
+        [hint.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:24],
+        [hint.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-24],
+        [hint.heightAnchor constraintEqualToConstant:18],
 
-        [footer.topAnchor constraintEqualToAnchor:activateButton.bottomAnchor constant:30],
-        [footer.heightAnchor constraintEqualToConstant:20],
-        [footer.bottomAnchor constraintEqualToAnchor:contentStack.bottomAnchor]
+        [self.licenseField.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.licenseField.topAnchor constraintEqualToAnchor:hint.bottomAnchor constant:24],
+        [self.licenseField.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:38],
+        [self.licenseField.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-38],
+        [self.licenseField.heightAnchor constraintEqualToConstant:56],
+
+        [buttonShadow.centerXAnchor constraintEqualToAnchor:self.continueButton.centerXAnchor],
+        [buttonShadow.centerYAnchor constraintEqualToAnchor:self.continueButton.centerYAnchor constant:6],
+        [buttonShadow.widthAnchor constraintEqualToAnchor:self.continueButton.widthAnchor constant:-8],
+        [buttonShadow.heightAnchor constraintEqualToAnchor:self.continueButton.heightAnchor constant:-8],
+
+        [self.continueButton.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.continueButton.topAnchor constraintEqualToAnchor:self.licenseField.bottomAnchor constant:18],
+        [self.continueButton.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:38],
+        [self.continueButton.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-38],
+        [self.continueButton.heightAnchor constraintEqualToConstant:54],
+
+        [footer.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [footer.topAnchor constraintEqualToAnchor:self.continueButton.bottomAnchor constant:20],
+        [footer.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:24],
+        [footer.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-24],
+        [footer.heightAnchor constraintEqualToConstant:16]
     ]];
+
+    // Keep the gradient frame correct after rotations / layout changes.
+    [self updateButtonGradientFrame];
 }
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    CALayer *background = self.view.layer.sublayers.firstObject;
-    if ([background isKindOfClass:[CAGradientLayer class]]) {
-        background.frame = self.view.bounds;
-    }
+    [self updateButtonGradientFrame];
 }
 
-#pragma mark - Lógica de Auto-formato con guiones (XXXX-XXXX-XXXX-XXXX)
+- (void)updateButtonGradientFrame {
+    self.buttonGradient.frame = self.continueButton.bounds;
+    self.buttonGradient.cornerRadius = self.continueButton.layer.cornerRadius;
+}
+
+#pragma mark - License formatting
 
 - (BOOL)textField:(UITextField *)textField shouldChangeCharactersInRange:(NSRange)range replacementString:(NSString *)string {
-    NSString *currentText = textField.text;
+    NSString *currentText = textField.text ?: @"";
     NSString *newText = [currentText stringByReplacingCharactersInRange:range withString:string];
 
-    newText = [[newText componentsSeparatedByCharactersInSet:[[NSCharacterSet alphanumericCharacterSet] invertedSet]] componentsJoinedByString:@""];
-
-    // Máximo 16 caracteres: XXXX-XXXX-XXXX-XXXX
-    if (newText.length > 16) {
-        return NO;
-    }
-
-    // Todo a mayúsculas para que la validación siga siendo consistente.
-    newText = [newText uppercaseString];
-
-    NSMutableString *formattedString = [NSMutableString string];
+    NSCharacterSet *allowed = [NSCharacterSet alphanumericCharacterSet];
+    NSMutableString *clean = [NSMutableString stringWithCapacity:newText.length];
     for (NSUInteger i = 0; i < newText.length; i++) {
-        if (i > 0 && i % 4 == 0) {
-            [formattedString appendString:@"-"];
+        unichar c = [newText characterAtIndex:i];
+        if ([allowed characterIsMember:c]) {
+            [clean appendFormat:@"%C", c];
         }
-        [formattedString appendFormat:@"%C", [newText characterAtIndex:i]];
     }
 
-    textField.text = formattedString;
+    NSString *uppercase = [clean uppercaseString];
+    if (uppercase.length > 16) {
+        uppercase = [uppercase substringToIndex:16];
+    }
+
+    NSMutableString *formatted = [NSMutableString string];
+    for (NSUInteger i = 0; i < uppercase.length; i++) {
+        if (i > 0 && i % 4 == 0) {
+            [formatted appendString:@"-"];
+        }
+        [formatted appendFormat:@"%C", [uppercase characterAtIndex:i]];
+    }
+
+    textField.text = formatted;
     return NO;
 }
 
-#pragma mark - Acción del botón
+#pragma mark - License action
 
 - (void)activateLicense {
-    NSString *input = self.licenseField.text;
+    [self.view endEditing:YES];
+
+    NSString *input = [self.licenseField.text uppercaseString];
     if ([self validarFormatoLicencia:input]) {
         [[NSUserDefaults standardUserDefaults] setObject:input forKey:@"MiFilzaLicenseKey"];
         [[NSUserDefaults standardUserDefaults] synchronize];
@@ -233,7 +268,7 @@
             self.onLicenseValidated();
         }
     } else {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Licencia no válida"
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Clave no válida"
                                                                        message:@"Ingresa una clave con el formato XXXX-XXXX-XXXX-XXXX."
                                                                 preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"Reintentar" style:UIAlertActionStyleDefault handler:nil]];
@@ -247,7 +282,7 @@
     return [predicado evaluateWithObject:licencia];
 }
 
-#pragma mark - UITextFieldDelegate
+#pragma mark - Keyboard
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
     [textField resignFirstResponder];
