@@ -1,6 +1,6 @@
 #import "AppDelegate.h"
 #import "ViewController.h"
-#import "LicenseViewController.h" // <-- Importamos el nuevo controlador
+#import "LicenseViewController.h" 
 
 @interface AppDelegate ()
 @property (nonatomic, strong) UIWindow *lockWindow;
@@ -29,7 +29,7 @@
     self.window.rootViewController = nav;
     [self.window makeKeyAndVisible];
 
-    // --- SISTEMA DE LICENCIA NUEVO (pantalla XITFARGE) ---
+    // --- SISTEMA DE LICENCIA NUEVO ---
     [self mostrarPantallaLicencia];
     
     return YES;
@@ -38,16 +38,13 @@
 - (void)mostrarPantallaLicencia {
     NSString *licenciaGuardada = [[NSUserDefaults standardUserDefaults] stringForKey:@"MiFilzaLicenseKey"];
     
-    // Si ya está validada y guardada, no mostramos la pantalla
     if (licenciaGuardada && [self validarFormatoLicencia:licenciaGuardada]) {
         return;
     }
     
-    // Creamos el controlador de licencia con diseño personalizado
     LicenseViewController *licenseVC = [[LicenseViewController alloc] init];
     licenseVC.modalPresentationStyle = UIModalPresentationFullScreen;
     
-    // Bloque que se ejecuta cuando la licencia es válida
     __weak typeof(self) weakSelf = self;
     licenseVC.onLicenseValidated = ^{
         [weakSelf.lockWindow.rootViewController dismissViewControllerAnimated:YES completion:nil];
@@ -55,7 +52,6 @@
         weakSelf.lockWindow = nil;
     };
     
-    // Presentamos la pantalla en una ventana independiente (igual que antes, para bloquear la app)
     self.lockWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     self.lockWindow.rootViewController = [[UIViewController alloc] init];
     self.lockWindow.windowLevel = UIWindowLevelAlert + 1;
