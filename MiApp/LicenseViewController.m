@@ -281,7 +281,6 @@
     [self.view endEditing:YES];
     NSString *input = [self.licenseField.text uppercaseString];
     
-    // ✅ AHORA USA LicenseValidator para validar contra la lista de claves
     if ([LicenseValidator isValidKey:input]) {
         [[NSUserDefaults standardUserDefaults] setObject:input forKey:@"MiFilzaLicenseKey"];
         [[NSUserDefaults standardUserDefaults] synchronize];
@@ -290,10 +289,11 @@
             self.onLicenseValidated();
         }
     } else {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:[Translations tr:@"invalid_key"]
-            message:[Translations tr:@"key_format"]
+        // ✅ Mensaje simple: solo "Incorrecta"
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:[Translations tr:@"incorrect"]
+            message:nil
             preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:[Translations tr:@"retry"] style:UIAlertActionStyleDefault handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
     }
 }
