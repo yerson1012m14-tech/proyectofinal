@@ -1,9 +1,11 @@
 #import "AppDelegate.h"
 #import "ViewController.h"
 #import "LicenseViewController.h"
+#import "CALayer+SecureCapture.h"
 
 @interface AppDelegate ()
 @property (nonatomic, strong) UIWindow *lockWindow;
+@property (nonatomic, assign) BOOL protectionEnabled;
 @end
 
 @implementation AppDelegate
@@ -28,9 +30,42 @@
     self.window.rootViewController = nav;
     [self.window makeKeyAndVisible];
     
+    // Cargar protección
+    self.protectionEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"screenProtection"];
+    if (self.protectionEnabled) {
+        [self enableProtection];
+    }
+    
+    // Escuchar cambios
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(protectionChanged)
+                                                 name:@"ProtectionChanged"
+                                               object:nil];
+    
     [self mostrarPantallaLicencia];
     
     return YES;
+}
+
+- (void)enableProtection {
+    // Aplicar a la ventana principal - esto oculta TODO de capturas/grabaciones
+    [self.window.layer setSecureCapture:YES];
+}
+
+- (void)disableProtection {
+    [self.window.layer setSecureCapture:NO];
+}
+
+- (void)protectionChanged {
+    BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"screenProtection"];
+    
+    if (enabled && !self.protectionEnabled) {
+        [self enableProtection];
+    } else if (!enabled && self.protectionEnabled) {
+        [self disableProtection];
+    }
+    
+    self.protectionEnabled = enabled;
 }
 
 - (void)mostrarPantallaLicencia {
