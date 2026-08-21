@@ -1,4 +1,5 @@
 #import "LicenseViewController.h"
+#import "LicenseValidator.h"
 #import "SettingsViewController.h"
 #import "Translations.h"
 #import <QuartzCore/QuartzCore.h>
