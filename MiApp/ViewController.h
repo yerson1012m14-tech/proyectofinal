@@ -3,6 +3,5 @@
 @interface ViewController : UIViewController
 
 - (void)abrirContenedor:(NSString *)bid;
-- (void)abrirContenedorSeguro:(NSString *)bid;
 
 @end
