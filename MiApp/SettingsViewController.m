@@ -326,6 +326,10 @@
     [d setInteger:self.selectedLanguage forKey:@"selectedLanguage"];
     [d setBool:self.screenProtection forKey:@"screenProtection"];
     [d synchronize];
+    
+    // 🔔 Notificar al AppDelegate para que active/desactive la protección de captura
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"ProtectionSettingChanged" object:nil];
+    
     if (self.onSettingsChanged) self.onSettingsChanged();
 }
 
