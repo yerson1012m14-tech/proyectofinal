@@ -1,4 +1,5 @@
 #import "LicenseViewController.h"
+#import "SettingsViewController.h"
 #import <QuartzCore/QuartzCore.h>
 
 @interface LicenseViewController () <UITextFieldDelegate>
@@ -25,7 +26,6 @@
 
 - (void)setupUI {
     UIColor *white = [UIColor colorWithWhite:0.96 alpha:1.0];
-    UIColor *muted = [UIColor colorWithWhite:0.50 alpha:1.0];
     UIColor *fieldBorder = [UIColor colorWithWhite:0.20 alpha:1.0];
     UIColor *fieldFill = [UIColor colorWithWhite:0.065 alpha:1.0];
     UIColor *red = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
@@ -200,103 +200,45 @@
 #pragma mark - Settings
 
 - (void)loadSettings {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    self.selectedLanguage = [defaults integerForKey:@"selectedLanguage"];
-    self.screenProtection = [defaults boolForKey:@"screenProtection"];
-    self.selectedBgColor = [defaults integerForKey:@"selectedBgColor"];
-    self.selectedTextColor = [defaults integerForKey:@"selectedTextColor"];
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    self.selectedLanguage = [d integerForKey:@"selectedLanguage"];
+    self.screenProtection = [d boolForKey:@"screenProtection"];
+    self.selectedBgColor = [d integerForKey:@"selectedBgColor"];
+    self.selectedTextColor = [d integerForKey:@"selectedTextColor"];
 }
 
 - (void)saveSettings {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setInteger:self.selectedLanguage forKey:@"selectedLanguage"];
-    [defaults setBool:self.screenProtection forKey:@"screenProtection"];
-    [defaults setInteger:self.selectedBgColor forKey:@"selectedBgColor"];
-    [defaults setInteger:self.selectedTextColor forKey:@"selectedTextColor"];
-    [defaults synchronize];
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    [d setInteger:self.selectedLanguage forKey:@"selectedLanguage"];
+    [d setBool:self.screenProtection forKey:@"screenProtection"];
+    [d setInteger:self.selectedBgColor forKey:@"selectedBgColor"];
+    [d setInteger:self.selectedTextColor forKey:@"selectedTextColor"];
+    [d synchronize];
 }
 
 - (void)showSettings {
-    UIAlertController *settingsAlert = [UIAlertController alertControllerWithTitle:@"Configuración" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    SettingsViewController *svc = [[SettingsViewController alloc] init];
+    svc.selectedLanguage = self.selectedLanguage;
+    svc.screenProtection = self.screenProtection;
+    svc.selectedBgColor = self.selectedBgColor;
+    svc.selectedTextColor = self.selectedTextColor;
     
-    UIAlertAction *langES = [UIAlertAction actionWithTitle:@"🇪 Español" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedLanguage = 0;
+    svc.onSettingsChanged = ^{
+        self.selectedLanguage = svc.selectedLanguage;
+        self.screenProtection = svc.screenProtection;
+        self.selectedBgColor = svc.selectedBgColor;
+        self.selectedTextColor = svc.selectedTextColor;
         [self saveSettings];
-    }];
-    UIAlertAction *langEN = [UIAlertAction actionWithTitle:@"🇸 English" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedLanguage = 1;
-        [self saveSettings];
-    }];
-    UIAlertAction *langPT = [UIAlertAction actionWithTitle:@"🇧🇷 Português" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedLanguage = 2;
-        [self saveSettings];
-    }];
+        [self applyTheme];
+    };
     
-    NSString *protText = self.screenProtection ? @"🛡️ Desactivar Protección" : @"🛡️ Activar Protección";
-    UIAlertAction *protection = [UIAlertAction actionWithTitle:protText style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.screenProtection = !self.screenProtection;
-        [self saveSettings];
-    }];
-    
-    UIAlertAction *bgRed = [UIAlertAction actionWithTitle:@"🔴 Fondo Rojo" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedBgColor = 0;
-        [self saveSettings];
-        [self applyTheme];
-    }];
-    UIAlertAction *bgGray = [UIAlertAction actionWithTitle:@"⚫ Fondo Gris" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedBgColor = 1;
-        [self saveSettings];
-        [self applyTheme];
-    }];
-    UIAlertAction *bgBlue = [UIAlertAction actionWithTitle:@"🔵 Fondo Azul" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedBgColor = 2;
-        [self saveSettings];
-        [self applyTheme];
-    }];
-    UIAlertAction *bgPurple = [UIAlertAction actionWithTitle:@" Fondo Morado" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedBgColor = 3;
-        [self saveSettings];
-        [self applyTheme];
-    }];
-    
-    UIAlertAction *textWhite = [UIAlertAction actionWithTitle:@"⚪ Texto Blanco" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedTextColor = 0;
-        [self saveSettings];
-        [self applyTheme];
-    }];
-    UIAlertAction *textGray = [UIAlertAction actionWithTitle:@"🔘 Texto Gris" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedTextColor = 1;
-        [self saveSettings];
-        [self applyTheme];
-    }];
-    UIAlertAction *textRed = [UIAlertAction actionWithTitle:@"🔴 Texto Rojo" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedTextColor = 2;
-        [self saveSettings];
-        [self applyTheme];
-    }];
-    UIAlertAction *textGreen = [UIAlertAction actionWithTitle:@"🟢 Texto Verde" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedTextColor = 3;
-        [self saveSettings];
-        [self applyTheme];
-    }];
-    
-    [settingsAlert addAction:langES];
-    [settingsAlert addAction:langEN];
-    [settingsAlert addAction:langPT];
-    [settingsAlert addAction:protection];
-    [settingsAlert addAction:bgRed];
-    [settingsAlert addAction:bgGray];
-    [settingsAlert addAction:bgBlue];
-    [settingsAlert addAction:bgPurple];
-    [settingsAlert addAction:textWhite];
-    [settingsAlert addAction:textGray];
-    [settingsAlert addAction:textRed];
-    [settingsAlert addAction:textGreen];
-    
-    UIAlertAction *cancel = [UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil];
-    [settingsAlert addAction:cancel];
-    
-    [self presentViewController:settingsAlert animated:YES completion:nil];
+    svc.modalPresentationStyle = UIModalPresentationPageSheet;
+    if (@available(iOS 15.0, *)) {
+        UISheetPresentationController *sheet = svc.sheetPresentationController;
+        sheet.detents = @[UISheetPresentationControllerDetent.mediumDetent, UISheetPresentationControllerDetent.largeDetent];
+        sheet.preferredCornerRadius = 20;
+    }
+    [self presentViewController:svc animated:YES completion:nil];
 }
 
 - (void)applyTheme {
@@ -314,12 +256,9 @@
         [UIColor colorWithRed:0.20 green:0.90 blue:0.30 alpha:1.0]
     ];
     
-    UIColor *bgColor = bgColors[self.selectedBgColor];
-    UIColor *textColor = textColors[self.selectedTextColor];
-    
     [UIView animateWithDuration:0.3 animations:^{
-        self.view.backgroundColor = bgColor;
-        self.licenseField.textColor = textColor;
+        self.view.backgroundColor = bgColors[self.selectedBgColor];
+        self.licenseField.textColor = textColors[self.selectedTextColor];
     }];
 }
 
