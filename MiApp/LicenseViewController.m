@@ -46,7 +46,7 @@
     UILabel *brand = [[UILabel alloc] init];
     brand.translatesAutoresizingMaskIntoConstraints = NO;
     brand.textAlignment = NSTextAlignmentCenter;
-    brand.text = @"XITFARGE";
+    brand.text = @"XITFORGE";
     brand.textColor = white;
     brand.font = [UIFont systemFontOfSize:31.0 weight:UIFontWeightBold];
     brand.adjustsFontSizeToFitWidth = YES;
@@ -63,24 +63,6 @@
     brandLine.layer.shadowRadius = 5.0;
     brandLine.layer.shadowOffset = CGSizeZero;
     [self.view addSubview:brandLine];
-
-    UILabel *instruction = [[UILabel alloc] init];
-    instruction.translatesAutoresizingMaskIntoConstraints = NO;
-    instruction.text = @"Ingresa tu clave para continuar";
-    instruction.textAlignment = NSTextAlignmentCenter;
-    instruction.textColor = white;
-    instruction.font = [UIFont systemFontOfSize:17.0 weight:UIFontWeightSemibold];
-    instruction.adjustsFontSizeToFitWidth = YES;
-    instruction.minimumScaleFactor = 0.85;
-    [self.view addSubview:instruction];
-
-    UILabel *hint = [[UILabel alloc] init];
-    hint.translatesAutoresizingMaskIntoConstraints = NO;
-    hint.text = @"Tu clave tiene el formato  XXXX-XXXX-XXXX-XXXX";
-    hint.textAlignment = NSTextAlignmentCenter;
-    hint.textColor = muted;
-    hint.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
-    [self.view addSubview:hint];
 
     self.licenseField = [[UITextField alloc] init];
     self.licenseField.translatesAutoresizingMaskIntoConstraints = NO;
@@ -141,14 +123,6 @@
     buttonShadow.userInteractionEnabled = NO;
     [self.view insertSubview:buttonShadow belowSubview:self.continueButton];
 
-    UILabel *footer = [[UILabel alloc] init];
-    footer.translatesAutoresizingMaskIntoConstraints = NO;
-    footer.text = @"Acceso seguro • XITFARGE";
-    footer.textAlignment = NSTextAlignmentCenter;
-    footer.textColor = [muted colorWithAlphaComponent:0.75];
-    footer.font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightRegular];
-    [self.view addSubview:footer];
-
     [NSLayoutConstraint activateConstraints:@[
         // Ambient glows
         [topGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
@@ -172,20 +146,9 @@
         [brandLine.widthAnchor constraintEqualToConstant:44],
         [brandLine.heightAnchor constraintEqualToConstant:2],
 
-        [instruction.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [instruction.topAnchor constraintEqualToAnchor:brandLine.bottomAnchor constant:58],
-        [instruction.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:28],
-        [instruction.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-28],
-        [instruction.heightAnchor constraintEqualToConstant:24],
-
-        [hint.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [hint.topAnchor constraintEqualToAnchor:instruction.bottomAnchor constant:9],
-        [hint.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:24],
-        [hint.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-24],
-        [hint.heightAnchor constraintEqualToConstant:18],
 
         [self.licenseField.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [self.licenseField.topAnchor constraintEqualToAnchor:hint.bottomAnchor constant:24],
+        [self.licenseField.topAnchor constraintEqualToAnchor:brandLine.bottomAnchor constant:86],
         [self.licenseField.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:38],
         [self.licenseField.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-38],
         [self.licenseField.heightAnchor constraintEqualToConstant:56],
@@ -201,11 +164,6 @@
         [self.continueButton.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-38],
         [self.continueButton.heightAnchor constraintEqualToConstant:54],
 
-        [footer.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [footer.topAnchor constraintEqualToAnchor:self.continueButton.bottomAnchor constant:20],
-        [footer.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:24],
-        [footer.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-24],
-        [footer.heightAnchor constraintEqualToConstant:16]
     ]];
 
     // Keep the gradient frame correct after rotations / layout changes.
