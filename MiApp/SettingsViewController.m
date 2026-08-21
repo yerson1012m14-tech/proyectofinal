@@ -5,7 +5,6 @@
 @property (nonatomic, strong) UIView *contentView;
 @property (nonatomic, strong) NSLayoutConstraint *langOptionsHeight;
 @property (nonatomic, strong) NSLayoutConstraint *protOptionsHeight;
-@property (nonatomic, strong) NSLayoutConstraint *contentHeight;
 @property (nonatomic, assign) BOOL langExpanded;
 @property (nonatomic, assign) BOOL protExpanded;
 @property (nonatomic, strong) UIButton *langChevron;
@@ -13,7 +12,6 @@
 @property (nonatomic, strong) UIView *langOptions;
 @property (nonatomic, strong) UIView *protOptions;
 @property (nonatomic, strong) UISwitch *protSwitch;
-@property (nonatomic, strong) UIView *lastCard;
 @end
 
 @implementation SettingsViewController
@@ -56,7 +54,7 @@
     [closeBtn addTarget:self action:@selector(closeSettings) forControlEvents:UIControlEventTouchUpInside];
     [self.contentView addSubview:closeBtn];
     
-    // ===== SECCIÓN IDIOMA =====
+    // SECCIÓN IDIOMA
     UIView *langCard = [[UIView alloc] init];
     langCard.translatesAutoresizingMaskIntoConstraints = NO;
     langCard.backgroundColor = cardBg;
@@ -160,7 +158,7 @@
         ]];
     }
     
-    // ===== SECCIÓN PROTECCIÓN =====
+    // SECCIÓN PROTECCIÓN
     UIView *protCard = [[UIView alloc] init];
     protCard.translatesAutoresizingMaskIntoConstraints = NO;
     protCard.backgroundColor = cardBg;
@@ -210,9 +208,7 @@
         [self.protSwitch.bottomAnchor constraintEqualToAnchor:self.protOptions.bottomAnchor constant:-16],
     ]];
     
-    self.lastCard = protCard;
-    
-    // ===== CONSTRAINTS PRINCIPALES =====
+    // CONSTRAINTS PRINCIPALES
     [NSLayoutConstraint activateConstraints:@[
         [self.scrollView.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
         [self.scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
@@ -332,7 +328,8 @@
     [d setBool:self.screenProtection forKey:@"screenProtection"];
     [d synchronize];
     
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"ProtectionSettingChanged" object:nil];
+    // Notificar al AppDelegate para activar/desactivar protección
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"ProtectionChanged" object:nil];
     
     if (self.onSettingsChanged) self.onSettingsChanged();
 }
