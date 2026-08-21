@@ -137,13 +137,6 @@
         [rowBtn addSubview:lt];
         [self.langLabels addObject:lt];
         
-        UILabel *ls = [[UILabel alloc] init];
-        ls.translatesAutoresizingMaskIntoConstraints = NO;
-        ls.textColor = muted;
-        ls.font = [UIFont systemFontOfSize:11];
-        [rowBtn addSubview:ls];
-        [self.langSubLabels addObject:ls];
-        
         UIButton *radio = [UIButton buttonWithType:UIButtonTypeCustom];
         radio.translatesAutoresizingMaskIntoConstraints = NO;
         radio.tag = 300 + i;
@@ -310,13 +303,10 @@
     self.protSub.text = [Translations tr:@"protection_desc"];
     
     NSArray *langKeys = @[@"spanish", @"english", @"portuguese"];
-    NSArray *langSubKeys = @[@"spanish", @"english", @"portuguese"];
     
     for (int i = 0; i < 3; i++) {
         UILabel *lt = self.langLabels[i];
-        UILabel *ls = self.langSubLabels[i];
         lt.text = [Translations tr:langKeys[i]];
-        ls.text = [Translations tr:langSubKeys[i]];
     }
 }
 
