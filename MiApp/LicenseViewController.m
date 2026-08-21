@@ -5,6 +5,11 @@
 @property (nonatomic, strong) UITextField *licenseField;
 @property (nonatomic, strong) UIButton *continueButton;
 @property (nonatomic, strong) CAGradientLayer *buttonGradient;
+@property (nonatomic, strong) UIButton *settingsButton;
+@property (nonatomic, assign) NSInteger selectedLanguage; // 0=ES, 1=EN, 2=PT
+@property (nonatomic, assign) BOOL screenProtection;
+@property (nonatomic, assign) NSInteger selectedBgColor; // 0=rojo, 1=gris, 2=azul, 3=morado
+@property (nonatomic, assign) NSInteger selectedTextColor; // 0=blanco, 1=gris, 2=rojo, 3=verde
 @end
 
 @implementation LicenseViewController
@@ -12,6 +17,11 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor colorWithRed:0.018 green:0.018 blue:0.022 alpha:1.0];
+    self.selectedLanguage = 0;
+    self.screenProtection = YES;
+    self.selectedBgColor = 0;
+    self.selectedTextColor = 0;
+    [self loadSettings];
     [self setupUI];
 }
 
@@ -60,18 +70,6 @@
     brandLine.layer.shadowOffset = CGSizeZero;
     [self.view addSubview:brandLine];
     
-    // ✅ Subtítulo con kerning (Objective-C compatible)
-    UILabel *subtitle = [[UILabel alloc] init];
-    subtitle.translatesAutoresizingMaskIntoConstraints = NO;
-    subtitle.textAlignment = NSTextAlignmentCenter;
-    subtitle.attributedText = [[NSAttributedString alloc] initWithString:@"LICENSE ACTIVATION"
-        attributes:@{
-            NSFontAttributeName: [UIFont systemFontOfSize:11.0 weight:UIFontWeightMedium],
-            NSForegroundColorAttributeName: muted,
-            NSKernAttributeName: @3.0
-        }];
-    [self.view addSubview:subtitle];
-    
     self.licenseField = [[UITextField alloc] init];
     self.licenseField.translatesAutoresizingMaskIntoConstraints = NO;
     self.licenseField.backgroundColor = fieldFill;
@@ -106,7 +104,6 @@
     self.continueButton.layer.cornerRadius = 14.0;
     self.continueButton.layer.masksToBounds = YES;
     
-    // ✅ Botón con kerning (Objective-C compatible)
     [self.continueButton setAttributedTitle:[[NSAttributedString alloc] initWithString:@"CONTINUAR"
         attributes:@{
             NSFontAttributeName: [UIFont systemFontOfSize:15.0 weight:UIFontWeightBold],
@@ -138,6 +135,15 @@
     buttonShadow.userInteractionEnabled = NO;
     [self.view insertSubview:buttonShadow belowSubview:self.continueButton];
     
+    // Botón de configuración (esquina superior derecha)
+    self.settingsButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.settingsButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.settingsButton setImage:[UIImage systemImageNamed:@"gearshape.fill"] forState:UIControlStateNormal];
+    [self.settingsButton setTintColor:white];
+    self.settingsButton.contentMode = UIViewContentModeScaleAspectFit;
+    [self.settingsButton addTarget:self action:@selector(showSettings) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.settingsButton];
+    
     [NSLayoutConstraint activateConstraints:@[
         [topGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [topGlow.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:-220],
@@ -160,13 +166,8 @@
         [brandLine.widthAnchor constraintEqualToConstant:44],
         [brandLine.heightAnchor constraintEqualToConstant:2],
         
-        [subtitle.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [subtitle.topAnchor constraintEqualToAnchor:brandLine.bottomAnchor constant:14],
-        [subtitle.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:30],
-        [subtitle.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-30],
-        
         [self.licenseField.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [self.licenseField.topAnchor constraintEqualToAnchor:subtitle.bottomAnchor constant:86],
+        [self.licenseField.topAnchor constraintEqualToAnchor:brandLine.bottomAnchor constant:86],
         [self.licenseField.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:38],
         [self.licenseField.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-38],
         [self.licenseField.heightAnchor constraintEqualToConstant:56],
@@ -181,6 +182,12 @@
         [self.continueButton.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:38],
         [self.continueButton.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-38],
         [self.continueButton.heightAnchor constraintEqualToConstant:54],
+        
+        // Settings button
+        [self.settingsButton.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:16],
+        [self.settingsButton.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-20],
+        [self.settingsButton.widthAnchor constraintEqualToConstant:28],
+        [self.settingsButton.heightAnchor constraintEqualToConstant:28],
     ]];
     
     [self updateButtonGradientFrame];
@@ -194,6 +201,136 @@
 - (void)updateButtonGradientFrame {
     self.buttonGradient.frame = self.continueButton.bounds;
     self.buttonGradient.cornerRadius = self.continueButton.layer.cornerRadius;
+}
+
+#pragma mark - Settings
+
+- (void)loadSettings {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    self.selectedLanguage = [defaults integerForKey:@"selectedLanguage"];
+    self.screenProtection = [defaults boolForKey:@"screenProtection"];
+    self.selectedBgColor = [defaults integerForKey:@"selectedBgColor"];
+    self.selectedTextColor = [defaults integerForKey:@"selectedTextColor"];
+}
+
+- (void)saveSettings {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setInteger:self.selectedLanguage forKey:@"selectedLanguage"];
+    [defaults setBool:self.screenProtection forKey:@"screenProtection"];
+    [defaults setInteger:self.selectedBgColor forKey:@"selectedBgColor"];
+    [defaults setInteger:self.selectedTextColor forKey:@"selectedTextColor"];
+    [defaults synchronize];
+}
+
+- (void)showSettings {
+    UIAlertController *settingsAlert = [UIAlertController alertControllerWithTitle:@"Configuración" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    
+    // Idioma
+    UIAlertAction *langES = [UIAlertAction actionWithTitle:@"🇪🇸 Español" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedLanguage = 0;
+        [self saveSettings];
+    }];
+    UIAlertAction *langEN = [UIAlertAction actionWithTitle:@"🇺🇸 English" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedLanguage = 1;
+        [self saveSettings];
+    }];
+    UIAlertAction *langPT = [UIAlertAction actionWithTitle:@"🇧🇷 Português" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedLanguage = 2;
+        [self saveSettings];
+    }];
+    
+    // Protección de pantalla
+    NSString *protText = self.screenProtection ? @"🛡️ Desactivar Protección" : @"🛡️ Activar Protección";
+    UIAlertAction *protection = [UIAlertAction actionWithTitle:protText style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.screenProtection = !self.screenProtection;
+        [self saveSettings];
+    }];
+    
+    // Colores de fondo
+    UIAlertAction *bgRed = [UIAlertAction actionWithTitle:@"🔴 Fondo Rojo" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedBgColor = 0;
+        [self saveSettings];
+        [self applyTheme];
+    }];
+    UIAlertAction *bgGray = [UIAlertAction actionWithTitle:@"⚫ Fondo Gris" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedBgColor = 1;
+        [self saveSettings];
+        [self applyTheme];
+    }];
+    UIAlertAction *bgBlue = [UIAlertAction actionWithTitle:@"🔵 Fondo Azul" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedBgColor = 2;
+        [self saveSettings];
+        [self applyTheme];
+    }];
+    UIAlertAction *bgPurple = [UIAlertAction actionWithTitle:@"🟣 Fondo Morado" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedBgColor = 3;
+        [self saveSettings];
+        [self applyTheme];
+    }];
+    
+    // Colores de texto
+    UIAlertAction *textWhite = [UIAlertAction actionWithTitle:@"⚪ Texto Blanco" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedTextColor = 0;
+        [self saveSettings];
+        [self applyTheme];
+    }];
+    UIAlertAction *textGray = [UIAlertAction actionWithTitle:@"🔘 Texto Gris" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedTextColor = 1;
+        [self saveSettings];
+        [self applyTheme];
+    }];
+    UIAlertAction *textRed = [UIAlertAction actionWithTitle:@"🔴 Texto Rojo" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedTextColor = 2;
+        [self saveSettings];
+        [self applyTheme];
+    }];
+    UIAlertAction *textGreen = [UIAlertAction actionWithTitle:@" Texto Verde" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedTextColor = 3;
+        [self saveSettings];
+        [self applyTheme];
+    }];
+    
+    [settingsAlert addAction:langES];
+    [settingsAlert addAction:langEN];
+    [settingsAlert addAction:langPT];
+    [settingsAlert addAction:protection];
+    [settingsAlert addAction:bgRed];
+    [settingsAlert addAction:bgGray];
+    [settingsAlert addAction:bgBlue];
+    [settingsAlert addAction:bgPurple];
+    [settingsAlert addAction:textWhite];
+    [settingsAlert addAction:textGray];
+    [settingsAlert addAction:textRed];
+    [settingsAlert addAction:textGreen];
+    
+    UIAlertAction *cancel = [UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil];
+    [settingsAlert addAction:cancel];
+    
+    [self presentViewController:settingsAlert animated:YES completion:nil];
+}
+
+- (void)applyTheme {
+    NSArray *bgColors = @[
+        [UIColor colorWithRed:0.018 green:0.018 blue:0.022 alpha:1.0],
+        [UIColor colorWithRed:0.10 green:0.10 blue:0.12 alpha:1.0],
+        [UIColor colorWithRed:0.02 green:0.05 blue:0.15 alpha:1.0],
+        [UIColor colorWithRed:0.08 green:0.02 blue:0.12 alpha:1.0]
+    ];
+    
+    NSArray *textColors = @[
+        [UIColor colorWithWhite:0.96 alpha:1.0],
+        [UIColor colorWithWhite:0.60 alpha:1.0],
+        [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0],
+        [UIColor colorWithRed:0.20 green:0.90 blue:0.30 alpha:1.0]
+    ];
+    
+    UIColor *bgColor = bgColors[self.selectedBgColor];
+    UIColor *textColor = textColors[self.selectedTextColor];
+    
+    [UIView animateWithDuration:0.3 animations:^{
+        self.view.backgroundColor = bgColor;
+        self.licenseField.textColor = textColor;
+    }];
 }
 
 #pragma mark - License formatting
