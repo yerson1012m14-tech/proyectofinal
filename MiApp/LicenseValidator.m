@@ -1,28 +1,181 @@
 #import "LicenseValidator.h"
+#import <UIKit/UIKit.h>
+
+static NSString * const kLicenseAPIURL =
+    @"https://xitforge-license-server.onrender.com/api/license/validate";
 
 @implementation LicenseValidator
 
-+ (NSArray *)validKeys {
-    // Agrega aquí todas las claves válidas que quieras
-    return @[
-        @"XITF-ORGE-2024-KEY1",
-        @"ABCD-1234-EFGH-5678",
-        @"TEST-1234-ABCD-5678",
-        @"DEMO-USER-2024-XXXX"
-    ];
++ (BOOL)isValidFormat:(NSString *)key {
+
+    NSString *regex =
+        @"^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$";
+
+    NSPredicate *predicate =
+        [NSPredicate predicateWithFormat:
+            @"SELF MATCHES %@", regex];
+
+    return [predicate evaluateWithObject:key];
 }
 
-+ (BOOL)isValidKey:(NSString *)key {
-    // Primero verifica el formato
-    NSString *regex = @"^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$";
-    NSPredicate *predicado = [NSPredicate predicateWithFormat:@"SELF MATCHES %@", regex];
-    if (![predicado evaluateWithObject:key]) {
-        return NO;
++ (NSString *)deviceIdentifier {
+
+    NSUUID *identifier =
+        [UIDevice currentDevice].identifierForVendor;
+
+    if (identifier.UUIDString.length > 0) {
+        return identifier.UUIDString;
     }
-    
-    // Luego verifica si está en la lista de claves válidas
-    NSArray *validas = [self validKeys];
-    return [validas containsObject:key];
+
+    /*
+     * Fallback.
+     *
+     * No guardamos secretos ni usamos UDID.
+     */
+    return @"unknown-device";
+}
+
++ (void)validateKey:(NSString *)key
+         completion:(LicenseValidationCompletion)completion {
+
+    NSString *normalizedKey =
+        [[key stringByTrimmingCharactersInSet:
+            [NSCharacterSet whitespaceAndNewlineCharacterSet]]
+            uppercaseString];
+
+    if (![self isValidFormat:normalizedKey]) {
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion(NO, @"invalid_format", nil);
+            }
+        });
+
+        return;
+    }
+
+    NSString *deviceID =
+        [self deviceIdentifier];
+
+    NSURL *url =
+        [NSURL URLWithString:kLicenseAPIURL];
+
+    if (!url) {
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion(NO, @"invalid_url", nil);
+            }
+        });
+
+        return;
+    }
+
+    NSDictionary *payload = @{
+        @"key": normalizedKey,
+        @"deviceId": deviceID
+    };
+
+    NSError *jsonError = nil;
+
+    NSData *jsonData =
+        [NSJSONSerialization dataWithJSONObject:payload
+                                        options:0
+                                          error:&jsonError];
+
+    if (!jsonData) {
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion(NO, @"json_error", nil);
+            }
+        });
+
+        return;
+    }
+
+    NSMutableURLRequest *request =
+        [NSMutableURLRequest requestWithURL:url];
+
+    request.HTTPMethod = @"POST";
+
+    [request setValue:@"application/json"
+    forHTTPHeaderField:@"Content-Type"];
+
+    [request setValue:@"application/json"
+    forHTTPHeaderField:@"Accept"];
+
+    request.HTTPBody = jsonData;
+
+    NSURLSessionDataTask *task =
+        [[NSURLSession sharedSession]
+            dataTaskWithRequest:request
+              completionHandler:
+        ^(NSData * _Nullable data,
+          NSURLResponse * _Nullable response,
+          NSError * _Nullable error) {
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+
+            if (error) {
+                if (completion) {
+                    completion(NO,
+                              @"network_error",
+                              nil);
+                }
+                return;
+            }
+
+            if (!data) {
+                if (completion) {
+                    completion(NO,
+                              @"empty_response",
+                              nil);
+                }
+                return;
+            }
+
+            NSError *parseError = nil;
+
+            NSDictionary *json =
+                [NSJSONSerialization
+                    JSONObjectWithData:data
+                    options:0
+                    error:&parseError];
+
+            if (![json isKindOfClass:[NSDictionary class]]) {
+
+                if (completion) {
+                    completion(NO,
+                              @"invalid_response",
+                              nil);
+                }
+
+                return;
+            }
+
+            BOOL valid =
+                [json[@"valid"] boolValue];
+
+            NSString *reason =
+                [json[@"reason"] isKindOfClass:[NSString class]]
+                    ? json[@"reason"]
+                    : nil;
+
+            NSString *expiresAt =
+                [json[@"expiresAt"] isKindOfClass:[NSString class]]
+                    ? json[@"expiresAt"]
+                    : nil;
+
+            if (completion) {
+                completion(valid,
+                           reason,
+                           expiresAt);
+            }
+        });
+    }];
+
+    [task resume];
 }
 
 @end
