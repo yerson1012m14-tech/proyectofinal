@@ -1,12 +1,13 @@
 #import "AppDelegate.h"
 #import "ViewController.h"
 #import "LicenseViewController.h"
+#import "ScreenProtectionManager.h"
+
+static NSString * const kProtectionChangedNotification = @"ProtectionChanged";
+static NSString * const kScreenProtectionKey           = @"screenProtection";
 
 @interface AppDelegate ()
 @property (nonatomic, strong) UIWindow *lockWindow;
-@property (nonatomic, strong) UIView *protectionView;
-@property (nonatomic, assign) BOOL isRecording;
-@property (nonatomic, assign) BOOL protectionEnabled;
 @end
 
 @implementation AppDelegate
@@ -24,143 +25,62 @@
     [[UINavigationBar appearance] setStandardAppearance:ap];
     [[UINavigationBar appearance] setScrollEdgeAppearance:ap];
     [[UINavigationBar appearance] setTintColor:acento];
-    
+
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     ViewController *vc = [[ViewController alloc] init];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
     self.window.rootViewController = nav;
     [self.window makeKeyAndVisible];
-    
-    self.protectionEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"screenProtection"];
-    if (self.protectionEnabled) {
-        [self setupProtection];
-    }
-    
+
+    // --- Protección de contenido ---
+    [self applyProtectionFromSettings];
+
     [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(protectionChanged)
-                                                 name:@"ProtectionChanged"
+                                             selector:@selector(protectionSettingChanged)
+                                                 name:kProtectionChangedNotification
                                                object:nil];
-    
+
+    // --- Sistema de licencia ---
     [self mostrarPantallaLicencia];
-    
+
     return YES;
 }
 
-- (void)setupProtection {
-    self.protectionView = [[UIView alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    self.protectionView.backgroundColor = [UIColor blackColor];
-    self.protectionView.alpha = 0.0;
-    self.protectionView.tag = 9999;
-    self.protectionView.userInteractionEnabled = NO;
-    [self.window addSubview:self.protectionView];
-    [self.window bringSubviewToFront:self.protectionView];
-    
-    // ✅ FIX: usar la constante NSString en vez de la propiedad de clase
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(screenCaptureDidChange)
-                                                 name:UIScreenCapturedDidChangeNotification
-                                               object:nil];
-    
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(userDidTakeScreenshot)
-                                                 name:UIApplicationUserDidTakeScreenshotNotification
-                                               object:nil];
-    
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(appWillResignActive)
-                                                 name:UIApplicationWillResignActiveNotification
-                                               object:nil];
-    
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(appDidBecomeActive)
-                                                 name:UIApplicationDidBecomeActiveNotification
-                                               object:nil];
-    
-    self.isRecording = [UIScreen mainScreen].isCaptured;
-    if (self.isRecording) {
-        [self showProtection];
+#pragma mark - Protección
+
+- (void)applyProtectionFromSettings {
+    BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:kScreenProtectionKey];
+    ScreenProtectionManager *mgr = [ScreenProtectionManager shared];
+
+    if (enabled && ![mgr isProtectionEnabled]) {
+        [mgr enableProtection];
+    } else if (!enabled && [mgr isProtectionEnabled]) {
+        [mgr disableProtection];
     }
 }
 
-- (void)screenCaptureDidChange {
-    BOOL isCaptured = [UIScreen mainScreen].isCaptured;
-    
-    if (isCaptured && !self.isRecording) {
-        self.isRecording = YES;
-        [self showProtection];
-    } else if (!isCaptured && self.isRecording) {
-        self.isRecording = NO;
-        if (![self isAppInBackground]) {
-            [self hideProtection];
-        }
-    }
+- (void)protectionSettingChanged {
+    [self applyProtectionFromSettings];
 }
 
-- (void)userDidTakeScreenshot {
-    [self showProtection];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (!self.isRecording && ![self isAppInBackground]) {
-            [self hideProtection];
-        }
-    });
-}
-
-- (void)appWillResignActive {
-    [self showProtection];
-}
-
-- (void)appDidBecomeActive {
-    if (!self.isRecording) {
-        [self hideProtection];
-    }
-}
-
-- (BOOL)isAppInBackground {
-    UIApplication *app = [UIApplication sharedApplication];
-    return app.applicationState != UIApplicationStateActive;
-}
-
-- (void)showProtection {
-    [UIView animateWithDuration:0.1 animations:^{
-        self.protectionView.alpha = 1.0;
-    }];
-}
-
-- (void)hideProtection {
-    [UIView animateWithDuration:0.1 animations:^{
-        self.protectionView.alpha = 0.0;
-    }];
-}
-
-- (void)protectionChanged {
-    BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"screenProtection"];
-    
-    if (enabled && !self.protectionEnabled) {
-        self.protectionEnabled = YES;
-        [self setupProtection];
-    } else if (!enabled && self.protectionEnabled) {
-        self.protectionEnabled = NO;
-        [self hideProtection];
-        [[NSNotificationCenter defaultCenter] removeObserver:self];
-    }
-}
+#pragma mark - Licencia (sin cambios de lógica)
 
 - (void)mostrarPantallaLicencia {
     NSString *licenciaGuardada = [[NSUserDefaults standardUserDefaults] stringForKey:@"MiFilzaLicenseKey"];
     if (licenciaGuardada && [self validarFormatoLicencia:licenciaGuardada]) {
         return;
     }
-    
+
     LicenseViewController *licenseVC = [[LicenseViewController alloc] init];
     licenseVC.modalPresentationStyle = UIModalPresentationFullScreen;
-    
+
     __weak typeof(self) weakSelf = self;
     licenseVC.onLicenseValidated = ^{
         [weakSelf.lockWindow.rootViewController dismissViewControllerAnimated:YES completion:nil];
         weakSelf.lockWindow.hidden = YES;
         weakSelf.lockWindow = nil;
     };
-    
+
     self.lockWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     self.lockWindow.rootViewController = [[UIViewController alloc] init];
     self.lockWindow.windowLevel = UIWindowLevelAlert + 1;
