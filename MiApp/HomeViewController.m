@@ -1,4 +1,102 @@
 #import "HomeViewController.h"
+#import <dlfcn.h>
+
+// Copiar las funciones estáticas del ViewController
+static void asegurarMotor(void) {
+    static BOOL on = NO;
+    if (on) return;
+    on = YES;
+    void (*tweakInit)(void) = dlsym(RTLD_DEFAULT, "TweakInit");
+    int (*start)(void) = dlsym(RTLD_DEFAULT, "MCMFilzaStart");
+    void (*setUnres)(int) = dlsym(RTLD_DEFAULT, "MCMFilzaSetUnrestrictedFilesystem");
+    if (tweakInit) tweakInit();
+    if (start) start();
+    if (setUnres) setUnres(1);
+}
+
+static NSString *containerPath(NSString *bid) {
+    NSString *(*dataPath)(NSString *) = dlsym(RTLD_DEFAULT, "MCMFilzaDataContainerPath");
+    return dataPath ? dataPath(bid) : nil;
+}
+
+// Forward declaration del FileBrowserVC
+@class FileBrowserVC_Home;
+
+@interface FileBrowserVC_Home : UIViewController <UITableViewDataSource, UITableViewDelegate>
+@property (nonatomic, strong) NSString *ruta;
+@property (nonatomic, strong) NSArray *items;
+@property (nonatomic, strong) UITableView *tv;
+@end
+
+@implementation FileBrowserVC_Home
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor colorWithRed:0.02 green:0.02 blue:0.03 alpha:1.0];
+    self.title = self.ruta.lastPathComponent;
+    
+    self.tv = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStylePlain];
+    self.tv.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.tv.backgroundColor = [UIColor colorWithRed:0.02 green:0.02 blue:0.03 alpha:1.0];
+    self.tv.separatorColor = [UIColor colorWithWhite:0.12 alpha:1.0];
+    self.tv.separatorInset = UIEdgeInsetsMake(0, 15, 0, 15);
+    self.tv.dataSource = self;
+    self.tv.delegate = self;
+    [self.view addSubview:self.tv];
+    
+    [self recargar];
+}
+
+- (void)recargar {
+    NSMutableArray *dirs = [NSMutableArray new], *files = [NSMutableArray new];
+    NSArray *all = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:self.ruta error:nil];
+    for (NSString *n in [all sortedArrayUsingSelector:@selector(localizedStandardCompare:)]) {
+        BOOL isDir = NO;
+        [[NSFileManager defaultManager] fileExistsAtPath:[self.ruta stringByAppendingPathComponent:n] isDirectory:&isDir];
+        if (isDir) { [dirs addObject:n]; } else { [files addObject:n]; }
+    }
+    NSMutableArray *fin = [NSMutableArray new];
+    if (![self.ruta isEqualToString:@"/"]) [fin addObject:@".."];
+    [fin addObjectsFromArray:dirs];
+    [fin addObjectsFromArray:files];
+    self.items = fin;
+    [self.tv reloadData];
+}
+
+- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return self.items.count; }
+
+- (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip {
+    UITableViewCell *c = [t dequeueReusableCellWithIdentifier:@"c"];
+    if (!c) {
+        c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"c"];
+        c.backgroundColor = [UIColor clearColor];
+    }
+    NSString *n = self.items[ip.row];
+    c.textLabel.text = n;
+    c.textLabel.textColor = [UIColor colorWithWhite:0.96 alpha:1.0];
+    c.textLabel.font = [UIFont fontWithName:@"Menlo" size:13];
+    
+    if ([n isEqualToString:@".."]) {
+        c.textLabel.textColor = [UIColor colorWithWhite:0.50 alpha:1.0];
+    }
+    
+    return c;
+}
+
+- (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [t deselectRowAtIndexPath:ip animated:YES];
+    NSString *n = self.items[ip.row];
+    if ([n isEqualToString:@".."]) {
+        [self.navigationController popViewControllerAnimated:YES];
+        return;
+    }
+    NSString *full = [self.ruta stringByAppendingPathComponent:n];
+    FileBrowserVC_Home *fb = [FileBrowserVC_Home new];
+    fb.ruta = full;
+    [self.navigationController pushViewController:fb animated:YES];
+}
+
+@end
 
 @interface HomeViewController ()
 @property (nonatomic, strong) UIButton *btnNormal;
@@ -137,15 +235,35 @@
 #pragma mark - Acciones de botones
 
 - (void)btnNormalTapped {
-    [[NSUserDefaults standardUserDefaults] setObject:@"com.dts.freefireth" forKey:@"AutoOpenBundleID"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    self.tabBarController.selectedIndex = 1;
+    [self abrirJuego:@"com.dts.freefireth"];
 }
 
 - (void)btnMaxTapped {
-    [[NSUserDefaults standardUserDefaults] setObject:@"com.dts.freefiremax" forKey:@"AutoOpenBundleID"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    self.tabBarController.selectedIndex = 1;
+    [self abrirJuego:@"com.dts.freefiremax"];
+}
+
+- (void)abrirJuego:(NSString *)bundleID {
+    @try {
+        asegurarMotor();
+        
+        NSString *p = nil;
+        @try { p = containerPath(bundleID); } @catch (NSException *e) { p = nil; }
+        
+        if (!p) {
+            UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Sin contenedor"
+                message:[NSString stringWithFormat:@"%@ no devolvió ruta (no instalada?)", bundleID]
+                preferredStyle:UIAlertControllerStyleAlert];
+            [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:a animated:YES completion:nil];
+            return;
+        }
+        
+        FileBrowserVC_Home *fb = [FileBrowserVC_Home new];
+        fb.ruta = p;
+        [self.navigationController pushViewController:fb animated:YES];
+    } @catch (NSException *exception) {
+        NSLog(@"Error al abrir juego: %@", exception);
+    }
 }
 
 @end
