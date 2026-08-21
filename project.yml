@@ -2,7 +2,7 @@ name: MiApp
 options:
   bundleIdPrefix: com.apple.mobile
   deploymentTarget:
-    iOS: "14.0"
+    iOS: "17.0"
 targets:
   MiApp:
     type: application
