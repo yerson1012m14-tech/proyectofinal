@@ -17,7 +17,7 @@
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.06 alpha:1.0];
     self.langExpanded = YES;
-    self.customExpanded = NO;
+    self.customExpanded = YES;
     [self setupUI];
 }
 
@@ -90,7 +90,12 @@
     
     NSArray *langs = @[@"Español", @"English", @"Português"];
     NSArray *langSubs = @[@"Spanish", @"English", @"Portuguese"];
-    NSArray *flags = @[@"🇸", @"🇺", @"🇧🇷"];
+    NSArray *countryCodes = @[@"ES", @"EN", @"PT"];
+    NSArray *flagColors = @[
+        [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0],
+        [UIColor colorWithRed:0.10 green:0.30 blue:0.70 alpha:1.0],
+        [UIColor colorWithRed:0.10 green:0.70 blue:0.30 alpha:1.0]
+    ];
     
     for (int i = 0; i < 3; i++) {
         UIView *row = [[UIView alloc] init];
@@ -98,11 +103,20 @@
         row.tag = 200 + i;
         [langOptions addSubview:row];
         
-        UILabel *flag = [[UILabel alloc] init];
-        flag.translatesAutoresizingMaskIntoConstraints = NO;
-        flag.text = flags[i];
-        flag.font = [UIFont systemFontOfSize:18];
-        [row addSubview:flag];
+        // Círculo con inicial del país en vez de emoji
+        UIView *flagCircle = [[UIView alloc] init];
+        flagCircle.translatesAutoresizingMaskIntoConstraints = NO;
+        flagCircle.backgroundColor = flagColors[i];
+        flagCircle.layer.cornerRadius = 14;
+        [row addSubview:flagCircle];
+        
+        UILabel *flagLabel = [[UILabel alloc] init];
+        flagLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        flagLabel.text = countryCodes[i];
+        flagLabel.textColor = white;
+        flagLabel.font = [UIFont boldSystemFontOfSize:11];
+        flagLabel.textAlignment = NSTextAlignmentCenter;
+        [flagCircle addSubview:flagLabel];
         
         UILabel *lt = [[UILabel alloc] init];
         lt.translatesAutoresizingMaskIntoConstraints = NO;
@@ -131,12 +145,21 @@
             [row.leadingAnchor constraintEqualToAnchor:langOptions.leadingAnchor],
             [row.trailingAnchor constraintEqualToAnchor:langOptions.trailingAnchor],
             [row.heightAnchor constraintEqualToConstant:52],
-            [flag.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:16],
-            [flag.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
-            [lt.leadingAnchor constraintEqualToAnchor:flag.trailingAnchor constant:12],
+            
+            [flagCircle.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:16],
+            [flagCircle.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+            [flagCircle.widthAnchor constraintEqualToConstant:28],
+            [flagCircle.heightAnchor constraintEqualToConstant:28],
+            
+            [flagLabel.centerXAnchor constraintEqualToAnchor:flagCircle.centerXAnchor],
+            [flagLabel.centerYAnchor constraintEqualToAnchor:flagCircle.centerYAnchor],
+            
+            [lt.leadingAnchor constraintEqualToAnchor:flagCircle.trailingAnchor constant:12],
             [lt.topAnchor constraintEqualToAnchor:row.topAnchor constant:10],
+            
             [ls.leadingAnchor constraintEqualToAnchor:lt.leadingAnchor],
             [ls.topAnchor constraintEqualToAnchor:lt.bottomAnchor constant:2],
+            
             [radio.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-16],
             [radio.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
             [radio.widthAnchor constraintEqualToConstant:22],
@@ -222,6 +245,7 @@
     customOptions.translatesAutoresizingMaskIntoConstraints = NO;
     [customCard addSubview:customOptions];
     
+    // Color del fondo
     UILabel *bgLabel = [[UILabel alloc] init];
     bgLabel.translatesAutoresizingMaskIntoConstraints = NO;
     bgLabel.text = @"Color del fondo";
@@ -248,19 +272,19 @@
         colorBtn.translatesAutoresizingMaskIntoConstraints = NO;
         colorBtn.tag = 400 + i;
         colorBtn.backgroundColor = bgColors[i];
-        colorBtn.layer.cornerRadius = 14;
+        colorBtn.layer.cornerRadius = 16;
         colorBtn.layer.borderWidth = (i == self.selectedBgColor) ? 2.5 : 0;
         colorBtn.layer.borderColor = white.CGColor;
         [colorBtn addTarget:self action:@selector(selectBg:) forControlEvents:UIControlEventTouchUpInside];
         [customOptions addSubview:colorBtn];
         
-        // Constraint individual (no en array con loop)
-        [colorBtn.topAnchor constraintEqualToAnchor:bgSubLabel.bottomAnchor constant:10].active = YES;
-        [colorBtn.leadingAnchor constraintEqualToAnchor:customOptions.leadingAnchor constant:(i * 44)].active = YES;
-        [colorBtn.widthAnchor constraintEqualToConstant:28].active = YES;
-        [colorBtn.heightAnchor constraintEqualToConstant:28].active = YES;
+        [colorBtn.topAnchor constraintEqualToAnchor:bgSubLabel.bottomAnchor constant:14].active = YES;
+        [colorBtn.leadingAnchor constraintEqualToAnchor:customOptions.leadingAnchor constant:(i * 48)].active = YES;
+        [colorBtn.widthAnchor constraintEqualToConstant:32].active = YES;
+        [colorBtn.heightAnchor constraintEqualToConstant:32].active = YES;
     }
     
+    // Color del texto (con más espacio arriba)
     UILabel *txtLabel = [[UILabel alloc] init];
     txtLabel.translatesAutoresizingMaskIntoConstraints = NO;
     txtLabel.text = @"Color del texto";
@@ -287,16 +311,16 @@
         colorBtn.translatesAutoresizingMaskIntoConstraints = NO;
         colorBtn.tag = 500 + i;
         colorBtn.backgroundColor = txtColors[i];
-        colorBtn.layer.cornerRadius = 14;
+        colorBtn.layer.cornerRadius = 16;
         colorBtn.layer.borderWidth = (i == self.selectedTextColor) ? 2.5 : 0;
         colorBtn.layer.borderColor = [UIColor colorWithWhite:0.30 alpha:1.0].CGColor;
         [colorBtn addTarget:self action:@selector(selectTxt:) forControlEvents:UIControlEventTouchUpInside];
         [customOptions addSubview:colorBtn];
         
-        [colorBtn.topAnchor constraintEqualToAnchor:txtSubLabel.bottomAnchor constant:10].active = YES;
-        [colorBtn.leadingAnchor constraintEqualToAnchor:customOptions.leadingAnchor constant:(i * 44)].active = YES;
-        [colorBtn.widthAnchor constraintEqualToConstant:28].active = YES;
-        [colorBtn.heightAnchor constraintEqualToConstant:28].active = YES;
+        [colorBtn.topAnchor constraintEqualToAnchor:txtSubLabel.bottomAnchor constant:14].active = YES;
+        [colorBtn.leadingAnchor constraintEqualToAnchor:customOptions.leadingAnchor constant:(i * 48)].active = YES;
+        [colorBtn.widthAnchor constraintEqualToConstant:32].active = YES;
+        [colorBtn.heightAnchor constraintEqualToConstant:32].active = YES;
     }
     
     // Vista previa
@@ -429,7 +453,7 @@
         [bgSubLabel.topAnchor constraintEqualToAnchor:bgLabel.bottomAnchor constant:2],
         [bgSubLabel.leadingAnchor constraintEqualToAnchor:bgLabel.leadingAnchor],
         
-        [txtLabel.topAnchor constraintEqualToAnchor:bgSubLabel.bottomAnchor constant:16],
+        [txtLabel.topAnchor constraintEqualToAnchor:bgSubLabel.bottomAnchor constant:50],
         [txtLabel.leadingAnchor constraintEqualToAnchor:customOptions.leadingAnchor],
         
         [txtSubLabel.topAnchor constraintEqualToAnchor:txtLabel.bottomAnchor constant:2],
@@ -451,11 +475,11 @@
         [prevSample.topAnchor constraintEqualToAnchor:prevLogo.bottomAnchor constant:6],
     ]];
     
-    // Alturas dinámicas
+    // Alturas dinámicas (aumentadas para dar más espacio)
     self.langOptionsHeight = [langOptions.heightAnchor constraintEqualToConstant:(self.langExpanded ? 156 : 0)];
     self.langOptionsHeight.active = YES;
     
-    self.customOptionsHeight = [customOptions.heightAnchor constraintEqualToConstant:(self.customExpanded ? 140 : 0)];
+    self.customOptionsHeight = [customOptions.heightAnchor constraintEqualToConstant:(self.customExpanded ? 200 : 0)];
     self.customOptionsHeight.active = YES;
 }
 
@@ -477,7 +501,7 @@
 - (void)toggleCustom {
     self.customExpanded = !self.customExpanded;
     [UIView animateWithDuration:0.3 animations:^{
-        self.customOptionsHeight.constant = self.customExpanded ? 140 : 0;
+        self.customOptionsHeight.constant = self.customExpanded ? 200 : 0;
         [self.view layoutIfNeeded];
     }];
     [self.customChevron setImage:[UIImage systemImageNamed:(self.customExpanded ? @"chevron.up" : @"chevron.down")] forState:UIControlStateNormal];
