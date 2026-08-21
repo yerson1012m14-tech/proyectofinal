@@ -1,4 +1,5 @@
 #import "HomeViewController.h"
+#import "ViewController.h"
 
 @interface HomeViewController ()
 @property (nonatomic, strong) UIButton *btnNormal;
@@ -109,7 +110,6 @@
     
     // Constraints
     [NSLayoutConstraint activateConstraints:@[
-        // Glows
         [topGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [topGlow.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:-220],
         [topGlow.widthAnchor constraintEqualToConstant:340],
@@ -120,7 +120,6 @@
         [bottomGlow.widthAnchor constraintEqualToConstant:300],
         [bottomGlow.heightAnchor constraintEqualToConstant:300],
         
-        // Logo y línea
         [logo.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [logo.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:40],
         
@@ -129,19 +128,16 @@
         [line.widthAnchor constraintEqualToConstant:60],
         [line.heightAnchor constraintEqualToConstant:2],
         
-        // Pregunta
         [pregunta.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [pregunta.topAnchor constraintEqualToAnchor:line.bottomAnchor constant:50],
         [pregunta.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:20],
         [pregunta.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-20],
         
-        // Botón FREE FIRE NORMAL (Izquierda)
         [self.btnNormal.topAnchor constraintEqualToAnchor:pregunta.bottomAnchor constant:40],
         [self.btnNormal.trailingAnchor constraintEqualToAnchor:self.view.centerXAnchor constant:-8],
         [self.btnNormal.widthAnchor constraintEqualToConstant:140],
         [self.btnNormal.heightAnchor constraintEqualToConstant:80],
         
-        // Botón FREE FIRE MAX (Derecha)
         [self.btnMax.topAnchor constraintEqualToAnchor:pregunta.bottomAnchor constant:40],
         [self.btnMax.leadingAnchor constraintEqualToAnchor:self.view.centerXAnchor constant:8],
         [self.btnMax.widthAnchor constraintEqualToConstant:140],
@@ -152,11 +148,23 @@
 #pragma mark - Acciones de botones
 
 - (void)btnNormalTapped {
-    // Por ahora no hace nada
+    // Abre el explorador y busca el contenedor de Free Fire Normal
+    ViewController *explorer = [[ViewController alloc] init];
+    [self.navigationController pushViewController:explorer animated:YES];
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [explorer abrirContenedor:@"com.dts.freefireth"];
+    });
 }
 
 - (void)btnMaxTapped {
-    // Por ahora no hace nada
+    // Abre el explorador y busca el contenedor de Free Fire MAX
+    ViewController *explorer = [[ViewController alloc] init];
+    [self.navigationController pushViewController:explorer animated:YES];
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [explorer abrirContenedor:@"com.dts.freefiremax"];
+    });
 }
 
 @end
