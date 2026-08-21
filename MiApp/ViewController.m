@@ -248,8 +248,6 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 @property (nonatomic, strong) UITextField *campo;
 @property (nonatomic, strong) NSMutableArray *apps;
 @property (nonatomic, strong) UILabel *vacioLabel;
-@property (nonatomic, assign) BOOL hasProcessedAutoOpen;
-@property (nonatomic, assign) BOOL isViewReady;
 @end
 
 @implementation ViewController
@@ -259,8 +257,6 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     self.view.backgroundColor = colorFondo();
     self.title = @"Explorar";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
-    self.hasProcessedAutoOpen = NO;
-    self.isViewReady = NO;
     
     UIBarButtonItem *refreshBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.clockwise"] style:UIBarButtonItemStylePlain target:self action:@selector(cargarApps)];
     refreshBtn.tintColor = acento();
@@ -320,93 +316,6 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self cargarApps];
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-    [super viewDidAppear:animated];
-    
-    // Marcar que la vista está completamente lista
-    self.isViewReady = YES;
-    
-    // Procesar auto-open solo cuando la vista esté completamente visible
-    [self procesarAutoOpen];
-}
-
-- (void)viewWillDisappear:(BOOL)animated {
-    [super viewWillDisappear:animated];
-    // No resetear el flag aquí, solo cuando volvemos al root
-}
-
-- (void)procesarAutoOpen {
-    // Solo procesar si la vista está completamente lista y no hemos procesado ya
-    if (!self.isViewReady || self.hasProcessedAutoOpen) {
-        return;
-    }
-    
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSString *bundleID = [defaults stringForKey:@"AutoOpenBundleID"];
-    
-    if (!bundleID || bundleID.length == 0) {
-        return;
-    }
-    
-    // Marcar como procesado inmediatamente
-    self.hasProcessedAutoOpen = YES;
-    
-    // Limpiar el valor
-    [defaults removeObjectForKey:@"AutoOpenBundleID"];
-    [defaults synchronize];
-    
-    // Verificar que el navigationController está en un estado válido
-    if (!self.navigationController) {
-        return;
-    }
-    
-    // Solo hacer el push si estamos en el root del navigationController
-    if (self.navigationController.topViewController != self) {
-        return;
-    }
-    
-    // Esperar un poco más para asegurar que todo está listo
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        @try {
-            [self abrirContenedorDesdeAutoOpen:bundleID];
-        } @catch (NSException *exception) {
-            NSLog(@"Error en auto-open: %@", exception);
-        }
-    });
-}
-
-- (void)abrirContenedorDesdeAutoOpen:(NSString *)bid {
-    @try {
-        bid = [bid stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if (!bid.length) return;
-        
-        // Verificar nuevamente que estamos en el root
-        if (self.navigationController.topViewController != self) {
-            return;
-        }
-        
-        asegurarMotor();
-        
-        NSString *p = nil;
-        @try { p = containerPath(bid); } @catch (NSException *e) { p = nil; }
-        
-        if (!p) {
-            UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Sin contenedor"
-                message:[NSString stringWithFormat:@"%@ no devolvió ruta (no instalada?)", bid]
-                preferredStyle:UIAlertControllerStyleAlert];
-            [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-            [self presentViewController:a animated:YES completion:nil];
-            return;
-        }
-        
-        FileBrowserVC *fb = [FileBrowserVC new];
-        fb.ruta = p;
-        [self.navigationController pushViewController:fb animated:YES];
-    } @catch (NSException *exception) {
-        NSLog(@"Error al abrir contenedor desde auto-open: %@", exception);
-    }
 }
 
 - (void)irARaiz {
@@ -488,7 +397,6 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
         bid = [bid stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         if (!bid.length) return;
         
-        // Hacer popToRoot solo si hay más de 1 vista en el stack
         if (self.navigationController && self.navigationController.viewControllers.count > 1) {
             [self.navigationController popToRootViewControllerAnimated:NO];
         }
