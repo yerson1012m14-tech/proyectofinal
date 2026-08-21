@@ -17,8 +17,8 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor colorWithRed:0.018 green:0.018 blue:0.022 alpha:1.0];
     [self loadSettings];
+    [self applyTheme];
     [self setupUI];
 }
 
@@ -26,6 +26,7 @@
 
 - (void)setupUI {
     UIColor *white = [UIColor colorWithWhite:0.96 alpha:1.0];
+    UIColor *muted = [UIColor colorWithWhite:0.50 alpha:1.0];
     UIColor *fieldBorder = [UIColor colorWithWhite:0.20 alpha:1.0];
     UIColor *fieldFill = [UIColor colorWithWhite:0.065 alpha:1.0];
     UIColor *red = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
@@ -69,7 +70,6 @@
     self.licenseField = [[UITextField alloc] init];
     self.licenseField.translatesAutoresizingMaskIntoConstraints = NO;
     self.licenseField.backgroundColor = fieldFill;
-    self.licenseField.textColor = white;
     self.licenseField.font = [UIFont monospacedSystemFontOfSize:17.0 weight:UIFontWeightMedium];
     self.licenseField.textAlignment = NSTextAlignmentCenter;
     self.licenseField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
@@ -131,6 +131,7 @@
     buttonShadow.userInteractionEnabled = NO;
     [self.view insertSubview:buttonShadow belowSubview:self.continueButton];
     
+    // Botón de configuración
     self.settingsButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.settingsButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.settingsButton setImage:[UIImage systemImageNamed:@"gearshape.fill"] forState:UIControlStateNormal];
@@ -256,10 +257,13 @@
         [UIColor colorWithRed:0.20 green:0.90 blue:0.30 alpha:1.0]
     ];
     
-    [UIView animateWithDuration:0.3 animations:^{
-        self.view.backgroundColor = bgColors[self.selectedBgColor];
-        self.licenseField.textColor = textColors[self.selectedTextColor];
-    }];
+    UIColor *bgColor = bgColors[self.selectedBgColor];
+    UIColor *txtColor = textColors[self.selectedTextColor];
+    
+    self.view.backgroundColor = bgColor;
+    if (self.licenseField) {
+        self.licenseField.textColor = txtColor;
+    }
 }
 
 #pragma mark - License formatting
