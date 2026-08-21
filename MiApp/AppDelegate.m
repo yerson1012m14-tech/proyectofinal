@@ -17,10 +17,8 @@
 
 #pragma mark - Application
 
-- (BOOL)application:
-    (UIApplication *)application
-didFinishLaunchingWithOptions:
-    (NSDictionary *)launchOptions {
+- (BOOL)application:(UIApplication *)application
+    didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 
     UIColor *acento =
         [UIColor colorWithRed:0.2
@@ -43,17 +41,12 @@ didFinishLaunchingWithOptions:
         [UIColor blackColor];
 
     ap.shadowColor =
-        [UIColor colorWithWhite:0.25
-                          alpha:1.0];
+        [UIColor colorWithWhite:0.25 alpha:1.0];
 
     ap.titleTextAttributes = @{
-        NSForegroundColorAttributeName:
-            acento,
-
+        NSForegroundColorAttributeName: acento,
         NSFontAttributeName:
-            [UIFont fontWithName:
-                @"Menlo-Bold"
-                       size:17.0]
+            [UIFont fontWithName:@"Menlo-Bold" size:17.0]
     };
 
     [[UINavigationBar appearance]
@@ -80,19 +73,16 @@ didFinishLaunchingWithOptions:
         [UIColor blackColor];
 
     [[UITabBar appearance]
-        setStandardAppearance:
-            tabAppearance];
+        setStandardAppearance:tabAppearance];
 
     [[UITabBar appearance]
-        setScrollEdgeAppearance:
-            tabAppearance];
+        setScrollEdgeAppearance:tabAppearance];
 
     [[UITabBar appearance]
         setTintColor:acento];
 
     [[UITabBar appearance]
-        setUnselectedItemTintColor:
-            [UIColor grayColor]];
+        setUnselectedItemTintColor:[UIColor grayColor]];
 
     /*
      * =========================================================
@@ -105,21 +95,17 @@ didFinishLaunchingWithOptions:
 
     UINavigationController *homeNav =
         [[UINavigationController alloc]
-            initWithRootViewController:
-                homeVC];
+            initWithRootViewController:homeVC];
 
     homeNav.tabBarItem =
         [[UITabBarItem alloc]
             initWithTitle:@"Inicio"
-                      image:
-                          [UIImage
-                              systemImageNamed:
-                                  @"house.fill"]
+                      image:[UIImage systemImageNamed:@"house.fill"]
                         tag:0];
 
     /*
      * =========================================================
-     * EXPLORER
+     * EXPLORAR
      * =========================================================
      */
 
@@ -128,40 +114,31 @@ didFinishLaunchingWithOptions:
 
     UINavigationController *explorerNav =
         [[UINavigationController alloc]
-            initWithRootViewController:
-                explorerVC];
+            initWithRootViewController:explorerVC];
 
     explorerNav.tabBarItem =
         [[UITabBarItem alloc]
             initWithTitle:@"Explorar"
-                      image:
-                          [UIImage
-                              systemImageNamed:
-                                  @"magnifyingglass"]
+                      image:[UIImage systemImageNamed:@"magnifyingglass"]
                         tag:1];
 
     /*
      * =========================================================
-     * SETTINGS
+     * AJUSTES
      * =========================================================
      */
 
     MainSettingsViewController *settingsVC =
-        [[MainSettingsViewController alloc]
-            init];
+        [[MainSettingsViewController alloc] init];
 
     UINavigationController *settingsNav =
         [[UINavigationController alloc]
-            initWithRootViewController:
-                settingsVC];
+            initWithRootViewController:settingsVC];
 
     settingsNav.tabBarItem =
         [[UITabBarItem alloc]
             initWithTitle:@"Ajustes"
-                      image:
-                          [UIImage
-                              systemImageNamed:
-                                  @"gearshape.fill"]
+                      image:[UIImage systemImageNamed:@"gearshape.fill"]
                         tag:2];
 
     /*
@@ -180,8 +157,7 @@ didFinishLaunchingWithOptions:
             settingsNav
         ];
 
-    self.mainTabBar.selectedIndex =
-        0;
+    self.mainTabBar.selectedIndex = 0;
 
     /*
      * =========================================================
@@ -191,8 +167,7 @@ didFinishLaunchingWithOptions:
 
     self.window =
         [[UIWindow alloc]
-            initWithFrame:
-                [UIScreen mainScreen].bounds];
+            initWithFrame:[UIScreen mainScreen].bounds];
 
     self.window.rootViewController =
         self.mainTabBar;
@@ -209,10 +184,7 @@ didFinishLaunchingWithOptions:
 
     /*
      * =========================================================
-     * LICENCIA
-     *
-     * IMPORTANTE:
-     * La comprobación se hace contra el servidor.
+     * COMPROBACIÓN DE LICENCIA
      * =========================================================
      */
 
@@ -247,8 +219,7 @@ didFinishLaunchingWithOptions:
 
     NSString *savedKey =
         [[NSUserDefaults standardUserDefaults]
-            stringForKey:
-                @"MiFilzaLicenseKey"];
+            stringForKey:@"MiFilzaLicenseKey"];
 
     /*
      * =========================================================
@@ -267,106 +238,106 @@ didFinishLaunchingWithOptions:
      * =========================================================
      * HAY KEY
      *
-     * No confiamos solamente en el formato.
-     * Consultamos Render SIEMPRE.
+     * NO confiamos solamente en el formato.
+     * Consultamos el servidor.
      * =========================================================
      */
 
     [LicenseValidator
         validateKey:savedKey
-        completion:
-        ^(BOOL valid,
-          NSString * _Nullable reason,
-          NSString * _Nullable expiresAt) {
+        completion:^(BOOL valid,
+                    NSString * _Nullable reason,
+                    NSString * _Nullable expiresAt) {
 
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
 
-            /*
-             * =================================================
-             * LICENCIA VÁLIDA
-             * =================================================
-             */
+                /*
+                 * =================================================
+                 * LICENCIA VÁLIDA
+                 * =================================================
+                 */
 
-            if (valid) {
+                if (valid) {
+
+                    NSUserDefaults *defaults =
+                        [NSUserDefaults standardUserDefaults];
+
+                    /*
+                     * Actualizar la fecha recibida
+                     * desde el servidor.
+                     */
+
+                    if (expiresAt.length > 0) {
+
+                        [defaults
+                            setObject:expiresAt
+                            forKey:@"MiFilzaLicenseExpiresAt"];
+
+                    } else {
+
+                        [defaults
+                            removeObjectForKey:
+                                @"MiFilzaLicenseExpiresAt"];
+                    }
+
+                    [defaults synchronize];
+
+                    [self applySavedScreenProtection];
+
+                    return;
+                }
+
+                /*
+                 * =================================================
+                 * LICENCIA INVÁLIDA
+                 *
+                 * revoked
+                 * expired
+                 * not_found
+                 * device_limit
+                 * server_error
+                 * network_error
+                 * =================================================
+                 */
+
+                NSLog(
+                    @"XITFORGE License rejected: %@",
+                    reason
+                );
 
                 NSUserDefaults *defaults =
                     [NSUserDefaults standardUserDefaults];
 
                 /*
-                 * Actualizar la fecha recibida
-                 * del servidor.
+                 * Eliminar sesión local.
                  */
 
-                if (expiresAt.length > 0) {
+                [defaults
+                    removeObjectForKey:
+                        @"MiFilzaLicenseKey"];
 
-                    [defaults
-                        setObject:expiresAt
-                        forKey:
-                            @"MiFilzaLicenseExpiresAt"];
-
-                } else {
-
-                    [defaults
-                        removeObjectForKey:
-                            @"MiFilzaLicenseExpiresAt"];
-                }
+                [defaults
+                    removeObjectForKey:
+                        @"MiFilzaLicenseExpiresAt"];
 
                 [defaults synchronize];
 
-                [self applySavedScreenProtection];
+                /*
+                 * Desactivar protección.
+                 */
 
-                return;
+                [[ScreenProtectionManager shared]
+                    disableProtection];
+
+                /*
+                 * Volver a pedir la licencia.
+                 */
+
+                [self mostrarVentanaDeLicencia];
             }
-
-            /*
-             * =================================================
-             * LICENCIA INVÁLIDA
-             *
-             * revoked
-             * expired
-             * not_found
-             * device_limit
-             * server_error
-             * network_error
-             * etc.
-             * =================================================
-             */
-
-            NSLog(
-                @"XITFORGE License rejected: %@",
-                reason
-            );
-
-            NSUserDefaults *defaults =
-                [NSUserDefaults standardUserDefaults];
-
-            /*
-             * Eliminamos la sesión local.
-             */
-            [defaults
-                removeObjectForKey:
-                    @"MiFilzaLicenseKey"];
-
-            [defaults
-                removeObjectForKey:
-                    @"MiFilzaLicenseExpiresAt"];
-
-            [defaults synchronize];
-
-            /*
-             * Desactivar protección hasta que
-             * vuelva a validarse una licencia.
-             */
-            [[ScreenProtectionManager shared]
-                disableProtection];
-
-            /*
-             * Mostrar pantalla de licencia.
-             */
-            [self mostrarVentanaDeLicencia];
-        }];
+        );
     }];
 }
 
@@ -375,8 +346,10 @@ didFinishLaunchingWithOptions:
 - (void)mostrarVentanaDeLicencia {
 
     /*
-     * Si ya existe, traerla al frente.
+     * Si ya existe una ventana de licencia,
+     * simplemente traerla al frente.
      */
+
     if (self.lockWindow) {
 
         [self.lockWindow makeKeyAndVisible];
@@ -390,8 +363,7 @@ didFinishLaunchingWithOptions:
     licenseVC.modalPresentationStyle =
         UIModalPresentationFullScreen;
 
-    __weak typeof(self) weakSelf =
-        self;
+    __weak typeof(self) weakSelf = self;
 
     licenseVC.onLicenseValidated = ^{
 
@@ -406,31 +378,33 @@ didFinishLaunchingWithOptions:
             dispatch_get_main_queue(),
             ^{
 
-            /*
-             * Aplicar protección guardada.
-             */
-            [strongSelf
-                applySavedScreenProtection];
+                /*
+                 * Aplicar protección guardada.
+                 */
 
-            /*
-             * Cerrar la ventana de licencia.
-             */
-            [strongSelf.lockWindow
-                resignKeyWindow];
+                [strongSelf applySavedScreenProtection];
 
-            strongSelf.lockWindow.hidden =
-                YES;
+                /*
+                 * Cerrar ventana de licencia.
+                 */
 
-            strongSelf.lockWindow =
-                nil;
+                [strongSelf.lockWindow
+                    resignKeyWindow];
 
-            /*
-             * Devolver el foco a la ventana
-             * principal.
-             */
-            [strongSelf.window
-                makeKeyAndVisible];
-        }];
+                strongSelf.lockWindow.hidden =
+                    YES;
+
+                strongSelf.lockWindow =
+                    nil;
+
+                /*
+                 * Devolver foco a la ventana principal.
+                 */
+
+                [strongSelf.window
+                    makeKeyAndVisible];
+            }
+        );
     };
 
     /*
@@ -441,8 +415,7 @@ didFinishLaunchingWithOptions:
 
     self.lockWindow =
         [[UIWindow alloc]
-            initWithFrame:
-                [UIScreen mainScreen].bounds];
+            initWithFrame:[UIScreen mainScreen].bounds];
 
     self.lockWindow.windowLevel =
         UIWindowLevelAlert + 1;
@@ -456,10 +429,9 @@ didFinishLaunchingWithOptions:
     [self.lockWindow makeKeyAndVisible];
 
     [self.lockWindow.rootViewController
-        presentViewController:
-            licenseVC
-        animated:YES
-        completion:nil];
+        presentViewController:licenseVC
+                     animated:YES
+                   completion:nil];
 }
 
 #pragma mark - License Logout Support
@@ -468,6 +440,11 @@ didFinishLaunchingWithOptions:
 
     NSUserDefaults *defaults =
         [NSUserDefaults standardUserDefaults];
+
+    /*
+     * Cerrar sesión SOLO en este dispositivo.
+     * No revoca la licencia del servidor.
+     */
 
     [defaults
         removeObjectForKey:
@@ -483,6 +460,25 @@ didFinishLaunchingWithOptions:
         disableProtection];
 
     [self mostrarVentanaDeLicencia];
+}
+
+#pragma mark - License Format
+
+- (BOOL)validarFormatoLicencia:(NSString *)licencia {
+
+    if (licencia.length == 0) {
+        return NO;
+    }
+
+    NSString *regex =
+        @"^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$";
+
+    NSPredicate *predicado =
+        [NSPredicate predicateWithFormat:
+            @"SELF MATCHES %@", regex];
+
+    return
+        [predicado evaluateWithObject:licencia];
 }
 
 @end
