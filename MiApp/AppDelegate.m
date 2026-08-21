@@ -9,9 +9,12 @@ static NSString * const kProtectionChangedNotification =
 static NSString * const kScreenProtectionKey =
     @"screenProtection";
 
+static NSString * const kLicenseKey =
+    @"MiFilzaLicenseKey";
+
 @interface AppDelegate ()
 
-@property (nonatomic, strong) UIWindow *lockWindow;
+@property (nonatomic, strong) UINavigationController *navigationController;
 
 @end
 
@@ -21,27 +24,121 @@ static NSString * const kScreenProtectionKey =
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 
     /*
-     * Ventana principal
+     * ============================================================
+     * VENTANA PRINCIPAL
+     * ============================================================
      */
 
     self.window =
         [[UIWindow alloc]
             initWithFrame:[UIScreen mainScreen].bounds];
 
+    /*
+     * ============================================================
+     * VIEW CONTROLLER PRINCIPAL
+     * ============================================================
+     */
+
     ViewController *viewController =
         [[ViewController alloc] init];
 
-    UINavigationController *navigationController =
+    self.navigationController =
         [[UINavigationController alloc]
             initWithRootViewController:viewController];
 
-    self.window.rootViewController =
-        navigationController;
+    /*
+     * ============================================================
+     * COMPROBAR LICENCIA ANTES DE MOSTRAR NADA
+     * ============================================================
+     */
+
+    NSString *license =
+        [[NSUserDefaults standardUserDefaults]
+            stringForKey:kLicenseKey];
+
+    BOOL licenseValid =
+        license.length > 0 &&
+        [self validarFormatoLicencia:license];
+
+    /*
+     * ============================================================
+     * ELEGIR ROOT VIEW CONTROLLER
+     *
+     * Si hay licencia:
+     *     → ViewController
+     *
+     * Si NO hay licencia:
+     *     → LicenseViewController
+     *
+     * Así ViewController jamás se dibuja antes de la
+     * pantalla de licencia.
+     * ============================================================
+     */
+
+    if (licenseValid) {
+
+        self.window.rootViewController =
+            self.navigationController;
+
+    } else {
+
+        LicenseViewController *licenseViewController =
+            [[LicenseViewController alloc] init];
+
+        licenseViewController.modalPresentationStyle =
+            UIModalPresentationFullScreen;
+
+        __weak typeof(self) weakSelf = self;
+
+        licenseViewController.onLicenseValidated = ^{
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+
+                __strong typeof(weakSelf) strongSelf = weakSelf;
+
+                if (!strongSelf) {
+                    return;
+                }
+
+                /*
+                 * Cambiar directamente el root.
+                 *
+                 * No presentamos ni hacemos dismiss.
+                 * Esto evita el pestañeo completamente.
+                 */
+
+                strongSelf.window.rootViewController =
+                    strongSelf.navigationController;
+
+                [strongSelf.window makeKeyAndVisible];
+
+                /*
+                 * Volver a activar la protección.
+                 */
+
+                [[ScreenProtectionManager shared]
+                    enableProtection];
+            });
+        };
+
+        self.window.rootViewController =
+            licenseViewController;
+    }
+
+    /*
+     * ============================================================
+     * MOSTRAR VENTANA
+     *
+     * Se hace SOLO después de haber elegido el root correcto.
+     * ============================================================
+     */
 
     [self.window makeKeyAndVisible];
 
     /*
-     * Protección de pantalla
+     * ============================================================
+     * PROTECCIÓN DE PANTALLA
+     * ============================================================
      */
 
     [self applyProtectionFromSettings];
@@ -52,16 +149,10 @@ static NSString * const kScreenProtectionKey =
                name:kProtectionChangedNotification
              object:nil];
 
-    /*
-     * Pantalla de licencia
-     */
-
-    [self mostrarPantallaLicencia];
-
     return YES;
 }
 
-#pragma mark - Protection
+#pragma mark - Protección
 
 - (void)applyProtectionFromSettings {
 
@@ -87,74 +178,18 @@ static NSString * const kScreenProtectionKey =
     [self applyProtectionFromSettings];
 }
 
-#pragma mark - License
-
-- (void)mostrarPantallaLicencia {
-
-    NSString *license =
-        [[NSUserDefaults standardUserDefaults]
-            stringForKey:@"MiFilzaLicenseKey"];
-
-    /*
-     * Si ya existe una licencia con el formato correcto,
-     * no mostramos la pantalla de licencia.
-     */
-    if (license.length > 0 &&
-        [self validarFormatoLicencia:license]) {
-
-        return;
-    }
-
-    LicenseViewController *licenseViewController =
-        [[LicenseViewController alloc] init];
-
-    licenseViewController.modalPresentationStyle =
-        UIModalPresentationFullScreen;
-
-    __weak typeof(self) weakSelf = self;
-
-    licenseViewController.onLicenseValidated = ^{
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-
-            /*
-             * Cerramos la ventana de licencia.
-             */
-            weakSelf.lockWindow.hidden = YES;
-            weakSelf.lockWindow = nil;
-
-            /*
-             * Volvemos a preparar la protección.
-             */
-            [[ScreenProtectionManager shared]
-                enableProtection];
-        });
-    };
-
-    /*
-     * Ventana de licencia.
-     */
-    self.lockWindow =
-        [[UIWindow alloc]
-            initWithFrame:[UIScreen mainScreen].bounds];
-
-    self.lockWindow.rootViewController =
-        [[UIViewController alloc] init];
-
-    self.lockWindow.windowLevel =
-        UIWindowLevelAlert + 1;
-
-    [self.lockWindow makeKeyAndVisible];
-
-    [self.lockWindow.rootViewController
-        presentViewController:licenseViewController
-                     animated:YES
-                   completion:nil];
-}
-
-#pragma mark - License Validation
+#pragma mark - Licencia
 
 - (BOOL)validarFormatoLicencia:(NSString *)license {
+
+    if (license.length == 0) {
+        return NO;
+    }
+
+    /*
+     * Formato:
+     * XXXX-XXXX-XXXX-XXXX
+     */
 
     NSString *regex =
         @"^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$";
@@ -164,6 +199,14 @@ static NSString * const kScreenProtectionKey =
             @"SELF MATCHES %@", regex];
 
     return [predicate evaluateWithObject:license];
+}
+
+#pragma mark - Cleanup
+
+- (void)dealloc {
+
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:self];
 }
 
 @end
