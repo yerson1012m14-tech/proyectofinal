@@ -1,10 +1,10 @@
 #import "AppDelegate.h"
 #import "ViewController.h"
 #import "LicenseViewController.h"
-#import "CALayer+SecureCapture.h"
 
 @interface AppDelegate ()
 @property (nonatomic, strong) UIWindow *lockWindow;
+@property (nonatomic, strong) UITextField *secureField;
 @property (nonatomic, assign) BOOL protectionEnabled;
 @end
 
@@ -30,14 +30,14 @@
     self.window.rootViewController = nav;
     [self.window makeKeyAndVisible];
     
-    // Cargar configuración de protección
+    // Cargar configuración
     self.protectionEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"screenProtection"];
     
     if (self.protectionEnabled) {
-        [self enableCaptureProtection];
+        [self enableSecureProtection];
     }
     
-    // Escuchar cambios en la configuración
+    // Escuchar cambios
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(protectionSettingChanged)
                                                  name:@"ProtectionSettingChanged"
@@ -48,21 +48,49 @@
     return YES;
 }
 
-- (void)enableCaptureProtection {
-    [self.window.layer setCaptureDisabled:YES];
+- (void)enableSecureProtection {
+    // Crear un UITextField invisible con isSecureTextEntry
+    // iOS automáticamente oculta su contenido en capturas y grabaciones
+    self.secureField = [[UITextField alloc] initWithFrame:self.window.bounds];
+    self.secureField.isSecureTextEntry = YES;
+    self.secureField.backgroundColor = [UIColor clearColor];
+    self.secureField.userInteractionEnabled = NO;
+    self.secureField.alpha = 0.01; // Casi invisible pero presente
+    self.secureField.tag = 8888;
+    
+    // Mover todas las subvistas existentes dentro del secureField
+    NSArray *existingViews = [self.window.subviews copy];
+    for (UIView *view in existingViews) {
+        if (view != self.secureField && view.tag != 9999) {
+            [view removeFromSuperview];
+            [self.secureField addSubview:view];
+        }
+    }
+    
+    [self.window addSubview:self.secureField];
+    [self.window bringSubviewToFront:self.secureField];
 }
 
-- (void)disableCaptureProtection {
-    [self.window.layer setCaptureDisabled:NO];
+- (void)disableSecureProtection {
+    if (self.secureField) {
+        // Mover todas las vistas de vuelta a la ventana
+        NSArray *secureViews = [self.secureField.subviews copy];
+        for (UIView *view in secureViews) {
+            [view removeFromSuperview];
+            [self.window addSubview:view];
+        }
+        [self.secureField removeFromSuperview];
+        self.secureField = nil;
+    }
 }
 
 - (void)protectionSettingChanged {
     BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"screenProtection"];
     
     if (enabled && !self.protectionEnabled) {
-        [self enableCaptureProtection];
+        [self enableSecureProtection];
     } else if (!enabled && self.protectionEnabled) {
-        [self disableCaptureProtection];
+        [self disableSecureProtection];
     }
     
     self.protectionEnabled = enabled;
