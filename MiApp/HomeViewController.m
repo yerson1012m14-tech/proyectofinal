@@ -137,14 +137,12 @@
 #pragma mark - Acciones de botones
 
 - (void)btnNormalTapped {
-    // Guardar el bundle ID y cambiar a la pestaña Explorar
     [[NSUserDefaults standardUserDefaults] setObject:@"com.dts.freefireth" forKey:@"AutoOpenBundleID"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     self.tabBarController.selectedIndex = 1;
 }
 
 - (void)btnMaxTapped {
-    // Guardar el bundle ID y cambiar a la pestaña Explorar
     [[NSUserDefaults standardUserDefaults] setObject:@"com.dts.freefiremax" forKey:@"AutoOpenBundleID"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     self.tabBarController.selectedIndex = 1;
