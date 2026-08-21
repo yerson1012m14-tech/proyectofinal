@@ -1,7 +1,5 @@
 #import "ScreenProtectionManager.h"
 
-static NSString * const kProtectionOverlayTagKey = @"ScreenProtectionOverlay";
-
 @interface ScreenProtectionManager ()
 
 @property (nonatomic, assign, getter=isProtectionEnabled) BOOL protectionEnabled;
@@ -39,31 +37,24 @@ static NSString * const kProtectionOverlayTagKey = @"ScreenProtectionOverlay";
     }
     self.isProtectionEnabled = YES;
 
-    // Referencia a la ventana principal para colocar la overlay.
     UIWindow *window = [self keyWindow];
     self.observedWindow = window;
 
-    // Crear la vista de cobertura negra.
     if (!self.overlayView) {
         UIView *overlay = [[UIView alloc] initWithFrame:window.bounds];
         overlay.backgroundColor = [UIColor blackColor];
         overlay.alpha = 0.0;
         overlay.tag = 99991;
         overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        // userInteractionEnabled = NO permite que los toques pasen a la app
-        // cuando la overlay está oculta (alpha 0). Cuando alpha = 1, el usuario
-        // verá negro pero la app seguirá corriendo detrás.
         overlay.userInteractionEnabled = NO;
         self.overlayView = overlay;
     }
 
-    // Asegurar que la overlay esté en la ventana y al frente.
     if (self.overlayView.superview != window) {
         [window addSubview:self.overlayView];
     }
     [window bringSubviewToFront:self.overlayView];
 
-    // Registrar observadores con APIs públicas.
     NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
 
     [nc addObserver:self
@@ -86,7 +77,6 @@ static NSString * const kProtectionOverlayTagKey = @"ScreenProtectionOverlay";
                name:UIApplicationDidBecomeActiveNotification
              object:nil];
 
-    // Estado inicial: si ya está siendo capturado al activar la protección.
     self.isCaptured = [UIScreen mainScreen].isCaptured;
     [self applyOverlayVisibility];
 }
@@ -97,14 +87,12 @@ static NSString * const kProtectionOverlayTagKey = @"ScreenProtectionOverlay";
     }
     self.isProtectionEnabled = NO;
 
-    // Quitar observadores.
     NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
     [nc removeObserver:self name:UIScreenCapturedDidChangeNotification object:nil];
     [nc removeObserver:self name:UIApplicationUserDidTakeScreenshotNotification object:nil];
     [nc removeObserver:self name:UIApplicationWillResignActiveNotification object:nil];
     [nc removeObserver:self name:UIApplicationDidBecomeActiveNotification object:nil];
 
-    // Ocultar la overlay inmediatamente.
     [UIView animateWithDuration:0.15 animations:^{
         self.overlayView.alpha = 0.0;
     }];
@@ -121,21 +109,16 @@ static NSString * const kProtectionOverlayTagKey = @"ScreenProtectionOverlay";
 }
 
 - (void)userDidTakeScreenshot:(NSNotification *)notification {
-    // Best effort: la notificación llega DESPUÉS de la captura.
-    // Mostramos la overlay brevemente para que capturas rápidas sucesivas
-    // puedan salir oscuras.
     [self showOverlayTemporarily];
 }
 
 - (void)willResignActive:(NSNotification *)notification {
-    // Al pasar a segundo plano (multitarea, incoming call, etc.) cubrir.
     [UIView animateWithDuration:0.15 animations:^{
         self.overlayView.alpha = 1.0;
     }];
 }
 
 - (void)didBecomeActive:(NSNotification *)notification {
-    // Al volver al frente, restaurar según el estado de captura.
     [self applyOverlayVisibility];
 }
 
@@ -172,7 +155,6 @@ static NSString * const kProtectionOverlayTagKey = @"ScreenProtectionOverlay";
 #pragma mark - Helpers
 
 - (UIWindow *)keyWindow {
-    // Compatible con iOS 13+ (multiple scenes) y versiones anteriores.
     UIWindow *found = nil;
 
     if (@available(iOS 13.0, *)) {
