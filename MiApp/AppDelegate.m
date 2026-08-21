@@ -1,7 +1,7 @@
 #import "AppDelegate.h"
 #import "ViewController.h"
 #import "HomeViewController.h"
-#import "SettingsViewController.h"
+#import "MainSettingsViewController.h"
 #import "LicenseViewController.h"
 
 @interface AppDelegate ()
@@ -13,6 +13,7 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     UIColor *acento = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
+    
     UINavigationBarAppearance *ap = [[UINavigationBarAppearance alloc] init];
     [ap configureWithOpaqueBackground];
     ap.backgroundColor = [UIColor blackColor];
@@ -32,15 +33,18 @@
     [[UITabBar appearance] setTintColor:acento];
     [[UITabBar appearance] setUnselectedItemTintColor:[UIColor grayColor]];
     
+    // 1. Pestaña Inicio
     HomeViewController *homeVC = [[HomeViewController alloc] init];
     UINavigationController *homeNav = [[UINavigationController alloc] initWithRootViewController:homeVC];
     homeNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Inicio" image:[UIImage systemImageNamed:@"house.fill"] tag:0];
     
+    // 2. Pestaña Explorar
     ViewController *explorerVC = [[ViewController alloc] init];
     UINavigationController *explorerNav = [[UINavigationController alloc] initWithRootViewController:explorerVC];
     explorerNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Explorar" image:[UIImage systemImageNamed:@"magnifyingglass"] tag:1];
     
-    SettingsViewController *settingsVC = [[SettingsViewController alloc] init];
+    // 3. Pestaña Ajustes (NUEVO CONTROLADOR)
+    MainSettingsViewController *settingsVC = [[MainSettingsViewController alloc] init];
     UINavigationController *settingsNav = [[UINavigationController alloc] initWithRootViewController:settingsVC];
     settingsNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Ajustes" image:[UIImage systemImageNamed:@"gearshape.fill"] tag:2];
     
