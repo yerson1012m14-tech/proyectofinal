@@ -63,7 +63,7 @@ static NSString * const kScreenProtectionKey           = @"screenProtection";
     [self applyProtectionFromSettings];
 }
 
-#pragma mark - Licencia (sin cambios de lógica)
+#pragma mark - Licencia
 
 - (void)mostrarPantallaLicencia {
     NSString *licenciaGuardada = [[NSUserDefaults standardUserDefaults] stringForKey:@"MiFilzaLicenseKey"];
