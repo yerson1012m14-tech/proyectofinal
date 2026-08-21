@@ -37,7 +37,7 @@
         [self enableCaptureProtection];
     }
     
-    // Observar cambios en la configuración
+    // Escuchar cambios en la configuración
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(protectionSettingChanged)
                                                  name:@"ProtectionSettingChanged"
@@ -49,14 +49,10 @@
 }
 
 - (void)enableCaptureProtection {
-    // Aplicar protección a la ventana principal
-    // Esto hace que las capturas y grabaciones salgan negras
-    // pero el usuario sigue viendo la app normalmente
     [self.window.layer setCaptureDisabled:YES];
 }
 
 - (void)disableCaptureProtection {
-    // Quitar protección
     [self.window.layer setCaptureDisabled:NO];
 }
 
@@ -72,8 +68,6 @@
     self.protectionEnabled = enabled;
 }
 
-#pragma mark - Pantalla de licencia
-
 - (void)mostrarPantallaLicencia {
     NSString *licenciaGuardada = [[NSUserDefaults standardUserDefaults] stringForKey:@"MiFilzaLicenseKey"];
     if (licenciaGuardada && [self validarFormatoLicencia:licenciaGuardada]) {
@@ -85,10 +79,9 @@
     
     __weak typeof(self) weakSelf = self;
     licenseVC.onLicenseValidated = ^{
-        [weakSelf.lockWindow.rootViewController dismissViewControllerAnimated:YES completion:^{
-            weakSelf.lockWindow.hidden = YES;
-            weakSelf.lockWindow = nil;
-        }];
+        [weakSelf.lockWindow.rootViewController dismissViewControllerAnimated:YES completion:nil];
+        weakSelf.lockWindow.hidden = YES;
+        weakSelf.lockWindow = nil;
     };
     
     self.lockWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
