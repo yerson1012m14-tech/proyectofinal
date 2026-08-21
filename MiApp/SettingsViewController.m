@@ -54,7 +54,7 @@
     [closeBtn addTarget:self action:@selector(closeSettings) forControlEvents:UIControlEventTouchUpInside];
     [self.contentView addSubview:closeBtn];
     
-    // SECCIÓN IDIOMA
+    // ===== SECCIÓN IDIOMA =====
     UIView *langCard = [[UIView alloc] init];
     langCard.translatesAutoresizingMaskIntoConstraints = NO;
     langCard.backgroundColor = cardBg;
@@ -158,7 +158,7 @@
         ]];
     }
     
-    // SECCIÓN PROTECCIÓN
+    // ===== SECCIÓN PROTECCIÓN =====
     UIView *protCard = [[UIView alloc] init];
     protCard.translatesAutoresizingMaskIntoConstraints = NO;
     protCard.backgroundColor = cardBg;
@@ -208,7 +208,7 @@
         [self.protSwitch.bottomAnchor constraintEqualToAnchor:self.protOptions.bottomAnchor constant:-16],
     ]];
     
-    // CONSTRAINTS PRINCIPALES
+    // ===== CONSTRAINTS PRINCIPALES =====
     [NSLayoutConstraint activateConstraints:@[
         [self.scrollView.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
         [self.scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
@@ -328,7 +328,7 @@
     [d setBool:self.screenProtection forKey:@"screenProtection"];
     [d synchronize];
     
-    // Notificar al AppDelegate para activar/desactivar protección
+    // Notificar al AppDelegate para activar/desactivar la protección
     [[NSNotificationCenter defaultCenter] postNotificationName:@"ProtectionChanged" object:nil];
     
     if (self.onSettingsChanged) self.onSettingsChanged();
