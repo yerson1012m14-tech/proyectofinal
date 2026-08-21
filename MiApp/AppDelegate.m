@@ -48,7 +48,6 @@
 }
 
 - (void)enableProtection {
-    // Aplicar a la ventana principal - esto oculta TODO de capturas/grabaciones
     [self.window.layer setSecureCapture:YES];
 }
 
