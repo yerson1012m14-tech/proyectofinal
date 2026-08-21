@@ -3,8 +3,11 @@
 #import "LicenseViewController.h"
 #import "ScreenProtectionManager.h"
 
-static NSString * const kProtectionChangedNotification = @"ProtectionChanged";
-static NSString * const kScreenProtectionKey = @"screenProtection";
+static NSString * const kProtectionChangedNotification =
+    @"ProtectionChanged";
+
+static NSString * const kScreenProtectionKey =
+    @"screenProtection";
 
 @interface AppDelegate ()
 
@@ -17,44 +20,9 @@ static NSString * const kScreenProtectionKey = @"screenProtection";
 - (BOOL)application:(UIApplication *)application
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 
-    UIColor *acento =
-        [UIColor colorWithRed:0.2
-                        green:1.0
-                         blue:0.5
-                        alpha:1.0];
-
-    UINavigationBarAppearance *ap =
-        [[UINavigationBarAppearance alloc] init];
-
-    [ap configureWithOpaqueBackground];
-
-    ap.backgroundColor = UIColor.blackColor;
-
-    ap.shadowColor =
-        [UIColor colorWithWhite:0.25 alpha:1.0];
-
-    ap.titleTextAttributes = @{
-        NSForegroundColorAttributeName : acento,
-        NSFontAttributeName :
-            [UIFont fontWithName:@"Menlo-Bold" size:17]
-    };
-
-    [[UINavigationBar appearance]
-        setStandardAppearance:ap];
-
-    [[UINavigationBar appearance]
-        setScrollEdgeAppearance:ap];
-
-    [[UINavigationBar appearance]
-        setTintColor:acento];
-
-    /*
-     * Ventana principal
-     */
-
     self.window =
-        [[UIWindow alloc] initWithFrame:
-            [UIScreen mainScreen].bounds];
+        [[UIWindow alloc]
+            initWithFrame:UIScreen.mainScreen.bounds];
 
     ViewController *vc =
         [[ViewController alloc] init];
@@ -68,27 +36,25 @@ static NSString * const kScreenProtectionKey = @"screenProtection";
     [self.window makeKeyAndVisible];
 
     /*
-     * Protección
+     * Activar protección según Settings.
      */
-
     [self applyProtectionFromSettings];
 
     [[NSNotificationCenter defaultCenter]
         addObserver:self
-           selector:@selector(protectionSettingChanged)
+           selector:@selector(protectionSettingChanged:)
                name:kProtectionChangedNotification
              object:nil];
 
     /*
-     * Pantalla de licencia
+     * Tu pantalla de licencia.
      */
-
     [self mostrarPantallaLicencia];
 
     return YES;
 }
 
-#pragma mark - Protección
+#pragma mark - Protection
 
 - (void)applyProtectionFromSettings {
 
@@ -100,34 +66,27 @@ static NSString * const kScreenProtectionKey = @"screenProtection";
         [ScreenProtectionManager shared];
 
     if (enabled) {
-
-        if (![manager isProtectionEnabled]) {
-            [manager enableProtection];
-        }
-
+        [manager enableProtection];
     } else {
-
-        if ([manager isProtectionEnabled]) {
-            [manager disableProtection];
-        }
+        [manager disableProtection];
     }
 }
 
-- (void)protectionSettingChanged {
+- (void)protectionSettingChanged:(NSNotification *)notification {
 
     [self applyProtectionFromSettings];
 }
 
-#pragma mark - Licencia
+#pragma mark - License
 
 - (void)mostrarPantallaLicencia {
 
-    NSString *licenciaGuardada =
+    NSString *license =
         [[NSUserDefaults standardUserDefaults]
             stringForKey:@"MiFilzaLicenseKey"];
 
-    if (licenciaGuardada &&
-        [self validarFormatoLicencia:licenciaGuardada]) {
+    if (license.length > 0 &&
+        [self validarFormatoLicencia:license]) {
 
         return;
     }
@@ -142,26 +101,23 @@ static NSString * const kScreenProtectionKey = @"screenProtection";
 
     licenseVC.onLicenseValidated = ^{
 
-        [weakSelf.lockWindow.rootViewController
-            dismissViewControllerAnimated:YES
-                             completion:nil];
-
-        weakSelf.lockWindow.hidden = YES;
-        weakSelf.lockWindow = nil;
-
-        /*
-         * La ventana principal puede haber cambiado.
-         * Volvemos a comprobar la protección.
-         */
-
         dispatch_async(dispatch_get_main_queue(), ^{
-            [[ScreenProtectionManager shared] enableProtection];
+
+            weakSelf.lockWindow.hidden = YES;
+            weakSelf.lockWindow = nil;
+
+            /*
+             * Reaplicar protección después de cerrar
+             * la pantalla de licencia.
+             */
+            [[ScreenProtectionManager shared]
+                refreshProtection];
         });
     };
 
     self.lockWindow =
         [[UIWindow alloc]
-            initWithFrame:[UIScreen mainScreen].bounds];
+            initWithFrame:UIScreen.mainScreen.bounds];
 
     self.lockWindow.rootViewController =
         [[UIViewController alloc] init];
@@ -177,16 +133,16 @@ static NSString * const kScreenProtectionKey = @"screenProtection";
                    completion:nil];
 }
 
-- (BOOL)validarFormatoLicencia:(NSString *)licencia {
+- (BOOL)validarFormatoLicencia:(NSString *)license {
 
     NSString *regex =
         @"^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$";
 
-    NSPredicate *predicado =
+    NSPredicate *predicate =
         [NSPredicate predicateWithFormat:
             @"SELF MATCHES %@", regex];
 
-    return [predicado evaluateWithObject:licencia];
+    return [predicate evaluateWithObject:license];
 }
 
 @end
