@@ -313,6 +313,12 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     [self cargarApps];
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    // Recargar apps al volver a esta pestaña
+    [self cargarApps];
+}
+
 - (void)irARaiz {
     asegurarMotor();
     FileBrowserVC *fb = [FileBrowserVC new];
@@ -384,6 +390,11 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
 - (void)abrirContenedor:(NSString *)bid {
     bid = [bid stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
     if (!bid.length) return;
+    
+    // ✅ FIX: Limpiar el stack de navegación antes de abrir
+    // Esto evita que se acumulen vistas al volver desde otra pestaña
+    [self.navigationController popToRootViewControllerAnimated:NO];
+    
     asegurarMotor();
     NSString *p = nil;
     @try { p = containerPath(bid); } @catch (NSException *e) { p = nil; }
