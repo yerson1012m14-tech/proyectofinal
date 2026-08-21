@@ -1,10 +1,8 @@
 #import "HomeViewController.h"
-#import "ViewController.h"
 
 @interface HomeViewController ()
 @property (nonatomic, strong) UIButton *btnNormal;
 @property (nonatomic, strong) UIButton *btnMax;
-@property (nonatomic, assign) BOOL isNavigating;
 @end
 
 @implementation HomeViewController
@@ -14,7 +12,6 @@
     self.view.backgroundColor = [UIColor blackColor];
     self.title = @"XITFORGE";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
-    self.isNavigating = NO;
     [self setupUI];
 }
 
@@ -140,56 +137,17 @@
 #pragma mark - Acciones de botones
 
 - (void)btnNormalTapped {
-    if (self.isNavigating) return;
-    self.isNavigating = YES;
-    [self irAExplorarYAbrir:@"com.dts.freefireth"];
+    // Guardar el bundle ID y cambiar a la pestaña Explorar
+    [[NSUserDefaults standardUserDefaults] setObject:@"com.dts.freefireth" forKey:@"AutoOpenBundleID"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    self.tabBarController.selectedIndex = 1;
 }
 
 - (void)btnMaxTapped {
-    if (self.isNavigating) return;
-    self.isNavigating = YES;
-    [self irAExplorarYAbrir:@"com.dts.freefiremax"];
-}
-
-- (void)irAExplorarYAbrir:(NSString *)bundleID {
-    @try {
-        UITabBarController *tabBar = self.tabBarController;
-        if (!tabBar) {
-            self.isNavigating = NO;
-            return;
-        }
-        
-        if (tabBar.viewControllers.count <= 1) {
-            self.isNavigating = NO;
-            return;
-        }
-        
-        tabBar.selectedIndex = 1;
-        
-        UINavigationController *nav = tabBar.viewControllers[1];
-        if (![nav isKindOfClass:[UINavigationController class]]) {
-            self.isNavigating = NO;
-            return;
-        }
-        
-        ViewController *explorer = nav.topViewController;
-        if (![explorer isKindOfClass:[ViewController class]]) {
-            self.isNavigating = NO;
-            return;
-        }
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            @try {
-                [explorer abrirContenedorSeguro:bundleID];
-            } @catch (NSException *exception) {
-                NSLog(@"Error al abrir contenedor: %@", exception);
-            }
-            self.isNavigating = NO;
-        });
-    } @catch (NSException *exception) {
-        NSLog(@"Error en irAExplorarYAbrir: %@", exception);
-        self.isNavigating = NO;
-    }
+    // Guardar el bundle ID y cambiar a la pestaña Explorar
+    [[NSUserDefaults standardUserDefaults] setObject:@"com.dts.freefiremax" forKey:@"AutoOpenBundleID"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    self.tabBarController.selectedIndex = 1;
 }
 
 @end
