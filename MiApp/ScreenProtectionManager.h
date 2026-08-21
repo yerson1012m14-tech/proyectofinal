@@ -9,6 +9,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)enableProtection;
 - (void)disableProtection;
+
 - (BOOL)isProtectionEnabled;
 
 @end
