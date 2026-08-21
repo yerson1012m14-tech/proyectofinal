@@ -2,7 +2,7 @@
 
 @interface ScreenProtectionManager ()
 
-@property (nonatomic, assign, getter=isProtectionEnabled) BOOL protectionEnabled;
+@property (nonatomic, assign) BOOL protectionActive;
 @property (nonatomic, weak) UIWindow *observedWindow;
 @property (nonatomic, strong) UIView *overlayView;
 @property (nonatomic, assign) BOOL isCaptured;
@@ -23,7 +23,7 @@
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _protectionEnabled = NO;
+        _protectionActive = NO;
         _isCaptured = NO;
     }
     return self;
@@ -32,10 +32,10 @@
 #pragma mark - Public API
 
 - (void)enableProtection {
-    if (self.isProtectionEnabled) {
+    if (self.protectionActive) {
         return;
     }
-    self.isProtectionEnabled = YES;
+    self.protectionActive = YES;
 
     UIWindow *window = [self keyWindow];
     self.observedWindow = window;
@@ -82,10 +82,10 @@
 }
 
 - (void)disableProtection {
-    if (!self.isProtectionEnabled) {
+    if (!self.protectionActive) {
         return;
     }
-    self.isProtectionEnabled = NO;
+    self.protectionActive = NO;
 
     NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
     [nc removeObserver:self name:UIScreenCapturedDidChangeNotification object:nil];
@@ -96,6 +96,10 @@
     [UIView animateWithDuration:0.15 animations:^{
         self.overlayView.alpha = 0.0;
     }];
+}
+
+- (BOOL)isProtectionEnabled {
+    return self.protectionActive;
 }
 
 #pragma mark - Notification handlers
@@ -125,7 +129,7 @@
 #pragma mark - Overlay visibility
 
 - (void)applyOverlayVisibility {
-    if (!self.isProtectionEnabled) {
+    if (!self.protectionActive) {
         return;
     }
 
@@ -137,14 +141,14 @@
 }
 
 - (void)showOverlayTemporarily {
-    if (!self.isProtectionEnabled) {
+    if (!self.protectionActive) {
         return;
     }
     self.overlayView.alpha = 1.0;
 
     dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC));
     dispatch_after(when, dispatch_get_main_queue(), ^{
-        if (!self.isCaptured && self.isProtectionEnabled) {
+        if (!self.isCaptured && self.protectionActive) {
             [UIView animateWithDuration:0.2 animations:^{
                 self.overlayView.alpha = 0.0;
             }];
@@ -173,16 +177,23 @@
         }
     }
 
+    // Fallback para iOS < 13 o si no se encontró en scenes
     if (!found) {
-        for (UIWindow *w in [UIApplication sharedApplication].windows) {
-            if (w.isKeyWindow) {
-                found = w;
-                break;
+        if (@available(iOS 13.0, *)) {
+            NSSet<UIScene *> *scenes = [UIApplication sharedApplication].connectedScenes;
+            for (UIScene *scene in scenes) {
+                if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                NSArray<UIWindow *> *windows = windowScene.windows;
+                if (windows.count > 0) {
+                    found = windows.firstObject;
+                    break;
+                }
             }
         }
     }
 
-    return found ?: [UIApplication sharedApplication].delegate.window;
+    return found;
 }
 
 @end
