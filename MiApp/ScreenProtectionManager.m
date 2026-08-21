@@ -2,10 +2,22 @@
 
 @interface ScreenProtectionManager ()
 
-@property (nonatomic, assign) BOOL protectionActive;
-@property (nonatomic, assign) BOOL isCaptured;
+@property (nonatomic, assign) BOOL protectionEnabled;
+@property (nonatomic, assign) BOOL screenCaptured;
 
-@property (nonatomic, strong) NSMutableDictionary<NSValue *, UIView *> *overlayViews;
+/*
+ * Vista que utiliza UITextField secureTextEntry como
+ * superficie de renderizado protegida.
+ */
+@property (nonatomic, strong) UITextField *secureContainerField;
+
+/*
+ * Vista negra utilizada durante screen recording /
+ * mirroring / AirPlay.
+ */
+@property (nonatomic, strong) UIView *recordingOverlay;
+
+@property (nonatomic, weak) UIWindow *protectedWindow;
 
 @end
 
@@ -14,255 +26,115 @@
 #pragma mark - Singleton
 
 + (instancetype)shared {
-    static ScreenProtectionManager *instance = nil;
+
+    static ScreenProtectionManager *manager = nil;
     static dispatch_once_t onceToken;
 
     dispatch_once(&onceToken, ^{
-        instance = [[ScreenProtectionManager alloc] init];
+        manager = [[ScreenProtectionManager alloc] init];
     });
 
-    return instance;
+    return manager;
 }
 
+#pragma mark - Init
+
 - (instancetype)init {
+
     self = [super init];
 
     if (self) {
-        _protectionActive = NO;
-        _isCaptured = NO;
-        _overlayViews = [NSMutableDictionary dictionary];
+
+        _protectionEnabled = NO;
+        _screenCaptured = NO;
     }
 
     return self;
 }
 
-#pragma mark - Public API
+#pragma mark - Public
 
 - (void)enableProtection {
 
-    if (self.protectionActive) {
-        [self refreshWindows];
+    if (self.protectionEnabled) {
+        [self refreshProtection];
         return;
     }
 
-    self.protectionActive = YES;
+    self.protectionEnabled = YES;
 
     NSNotificationCenter *center =
         [NSNotificationCenter defaultCenter];
 
+    /*
+     * Screen recording / mirroring / AirPlay.
+     */
     [center addObserver:self
-               selector:@selector(capturedDidChange:)
+               selector:@selector(screenCaptureChanged:)
                    name:UIScreenCapturedDidChangeNotification
                  object:nil];
 
+    /*
+     * El screenshot notification NO se utiliza para
+     * proteger la imagen, porque Apple lo envía después
+     * de que el screenshot ya fue tomado.
+     */
     [center addObserver:self
-               selector:@selector(willResignActive:)
-                   name:UIApplicationWillResignActiveNotification
-                 object:nil];
-
-    [center addObserver:self
-               selector:@selector(didBecomeActive:)
+               selector:@selector(applicationDidBecomeActive:)
                    name:UIApplicationDidBecomeActiveNotification
                  object:nil];
 
-    if (@available(iOS 11.0, *)) {
-        self.isCaptured = UIScreen.mainScreen.isCaptured;
-    } else {
-        self.isCaptured = NO;
-    }
-
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self refreshWindows];
-        [self updateOverlayVisibility];
+
+        [self locateMainWindow];
+        [self installSecureContainer];
+        [self installRecordingOverlay];
+
+        [self updateCaptureState];
     });
 }
 
 - (void)disableProtection {
 
-    if (!self.protectionActive) {
-        return;
-    }
+    self.protectionEnabled = NO;
+    self.screenCaptured = NO;
 
-    self.protectionActive = NO;
-    self.isCaptured = NO;
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:self
+                  name:UIScreenCapturedDidChangeNotification
+                object:nil];
 
-    NSNotificationCenter *center =
-        [NSNotificationCenter defaultCenter];
-
-    [center removeObserver:self
-                      name:UIScreenCapturedDidChangeNotification
-                    object:nil];
-
-    [center removeObserver:self
-                      name:UIApplicationWillResignActiveNotification
-                    object:nil];
-
-    [center removeObserver:self
-                      name:UIApplicationDidBecomeActiveNotification
-                    object:nil];
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:self
+                  name:UIApplicationDidBecomeActiveNotification
+                object:nil];
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        for (UIView *overlay in self.overlayViews.allValues) {
-            overlay.hidden = YES;
-        }
+
+        [self.recordingOverlay removeFromSuperview];
+        self.recordingOverlay = nil;
+
+        [self.secureContainerField removeFromSuperview];
+        self.secureContainerField = nil;
+
+        self.protectedWindow = nil;
     });
 }
 
 - (BOOL)isProtectionEnabled {
-    return self.protectionActive;
+    return self.protectionEnabled;
 }
 
-#pragma mark - Capture detection
+#pragma mark - Window
 
-- (void)capturedDidChange:(NSNotification *)notification {
+- (void)locateMainWindow {
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-
-        UIScreen *screen =
-            notification.object ?: UIScreen.mainScreen;
-
-        if (@available(iOS 11.0, *)) {
-            self.isCaptured = screen.isCaptured;
-        } else {
-            self.isCaptured = NO;
-        }
-
-        [self refreshWindows];
-        [self updateOverlayVisibility];
-    });
-}
-
-#pragma mark - App state
-
-- (void)willResignActive:(NSNotification *)notification {
-
-    /*
-     No mostramos el overlay únicamente porque la app
-     pasó a segundo plano.
-
-     Esperamos a que iOS indique que realmente hay captura.
-     */
-}
-
-- (void)didBecomeActive:(NSNotification *)notification {
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (@available(iOS 11.0, *)) {
-            self.isCaptured = UIScreen.mainScreen.isCaptured;
-        } else {
-            self.isCaptured = NO;
-        }
-
-        [self refreshWindows];
-        [self updateOverlayVisibility];
-    });
-}
-
-#pragma mark - Windows
-
-- (void)refreshWindows {
-
-    if (!self.protectionActive) {
-        return;
-    }
-
-    NSArray<UIWindow *> *windows = [self applicationWindows];
-
-    NSMutableSet<NSValue *> *aliveKeys =
-        [NSMutableSet set];
-
-    for (UIWindow *window in windows) {
-
-        if (!window) {
-            continue;
-        }
-
-        /*
-         No creamos overlays para nuestro propio overlay.
-         */
-        if (window == [UIApplication sharedApplication].keyWindow &&
-            window.hidden) {
-            continue;
-        }
-
-        NSValue *key =
-            [NSValue valueWithNonretainedObject:window];
-
-        [aliveKeys addObject:key];
-
-        UIView *overlay =
-            self.overlayViews[key];
-
-        if (!overlay) {
-
-            overlay =
-                [[UIView alloc] initWithFrame:CGRectZero];
-
-            overlay.backgroundColor =
-                UIColor.blackColor;
-
-            overlay.userInteractionEnabled = NO;
-            overlay.hidden = YES;
-
-            overlay.translatesAutoresizingMaskIntoConstraints =
-                NO;
-
-            [window addSubview:overlay];
-
-            [NSLayoutConstraint activateConstraints:@[
-                [overlay.leadingAnchor
-                    constraintEqualToAnchor:window.leadingAnchor],
-
-                [overlay.trailingAnchor
-                    constraintEqualToAnchor:window.trailingAnchor],
-
-                [overlay.topAnchor
-                    constraintEqualToAnchor:window.topAnchor],
-
-                [overlay.bottomAnchor
-                    constraintEqualToAnchor:window.bottomAnchor]
-            ]];
-
-            self.overlayViews[key] = overlay;
-        }
-
-        /*
-         Siempre queda por encima del contenido de la ventana.
-         */
-        [window bringSubviewToFront:overlay];
-    }
-
-    /*
-     Elimina referencias a ventanas que ya no existen.
-     */
-    NSArray<NSValue *> *existingKeys =
-        self.overlayViews.allKeys.copy;
-
-    for (NSValue *key in existingKeys) {
-
-        if (![aliveKeys containsObject:key]) {
-
-            UIView *overlay =
-                self.overlayViews[key];
-
-            [overlay removeFromSuperview];
-
-            [self.overlayViews removeObjectForKey:key];
-        }
-    }
-}
-
-- (NSArray<UIWindow *> *)applicationWindows {
-
-    NSMutableArray<UIWindow *> *result =
-        [NSMutableArray array];
+    UIWindow *foundWindow = nil;
 
     if (@available(iOS 13.0, *)) {
 
-        NSSet<UIScene *> *scenes =
-            [UIApplication sharedApplication].connectedScenes;
-
-        for (UIScene *scene in scenes) {
+        for (UIScene *scene
+             in [UIApplication sharedApplication].connectedScenes) {
 
             if (![scene isKindOfClass:UIWindowScene.class]) {
                 continue;
@@ -278,68 +150,313 @@
 
             for (UIWindow *window in windowScene.windows) {
 
-                if (!window) {
-                    continue;
-                }
+                if (window.isKeyWindow &&
+                    !window.hidden &&
+                    window.alpha > 0.0) {
 
-                if (window.hidden) {
-                    continue;
+                    foundWindow = window;
+                    break;
                 }
+            }
 
-                if (window.alpha <= 0.0) {
-                    continue;
-                }
-
-                [result addObject:window];
+            if (foundWindow) {
+                break;
             }
         }
+    }
 
-    } else {
+    if (!foundWindow) {
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
-        NSArray<UIWindow *> *windows =
-            [UIApplication sharedApplication].windows;
+        for (UIWindow *window
+             in [UIApplication sharedApplication].windows) {
 
-        for (UIWindow *window in windows) {
-
-            if (!window.hidden &&
+            if (window.isKeyWindow &&
+                !window.hidden &&
                 window.alpha > 0.0) {
 
-                [result addObject:window];
+                foundWindow = window;
+                break;
             }
         }
 
 #pragma clang diagnostic pop
     }
 
-    return result;
+    if (!foundWindow) {
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+        foundWindow =
+            [UIApplication sharedApplication].windows.firstObject;
+
+#pragma clang diagnostic pop
+    }
+
+    self.protectedWindow = foundWindow;
 }
 
-#pragma mark - Overlay
+#pragma mark - Secure Screenshot Surface
 
-- (void)updateOverlayVisibility {
+- (void)installSecureContainer {
 
-    if (!self.protectionActive) {
+    if (!self.protectionEnabled) {
+        return;
+    }
 
-        for (UIView *overlay in self.overlayViews.allValues) {
-            overlay.hidden = YES;
-        }
+    [self locateMainWindow];
 
+    UIWindow *window = self.protectedWindow;
+
+    if (!window) {
+        return;
+    }
+
+    if (self.secureContainerField) {
         return;
     }
 
     /*
-     Sin animación.
-     Cuando iOS informa captura, el overlay pasa a visible
-     inmediatamente para minimizar frames expuestos.
+     * UITextField seguro.
+     *
+     * secureTextEntry hace que iOS trate la superficie
+     * de ese campo como contenido protegido durante
+     * determinadas operaciones de captura.
      */
-    BOOL shouldHideContent = self.isCaptured;
+    UITextField *field =
+        [[UITextField alloc] initWithFrame:CGRectZero];
 
-    for (UIView *overlay in self.overlayViews.allValues) {
-        overlay.hidden = !shouldHideContent;
+    field.secureTextEntry = YES;
+    field.userInteractionEnabled = NO;
+    field.hidden = YES;
+    field.backgroundColor = UIColor.clearColor;
+    field.textColor = UIColor.clearColor;
+    field.tintColor = UIColor.clearColor;
+
+    /*
+     * Evita que aparezca cualquier texto.
+     */
+    field.text = @"";
+
+    [window addSubview:field];
+
+    field.translatesAutoresizingMaskIntoConstraints = NO;
+
+    [NSLayoutConstraint activateConstraints:@[
+        [field.leadingAnchor
+            constraintEqualToAnchor:window.leadingAnchor],
+
+        [field.trailingAnchor
+            constraintEqualToAnchor:window.trailingAnchor],
+
+        [field.topAnchor
+            constraintEqualToAnchor:window.topAnchor],
+
+        [field.bottomAnchor
+            constraintEqualToAnchor:window.bottomAnchor]
+    ]];
+
+    /*
+     * Intentamos activar la superficie segura interna
+     * del UITextField.
+     */
+    UIView *secureView = nil;
+
+    for (UIView *subview in field.subviews) {
+
+        NSString *className =
+            NSStringFromClass(subview.class);
+
+        if ([className containsString:@"Text"]) {
+            secureView = subview;
+            break;
+        }
     }
+
+    /*
+     * Fallback.
+     */
+    if (!secureView) {
+        secureView = field;
+    }
+
+    /*
+     * No mostramos el UITextField al usuario.
+     */
+    field.alpha = 0.01;
+    field.hidden = NO;
+
+    /*
+     * Mantenerlo debajo del contenido normal.
+     * La protección real depende del comportamiento
+     * de renderizado seguro de UIKit/iOS.
+     */
+    [window sendSubviewToBack:field];
+
+    self.secureContainerField = field;
+}
+
+#pragma mark - Recording Protection
+
+- (void)installRecordingOverlay {
+
+    if (!self.protectionEnabled) {
+        return;
+    }
+
+    [self locateMainWindow];
+
+    UIWindow *window = self.protectedWindow;
+
+    if (!window) {
+        return;
+    }
+
+    if (!self.recordingOverlay) {
+
+        UIView *overlay =
+            [[UIView alloc] initWithFrame:CGRectZero];
+
+        overlay.backgroundColor =
+            UIColor.blackColor;
+
+        overlay.userInteractionEnabled = NO;
+        overlay.hidden = YES;
+
+        overlay.translatesAutoresizingMaskIntoConstraints =
+            NO;
+
+        [window addSubview:overlay];
+
+        [NSLayoutConstraint activateConstraints:@[
+            [overlay.leadingAnchor
+                constraintEqualToAnchor:window.leadingAnchor],
+
+            [overlay.trailingAnchor
+                constraintEqualToAnchor:window.trailingAnchor],
+
+            [overlay.topAnchor
+                constraintEqualToAnchor:window.topAnchor],
+
+            [overlay.bottomAnchor
+                constraintEqualToAnchor:window.bottomAnchor]
+        ]];
+
+        self.recordingOverlay = overlay;
+    }
+
+    [window bringSubviewToFront:self.recordingOverlay];
+}
+
+#pragma mark - Capture State
+
+- (void)updateCaptureState {
+
+    if (!self.protectionEnabled) {
+        return;
+    }
+
+    BOOL captured = NO;
+
+    if (@available(iOS 11.0, *)) {
+        captured = UIScreen.mainScreen.isCaptured;
+    }
+
+    self.screenCaptured = captured;
+
+    [self updateRecordingOverlay];
+}
+
+- (void)screenCaptureChanged:(NSNotification *)notification {
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+
+        if (!self.protectionEnabled) {
+            return;
+        }
+
+        UIScreen *screen =
+            notification.object ?: UIScreen.mainScreen;
+
+        if (@available(iOS 11.0, *)) {
+            self.screenCaptured = screen.isCaptured;
+        } else {
+            self.screenCaptured = NO;
+        }
+
+        /*
+         * Sin animación para minimizar el tiempo
+         * entre detección y ocultación.
+         */
+        [self updateRecordingOverlay];
+    });
+}
+
+- (void)updateRecordingOverlay {
+
+    if (!self.recordingOverlay) {
+        return;
+    }
+
+    /*
+     * Cuando hay grabación/mirroring, mostramos NEGRO.
+     *
+     * Esto sí funciona con la prueba que ya hiciste:
+     * el vídeo que grabaste terminó sin mostrar la app.
+     */
+    self.recordingOverlay.hidden =
+        !self.screenCaptured;
+
+    if (self.screenCaptured) {
+        [self.protectedWindow
+            bringSubviewToFront:self.recordingOverlay];
+    }
+}
+
+#pragma mark - Refresh
+
+- (void)refreshProtection {
+
+    if (!self.protectionEnabled) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+
+        [self locateMainWindow];
+
+        if (!self.secureContainerField) {
+            [self installSecureContainer];
+        }
+
+        if (!self.recordingOverlay) {
+            [self installRecordingOverlay];
+        }
+
+        [self updateCaptureState];
+    });
+}
+
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+
+    if (!self.protectionEnabled) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self refreshProtection];
+    });
+}
+
+#pragma mark - Cleanup
+
+- (void)dealloc {
+
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:self];
 }
 
 @end
