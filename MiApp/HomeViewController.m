@@ -4,6 +4,7 @@
 @interface HomeViewController ()
 @property (nonatomic, strong) UIButton *btnNormal;
 @property (nonatomic, strong) UIButton *btnMax;
+@property (nonatomic, assign) BOOL isNavigating;
 @end
 
 @implementation HomeViewController
@@ -13,6 +14,7 @@
     self.view.backgroundColor = [UIColor blackColor];
     self.title = @"XITFORGE";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
+    self.isNavigating = NO;
     [self setupUI];
 }
 
@@ -21,7 +23,6 @@
     UIColor *red = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
     UIColor *green = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
     
-    // Glow superior
     UIView *topGlow = [[UIView alloc] init];
     topGlow.translatesAutoresizingMaskIntoConstraints = NO;
     topGlow.backgroundColor = [red colorWithAlphaComponent:0.055];
@@ -30,7 +31,6 @@
     topGlow.userInteractionEnabled = NO;
     [self.view addSubview:topGlow];
     
-    // Glow inferior
     UIView *bottomGlow = [[UIView alloc] init];
     bottomGlow.translatesAutoresizingMaskIntoConstraints = NO;
     bottomGlow.backgroundColor = [green colorWithAlphaComponent:0.045];
@@ -39,7 +39,6 @@
     bottomGlow.userInteractionEnabled = NO;
     [self.view addSubview:bottomGlow];
     
-    // Logo XITFORGE
     UILabel *logo = [[UILabel alloc] init];
     logo.translatesAutoresizingMaskIntoConstraints = NO;
     logo.text = @"XITFORGE";
@@ -48,7 +47,6 @@
     logo.textAlignment = NSTextAlignmentCenter;
     [self.view addSubview:logo];
     
-    // Línea roja bajo el logo
     UIView *line = [[UIView alloc] init];
     line.translatesAutoresizingMaskIntoConstraints = NO;
     line.backgroundColor = red;
@@ -59,7 +57,6 @@
     line.layer.shadowOffset = CGSizeZero;
     [self.view addSubview:line];
     
-    // Pregunta "¿EN CUAL JUEGAS?"
     UILabel *pregunta = [[UILabel alloc] init];
     pregunta.translatesAutoresizingMaskIntoConstraints = NO;
     pregunta.text = @"¿EN CUAL JUEGAS?";
@@ -68,7 +65,6 @@
     pregunta.textAlignment = NSTextAlignmentCenter;
     [self.view addSubview:pregunta];
     
-    // Botón FREE FIRE NORMAL
     self.btnNormal = [UIButton buttonWithType:UIButtonTypeCustom];
     self.btnNormal.translatesAutoresizingMaskIntoConstraints = NO;
     self.btnNormal.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:1.0];
@@ -79,7 +75,6 @@
     self.btnNormal.layer.shadowOpacity = 0.25;
     self.btnNormal.layer.shadowRadius = 10.0;
     self.btnNormal.layer.shadowOffset = CGSizeZero;
-    
     [self.btnNormal setTitle:@"FREE FIRE\nNORMAL" forState:UIControlStateNormal];
     [self.btnNormal.titleLabel setFont:[UIFont boldSystemFontOfSize:14]];
     [self.btnNormal setTitleColor:white forState:UIControlStateNormal];
@@ -88,7 +83,6 @@
     [self.btnNormal addTarget:self action:@selector(btnNormalTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.btnNormal];
     
-    // Botón FREE FIRE MAX
     self.btnMax = [UIButton buttonWithType:UIButtonTypeCustom];
     self.btnMax.translatesAutoresizingMaskIntoConstraints = NO;
     self.btnMax.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:1.0];
@@ -99,7 +93,6 @@
     self.btnMax.layer.shadowOpacity = 0.25;
     self.btnMax.layer.shadowRadius = 10.0;
     self.btnMax.layer.shadowOffset = CGSizeZero;
-    
     [self.btnMax setTitle:@"FREE FIRE\nMAX" forState:UIControlStateNormal];
     [self.btnMax.titleLabel setFont:[UIFont boldSystemFontOfSize:14]];
     [self.btnMax setTitleColor:white forState:UIControlStateNormal];
@@ -108,7 +101,6 @@
     [self.btnMax addTarget:self action:@selector(btnMaxTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.btnMax];
     
-    // Constraints
     [NSLayoutConstraint activateConstraints:@[
         [topGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [topGlow.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:-220],
@@ -148,29 +140,56 @@
 #pragma mark - Acciones de botones
 
 - (void)btnNormalTapped {
+    if (self.isNavigating) return;
+    self.isNavigating = YES;
     [self irAExplorarYAbrir:@"com.dts.freefireth"];
 }
 
 - (void)btnMaxTapped {
+    if (self.isNavigating) return;
+    self.isNavigating = YES;
     [self irAExplorarYAbrir:@"com.dts.freefiremax"];
 }
 
 - (void)irAExplorarYAbrir:(NSString *)bundleID {
-    // Obtener el TabBarController
-    UITabBarController *tabBar = (UITabBarController *)self.tabBarController;
-    if (!tabBar) return;
-    
-    // Cambiar a la pestaña Explorar (índice 1)
-    tabBar.selectedIndex = 1;
-    
-    // Obtener el ViewController de la pestaña Explorar
-    UINavigationController *nav = tabBar.viewControllers[1];
-    ViewController *explorer = (ViewController *)nav.topViewController;
-    
-    // Llamar abrirContenedor después de un pequeño delay para que la vista esté lista
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [explorer abrirContenedor:bundleID];
-    });
+    @try {
+        UITabBarController *tabBar = self.tabBarController;
+        if (!tabBar) {
+            self.isNavigating = NO;
+            return;
+        }
+        
+        if (tabBar.viewControllers.count <= 1) {
+            self.isNavigating = NO;
+            return;
+        }
+        
+        tabBar.selectedIndex = 1;
+        
+        UINavigationController *nav = tabBar.viewControllers[1];
+        if (![nav isKindOfClass:[UINavigationController class]]) {
+            self.isNavigating = NO;
+            return;
+        }
+        
+        ViewController *explorer = nav.topViewController;
+        if (![explorer isKindOfClass:[ViewController class]]) {
+            self.isNavigating = NO;
+            return;
+        }
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            @try {
+                [explorer abrirContenedorSeguro:bundleID];
+            } @catch (NSException *exception) {
+                NSLog(@"Error al abrir contenedor: %@", exception);
+            }
+            self.isNavigating = NO;
+        });
+    } @catch (NSException *exception) {
+        NSLog(@"Error en irAExplorarYAbrir: %@", exception);
+        self.isNavigating = NO;
+    }
 }
 
 @end
