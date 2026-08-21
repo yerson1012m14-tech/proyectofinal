@@ -20,24 +20,30 @@ static NSString * const kScreenProtectionKey =
 - (BOOL)application:(UIApplication *)application
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 
+    /*
+     * Ventana principal
+     */
+
     self.window =
         [[UIWindow alloc]
-            initWithFrame:UIScreen.mainScreen.bounds];
+            initWithFrame:[UIScreen mainScreen].bounds];
 
-    ViewController *vc =
+    ViewController *viewController =
         [[ViewController alloc] init];
 
-    UINavigationController *nav =
+    UINavigationController *navigationController =
         [[UINavigationController alloc]
-            initWithRootViewController:vc];
+            initWithRootViewController:viewController];
 
-    self.window.rootViewController = nav;
+    self.window.rootViewController =
+        navigationController;
 
     [self.window makeKeyAndVisible];
 
     /*
-     * Activar protección según Settings.
+     * Protección de pantalla
      */
+
     [self applyProtectionFromSettings];
 
     [[NSNotificationCenter defaultCenter]
@@ -47,8 +53,9 @@ static NSString * const kScreenProtectionKey =
              object:nil];
 
     /*
-     * Tu pantalla de licencia.
+     * Pantalla de licencia
      */
+
     [self mostrarPantallaLicencia];
 
     return YES;
@@ -66,8 +73,11 @@ static NSString * const kScreenProtectionKey =
         [ScreenProtectionManager shared];
 
     if (enabled) {
+
         [manager enableProtection];
+
     } else {
+
         [manager disableProtection];
     }
 }
@@ -85,39 +95,48 @@ static NSString * const kScreenProtectionKey =
         [[NSUserDefaults standardUserDefaults]
             stringForKey:@"MiFilzaLicenseKey"];
 
+    /*
+     * Si ya existe una licencia con el formato correcto,
+     * no mostramos la pantalla de licencia.
+     */
     if (license.length > 0 &&
         [self validarFormatoLicencia:license]) {
 
         return;
     }
 
-    LicenseViewController *licenseVC =
+    LicenseViewController *licenseViewController =
         [[LicenseViewController alloc] init];
 
-    licenseVC.modalPresentationStyle =
+    licenseViewController.modalPresentationStyle =
         UIModalPresentationFullScreen;
 
     __weak typeof(self) weakSelf = self;
 
-    licenseVC.onLicenseValidated = ^{
+    licenseViewController.onLicenseValidated = ^{
 
         dispatch_async(dispatch_get_main_queue(), ^{
 
+            /*
+             * Cerramos la ventana de licencia.
+             */
             weakSelf.lockWindow.hidden = YES;
             weakSelf.lockWindow = nil;
 
             /*
-             * Reaplicar protección después de cerrar
-             * la pantalla de licencia.
+             * Volvemos a preparar la protección.
              */
             [[ScreenProtectionManager shared]
                 refreshProtection];
         });
     };
 
+    /*
+     * Ventana de licencia.
+     */
     self.lockWindow =
         [[UIWindow alloc]
-            initWithFrame:UIScreen.mainScreen.bounds];
+            initWithFrame:[UIScreen mainScreen].bounds];
 
     self.lockWindow.rootViewController =
         [[UIViewController alloc] init];
@@ -128,10 +147,12 @@ static NSString * const kScreenProtectionKey =
     [self.lockWindow makeKeyAndVisible];
 
     [self.lockWindow.rootViewController
-        presentViewController:licenseVC
+        presentViewController:licenseViewController
                      animated:YES
                    completion:nil];
 }
+
+#pragma mark - License Validation
 
 - (BOOL)validarFormatoLicencia:(NSString *)license {
 
