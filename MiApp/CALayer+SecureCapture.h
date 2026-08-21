@@ -1,5 +1,16 @@
-#import <QuartzCore/QuartzCore.h>
+#import <UIKit/UIKit.h>
 
-@interface CALayer (SecureCapture)
-- (void)setSecureCapture:(BOOL)enabled;
+NS_ASSUME_NONNULL_BEGIN
+
+@interface ScreenProtectionManager : NSObject
+
++ (instancetype)sharedManager;
+
+@property (nonatomic, assign, getter=isEnabled) BOOL enabled;
+
+- (void)startMonitoring;
+- (void)stopMonitoring;
+
 @end
+
+NS_ASSUME_NONNULL_END
