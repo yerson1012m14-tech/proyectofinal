@@ -32,7 +32,6 @@ static NSString * const kScreenProtectionKey           = @"screenProtection";
     self.window.rootViewController = nav;
     [self.window makeKeyAndVisible];
 
-    // --- Protección de contenido ---
     [self applyProtectionFromSettings];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -40,7 +39,6 @@ static NSString * const kScreenProtectionKey           = @"screenProtection";
                                                  name:kProtectionChangedNotification
                                                object:nil];
 
-    // --- Sistema de licencia ---
     [self mostrarPantallaLicencia];
 
     return YES;
