@@ -1,4 +1,5 @@
 #import "SettingsViewController.h"
+#import "Translations.h"
 
 @interface SettingsViewController ()
 @property (nonatomic, strong) UIScrollView *scrollView;
@@ -12,6 +13,13 @@
 @property (nonatomic, strong) UIView *langOptions;
 @property (nonatomic, strong) UIView *protOptions;
 @property (nonatomic, strong) UISwitch *protSwitch;
+@property (nonatomic, strong) UILabel *langTitle;
+@property (nonatomic, strong) UILabel *langSub;
+@property (nonatomic, strong) UILabel *protTitle;
+@property (nonatomic, strong) UILabel *protSub;
+@property (nonatomic, strong) UILabel *header;
+@property (nonatomic, strong) NSMutableArray *langLabels;
+@property (nonatomic, strong) NSMutableArray *langSubLabels;
 @end
 
 @implementation SettingsViewController
@@ -21,7 +29,10 @@
     self.view.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.06 alpha:1.0];
     self.langExpanded = YES;
     self.protExpanded = YES;
+    self.langLabels = [NSMutableArray array];
+    self.langSubLabels = [NSMutableArray array];
     [self setupUI];
+    [self updateTexts];
 }
 
 - (void)setupUI {
@@ -39,13 +50,12 @@
     self.contentView.translatesAutoresizingMaskIntoConstraints = NO;
     [self.scrollView addSubview:self.contentView];
     
-    UILabel *header = [[UILabel alloc] init];
-    header.translatesAutoresizingMaskIntoConstraints = NO;
-    header.text = @"Configuración";
-    header.textColor = muted;
-    header.font = [UIFont systemFontOfSize:13];
-    header.textAlignment = NSTextAlignmentCenter;
-    [self.contentView addSubview:header];
+    self.header = [[UILabel alloc] init];
+    self.header.translatesAutoresizingMaskIntoConstraints = NO;
+    self.header.textColor = muted;
+    self.header.font = [UIFont systemFontOfSize:13];
+    self.header.textAlignment = NSTextAlignmentCenter;
+    [self.contentView addSubview:self.header];
     
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeCustom];
     closeBtn.translatesAutoresizingMaskIntoConstraints = NO;
@@ -54,7 +64,7 @@
     [closeBtn addTarget:self action:@selector(closeSettings) forControlEvents:UIControlEventTouchUpInside];
     [self.contentView addSubview:closeBtn];
     
-    // ===== SECCIÓN IDIOMA =====
+    // SECCIÓN IDIOMA
     UIView *langCard = [[UIView alloc] init];
     langCard.translatesAutoresizingMaskIntoConstraints = NO;
     langCard.backgroundColor = cardBg;
@@ -67,19 +77,17 @@
     langIcon.tintColor = red;
     [langCard addSubview:langIcon];
     
-    UILabel *langTitle = [[UILabel alloc] init];
-    langTitle.translatesAutoresizingMaskIntoConstraints = NO;
-    langTitle.text = @"IDIOMA";
-    langTitle.textColor = white;
-    langTitle.font = [UIFont boldSystemFontOfSize:14];
-    [langCard addSubview:langTitle];
+    self.langTitle = [[UILabel alloc] init];
+    self.langTitle.translatesAutoresizingMaskIntoConstraints = NO;
+    self.langTitle.textColor = white;
+    self.langTitle.font = [UIFont boldSystemFontOfSize:14];
+    [langCard addSubview:self.langTitle];
     
-    UILabel *langSub = [[UILabel alloc] init];
-    langSub.translatesAutoresizingMaskIntoConstraints = NO;
-    langSub.text = @"Selecciona tu idioma";
-    langSub.textColor = muted;
-    langSub.font = [UIFont systemFontOfSize:12];
-    [langCard addSubview:langSub];
+    self.langSub = [[UILabel alloc] init];
+    self.langSub.translatesAutoresizingMaskIntoConstraints = NO;
+    self.langSub.textColor = muted;
+    self.langSub.font = [UIFont systemFontOfSize:12];
+    [langCard addSubview:self.langSub];
     
     self.langChevron = [UIButton buttonWithType:UIButtonTypeCustom];
     self.langChevron.translatesAutoresizingMaskIntoConstraints = NO;
@@ -94,7 +102,6 @@
     self.langOptions.layer.masksToBounds = YES;
     [langCard addSubview:self.langOptions];
     
-    NSArray *langs = @[@"Español", @"English", @"Português"];
     NSArray *countryCodes = @[@"ES", @"EN", @"PT"];
     NSArray *flagColors = @[
         [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0],
@@ -125,10 +132,17 @@
         
         UILabel *lt = [[UILabel alloc] init];
         lt.translatesAutoresizingMaskIntoConstraints = NO;
-        lt.text = langs[i];
         lt.textColor = white;
         lt.font = [UIFont systemFontOfSize:15];
         [rowBtn addSubview:lt];
+        [self.langLabels addObject:lt];
+        
+        UILabel *ls = [[UILabel alloc] init];
+        ls.translatesAutoresizingMaskIntoConstraints = NO;
+        ls.textColor = muted;
+        ls.font = [UIFont systemFontOfSize:11];
+        [rowBtn addSubview:ls];
+        [self.langSubLabels addObject:ls];
         
         UIButton *radio = [UIButton buttonWithType:UIButtonTypeCustom];
         radio.translatesAutoresizingMaskIntoConstraints = NO;
@@ -158,7 +172,7 @@
         ]];
     }
     
-    // ===== SECCIÓN PROTECCIÓN =====
+    // SECCIÓN PROTECCIÓN
     UIView *protCard = [[UIView alloc] init];
     protCard.translatesAutoresizingMaskIntoConstraints = NO;
     protCard.backgroundColor = cardBg;
@@ -171,12 +185,17 @@
     protIcon.tintColor = red;
     [protCard addSubview:protIcon];
     
-    UILabel *protTitle = [[UILabel alloc] init];
-    protTitle.translatesAutoresizingMaskIntoConstraints = NO;
-    protTitle.text = @"PROTECCIÓN PARA REVISIÓN";
-    protTitle.textColor = white;
-    protTitle.font = [UIFont boldSystemFontOfSize:14];
-    [protCard addSubview:protTitle];
+    self.protTitle = [[UILabel alloc] init];
+    self.protTitle.translatesAutoresizingMaskIntoConstraints = NO;
+    self.protTitle.textColor = white;
+    self.protTitle.font = [UIFont boldSystemFontOfSize:14];
+    [protCard addSubview:self.protTitle];
+    
+    self.protSub = [[UILabel alloc] init];
+    self.protSub.translatesAutoresizingMaskIntoConstraints = NO;
+    self.protSub.textColor = muted;
+    self.protSub.font = [UIFont systemFontOfSize:12];
+    [protCard addSubview:self.protSub];
     
     self.protChevron = [UIButton buttonWithType:UIButtonTypeCustom];
     self.protChevron.translatesAutoresizingMaskIntoConstraints = NO;
@@ -208,7 +227,7 @@
         [self.protSwitch.bottomAnchor constraintEqualToAnchor:self.protOptions.bottomAnchor constant:-16],
     ]];
     
-    // ===== CONSTRAINTS PRINCIPALES =====
+    // CONSTRAINTS PRINCIPALES
     [NSLayoutConstraint activateConstraints:@[
         [self.scrollView.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
         [self.scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
@@ -221,15 +240,15 @@
         [self.contentView.bottomAnchor constraintEqualToAnchor:self.scrollView.bottomAnchor],
         [self.contentView.widthAnchor constraintEqualToAnchor:self.scrollView.widthAnchor],
         
-        [header.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:16],
-        [header.centerXAnchor constraintEqualToAnchor:self.contentView.centerXAnchor],
+        [self.header.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:16],
+        [self.header.centerXAnchor constraintEqualToAnchor:self.contentView.centerXAnchor],
         
         [closeBtn.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:12],
         [closeBtn.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-16],
         [closeBtn.widthAnchor constraintEqualToConstant:24],
         [closeBtn.heightAnchor constraintEqualToConstant:24],
         
-        [langCard.topAnchor constraintEqualToAnchor:header.bottomAnchor constant:16],
+        [langCard.topAnchor constraintEqualToAnchor:self.header.bottomAnchor constant:16],
         [langCard.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:16],
         [langCard.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-16],
         
@@ -238,11 +257,11 @@
         [langIcon.widthAnchor constraintEqualToConstant:22],
         [langIcon.heightAnchor constraintEqualToConstant:22],
         
-        [langTitle.leadingAnchor constraintEqualToAnchor:langIcon.trailingAnchor constant:10],
-        [langTitle.topAnchor constraintEqualToAnchor:langIcon.topAnchor],
+        [self.langTitle.leadingAnchor constraintEqualToAnchor:langIcon.trailingAnchor constant:10],
+        [self.langTitle.topAnchor constraintEqualToAnchor:langIcon.topAnchor],
         
-        [langSub.leadingAnchor constraintEqualToAnchor:langTitle.leadingAnchor],
-        [langSub.topAnchor constraintEqualToAnchor:langTitle.bottomAnchor constant:2],
+        [self.langSub.leadingAnchor constraintEqualToAnchor:self.langTitle.leadingAnchor],
+        [self.langSub.topAnchor constraintEqualToAnchor:self.langTitle.bottomAnchor constant:2],
         
         [self.langChevron.trailingAnchor constraintEqualToAnchor:langCard.trailingAnchor constant:-16],
         [self.langChevron.centerYAnchor constraintEqualToAnchor:langIcon.centerYAnchor],
@@ -264,8 +283,11 @@
         [protIcon.widthAnchor constraintEqualToConstant:22],
         [protIcon.heightAnchor constraintEqualToConstant:22],
         
-        [protTitle.leadingAnchor constraintEqualToAnchor:protIcon.trailingAnchor constant:10],
-        [protTitle.topAnchor constraintEqualToAnchor:protIcon.topAnchor],
+        [self.protTitle.leadingAnchor constraintEqualToAnchor:protIcon.trailingAnchor constant:10],
+        [self.protTitle.topAnchor constraintEqualToAnchor:protIcon.topAnchor],
+        
+        [self.protSub.leadingAnchor constraintEqualToAnchor:self.protTitle.leadingAnchor],
+        [self.protSub.topAnchor constraintEqualToAnchor:self.protTitle.bottomAnchor constant:2],
         
         [self.protChevron.trailingAnchor constraintEqualToAnchor:protCard.trailingAnchor constant:-16],
         [self.protChevron.centerYAnchor constraintEqualToAnchor:protIcon.centerYAnchor],
@@ -278,6 +300,24 @@
     
     self.protOptionsHeight = [self.protOptions.heightAnchor constraintEqualToConstant:(self.protExpanded ? 70 : 0)];
     self.protOptionsHeight.active = YES;
+}
+
+- (void)updateTexts {
+    self.header.text = [Translations tr:@"settings"];
+    self.langTitle.text = [Translations tr:@"language"];
+    self.langSub.text = [Translations tr:@"select_language"];
+    self.protTitle.text = [Translations tr:@"protection"];
+    self.protSub.text = [Translations tr:@"protection_desc"];
+    
+    NSArray *langKeys = @[@"spanish", @"english", @"portuguese"];
+    NSArray *langSubKeys = @[@"spanish", @"english", @"portuguese"];
+    
+    for (int i = 0; i < 3; i++) {
+        UILabel *lt = self.langLabels[i];
+        UILabel *ls = self.langSubLabels[i];
+        lt.text = [Translations tr:langKeys[i]];
+        ls.text = [Translations tr:langSubKeys[i]];
+    }
 }
 
 #pragma mark - Actions
@@ -314,6 +354,8 @@
         [r setImage:[UIImage systemImageNamed:(i == idx ? @"largecircle.fill.circle" : @"circle")] forState:UIControlStateNormal];
         [r setTintColor:(i == idx ? red : muted)];
     }
+    [Translations setLanguage:self.selectedLanguage];
+    [self updateTexts];
     [self saveAndNotify];
 }
 
@@ -328,7 +370,6 @@
     [d setBool:self.screenProtection forKey:@"screenProtection"];
     [d synchronize];
     
-    // Notificar al AppDelegate para activar/desactivar la protección
     [[NSNotificationCenter defaultCenter] postNotificationName:@"ProtectionChanged" object:nil];
     
     if (self.onSettingsChanged) self.onSettingsChanged();
