@@ -218,12 +218,15 @@
     svc.selectedLanguage = self.selectedLanguage;
     svc.screenProtection = self.screenProtection;
     
+    //  FIX: usar __weak para evitar retain cycle
+    __weak typeof(self) weakSelf = self;
     svc.onSettingsChanged = ^{
-        self.selectedLanguage = svc.selectedLanguage;
-        self.screenProtection = svc.screenProtection;
-        [self saveSettings];
-        [Translations setLanguage:self.selectedLanguage];
-        [self updateButtonText];
+        if (!weakSelf) return;
+        weakSelf.selectedLanguage = svc.selectedLanguage;
+        weakSelf.screenProtection = svc.screenProtection;
+        [weakSelf saveSettings];
+        [Translations setLanguage:weakSelf.selectedLanguage];
+        [weakSelf updateButtonText];
     };
     
     svc.modalPresentationStyle = UIModalPresentationPageSheet;
