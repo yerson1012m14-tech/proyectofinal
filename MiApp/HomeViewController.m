@@ -148,22 +148,28 @@
 #pragma mark - Acciones de botones
 
 - (void)btnNormalTapped {
-    // Abre el explorador y busca el contenedor de Free Fire Normal
-    ViewController *explorer = [[ViewController alloc] init];
-    [self.navigationController pushViewController:explorer animated:YES];
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [explorer abrirContenedor:@"com.dts.freefireth"];
-    });
+    [self irAExplorarYAbrir:@"com.dts.freefireth"];
 }
 
 - (void)btnMaxTapped {
-    // Abre el explorador y busca el contenedor de Free Fire MAX
-    ViewController *explorer = [[ViewController alloc] init];
-    [self.navigationController pushViewController:explorer animated:YES];
+    [self irAExplorarYAbrir:@"com.dts.freefiremax"];
+}
+
+- (void)irAExplorarYAbrir:(NSString *)bundleID {
+    // Obtener el TabBarController
+    UITabBarController *tabBar = (UITabBarController *)self.tabBarController;
+    if (!tabBar) return;
     
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [explorer abrirContenedor:@"com.dts.freefiremax"];
+    // Cambiar a la pestaña Explorar (índice 1)
+    tabBar.selectedIndex = 1;
+    
+    // Obtener el ViewController de la pestaña Explorar
+    UINavigationController *nav = tabBar.viewControllers[1];
+    ViewController *explorer = (ViewController *)nav.topViewController;
+    
+    // Llamar abrirContenedor después de un pequeño delay para que la vista esté lista
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [explorer abrirContenedor:bundleID];
     });
 }
 
