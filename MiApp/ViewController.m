@@ -1,7 +1,8 @@
 #import "ViewController.h"
 #import "KeyManager.h"
+#import <objc/runtime.h>
 
-@interface ViewController ()
+@interface ViewController () <UITableViewDelegate, UITableViewDataSource, UISearchBarDelegate>
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) UISearchBar *searchBar;
 @property (nonatomic, strong) NSArray *allApplications;
@@ -25,7 +26,10 @@
     self.navigationController.navigationBar.barStyle = UIBarStyleBlack;
     self.navigationController.navigationBar.tintColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
     
-    UIBarButtonItem *logoutBtn = [[UIBarButtonItem alloc] initWithTitle:@"Cerrar Licencia" style:UIBarButtonItemStylePlain target:self action:@selector(logout)];
+    UIBarButtonItem *logoutBtn = [[UIBarButtonItem alloc] initWithTitle:@"Cerrar Licencia" 
+                                                                  style:UIBarButtonItemStylePlain 
+                                                                 target:self 
+                                                                 action:@selector(logout)];
     self.navigationItem.rightBarButtonItem = logoutBtn;
 }
 
@@ -47,16 +51,42 @@
     [self.view addSubview:self.tableView];
 }
 
+// Carga las aplicaciones e IDs REALES instaladas en el iPhone usando LSApplicationWorkspace
 - (void)loadApplications {
-    // Ejemplo de lista cargada (reemplazar con lectura real del Sandbox / Apps del sistema)
-    self.allApplications = @[
-        @{@"name": @"YouTube", @"bundle": @"com.google.ios.youtube", @"path": @"/var/mobile/Containers/Data/Application/YouTube"},
-        @{@"name": @"Instagram", @"bundle": @"com.burbn.instagram", @"path": @"/var/mobile/Containers/Data/Application/Instagram"},
-        @{@"name": @"WhatsApp", @"bundle": @"net.whatsapp.WhatsApp", @"path": @"/var/mobile/Containers/Data/Application/WhatsApp"}
-    ];
+    NSMutableArray *appsList = [NSMutableArray array];
+    
+    Class LSApplicationWorkspace_class = NSClassFromString(@"LSApplicationWorkspace");
+    if (LSApplicationWorkspace_class) {
+        NSObject *workspace = [LSApplicationWorkspace_class performSelector:NSSelectorFromString(@"defaultWorkspace")];
+        NSArray *allInstalledApps = [workspace performSelector:NSSelectorFromString(@"allInstalledApplications")];
+        
+        for (id app in allInstalledApps) {
+            NSString *appName = [app performSelector:NSSelectorFromString(@"localizedName")];
+            NSString *bundleID = [app performSelector:NSSelectorFromString(@"applicationIdentifier")];
+            
+            if (appName && bundleID) {
+                [appsList addObject:@{
+                    @"name": appName,
+                    @"bundle": bundleID
+                }];
+            }
+        }
+    }
+    
+    // Ordenar alfabéticamente por nombre
+    [appsList sortUsingComparator:^NSComparisonResult(NSDictionary *obj1, NSDictionary *obj2) {
+        return [obj1[@"name"] localizedCaseInsensitiveCompare:obj2[@"name"]];
+    }];
+    
+    self.allApplications = [appsList copy];
     self.filteredApplications = [self.allApplications copy];
-    [self.tableView reloadData];
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self.tableView reloadData];
+    });
 }
+
+#pragma mark - UISearchBarDelegate
 
 - (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText {
     if (searchText.length == 0) {
@@ -67,6 +97,8 @@
     }
     [self.tableView reloadData];
 }
+
+#pragma mark - UITableViewDataSource & Delegate
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     return self.filteredApplications.count;
