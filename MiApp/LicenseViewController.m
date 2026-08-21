@@ -5,8 +5,6 @@
 @property (nonatomic, strong) UITextField *licenseField;
 @property (nonatomic, strong) UIButton *continueButton;
 @property (nonatomic, strong) CAGradientLayer *buttonGradient;
-@property (nonatomic, strong) UIView *buttonShadow;
-@property (nonatomic, assign) BOOL hasAnimated;
 @end
 
 @implementation LicenseViewController
@@ -14,19 +12,10 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor colorWithRed:0.018 green:0.018 blue:0.022 alpha:1.0];
-    self.hasAnimated = NO;
     [self setupUI];
 }
 
-- (void)viewDidAppear:(BOOL)animated {
-    [super viewDidAppear:animated];
-    if (!self.hasAnimated) {
-        self.hasAnimated = YES;
-        [self animateEntrance];
-    }
-}
-
-#pragma mark - UI Setup
+#pragma mark - UI
 
 - (void)setupUI {
     UIColor *white = [UIColor colorWithWhite:0.96 alpha:1.0];
@@ -71,13 +60,16 @@
     brandLine.layer.shadowOffset = CGSizeZero;
     [self.view addSubview:brandLine];
     
+    // ✅ Subtítulo con kerning (Objective-C compatible)
     UILabel *subtitle = [[UILabel alloc] init];
     subtitle.translatesAutoresizingMaskIntoConstraints = NO;
-    subtitle.text = @"LICENSE ACTIVATION";
-    subtitle.textColor = muted;
-    subtitle.font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightMedium];
-    subtitle.letterSpacing = 3.0;
     subtitle.textAlignment = NSTextAlignmentCenter;
+    subtitle.attributedText = [[NSAttributedString alloc] initWithString:@"LICENSE ACTIVATION"
+        attributes:@{
+            NSFontAttributeName: [UIFont systemFontOfSize:11.0 weight:UIFontWeightMedium],
+            NSForegroundColorAttributeName: muted,
+            NSKernAttributeName: @3.0
+        }];
     [self.view addSubview:subtitle];
     
     self.licenseField = [[UITextField alloc] init];
@@ -109,25 +101,19 @@
         }];
     [self.view addSubview:self.licenseField];
     
-    self.buttonShadow = [[UIView alloc] init];
-    self.buttonShadow.translatesAutoresizingMaskIntoConstraints = NO;
-    self.buttonShadow.backgroundColor = [red colorWithAlphaComponent:0.16];
-    self.buttonShadow.layer.cornerRadius = 28.0;
-    self.buttonShadow.layer.shadowColor = red.CGColor;
-    self.buttonShadow.layer.shadowOpacity = 0.35;
-    self.buttonShadow.layer.shadowRadius = 20.0;
-    self.buttonShadow.layer.shadowOffset = CGSizeZero;
-    self.buttonShadow.userInteractionEnabled = NO;
-    [self.view addSubview:self.buttonShadow];
-    
     self.continueButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.continueButton.translatesAutoresizingMaskIntoConstraints = NO;
     self.continueButton.layer.cornerRadius = 14.0;
     self.continueButton.layer.masksToBounds = YES;
-    [self.continueButton setTitle:@"CONTINUAR" forState:UIControlStateNormal];
-    [self.continueButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    self.continueButton.titleLabel.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightBold];
-    self.continueButton.letterSpacing = 1.5;
+    
+    // ✅ Botón con kerning (Objective-C compatible)
+    [self.continueButton setAttributedTitle:[[NSAttributedString alloc] initWithString:@"CONTINUAR"
+        attributes:@{
+            NSFontAttributeName: [UIFont systemFontOfSize:15.0 weight:UIFontWeightBold],
+            NSForegroundColorAttributeName: [UIColor whiteColor],
+            NSKernAttributeName: @1.5
+        }] forState:UIControlStateNormal];
+    
     [self.continueButton addTarget:self action:@selector(activateLicense) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.continueButton];
     
@@ -140,6 +126,17 @@
     self.buttonGradient.endPoint = CGPointMake(1.0, 0.5);
     self.buttonGradient.cornerRadius = 14.0;
     [self.continueButton.layer insertSublayer:self.buttonGradient atIndex:0];
+    
+    UIView *buttonShadow = [[UIView alloc] init];
+    buttonShadow.translatesAutoresizingMaskIntoConstraints = NO;
+    buttonShadow.backgroundColor = [red colorWithAlphaComponent:0.16];
+    buttonShadow.layer.cornerRadius = 28.0;
+    buttonShadow.layer.shadowColor = red.CGColor;
+    buttonShadow.layer.shadowOpacity = 0.35;
+    buttonShadow.layer.shadowRadius = 20.0;
+    buttonShadow.layer.shadowOffset = CGSizeZero;
+    buttonShadow.userInteractionEnabled = NO;
+    [self.view insertSubview:buttonShadow belowSubview:self.continueButton];
     
     [NSLayoutConstraint activateConstraints:@[
         [topGlow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
@@ -174,10 +171,10 @@
         [self.licenseField.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-38],
         [self.licenseField.heightAnchor constraintEqualToConstant:56],
         
-        [self.buttonShadow.centerXAnchor constraintEqualToAnchor:self.continueButton.centerXAnchor],
-        [self.buttonShadow.centerYAnchor constraintEqualToAnchor:self.continueButton.centerYAnchor constant:6],
-        [self.buttonShadow.widthAnchor constraintEqualToAnchor:self.continueButton.widthAnchor constant:-8],
-        [self.buttonShadow.heightAnchor constraintEqualToAnchor:self.continueButton.heightAnchor constant:-8],
+        [buttonShadow.centerXAnchor constraintEqualToAnchor:self.continueButton.centerXAnchor],
+        [buttonShadow.centerYAnchor constraintEqualToAnchor:self.continueButton.centerYAnchor constant:6],
+        [buttonShadow.widthAnchor constraintEqualToAnchor:self.continueButton.widthAnchor constant:-8],
+        [buttonShadow.heightAnchor constraintEqualToAnchor:self.continueButton.heightAnchor constant:-8],
         
         [self.continueButton.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [self.continueButton.topAnchor constraintEqualToAnchor:self.licenseField.bottomAnchor constant:18],
@@ -197,23 +194,6 @@
 - (void)updateButtonGradientFrame {
     self.buttonGradient.frame = self.continueButton.bounds;
     self.buttonGradient.cornerRadius = self.continueButton.layer.cornerRadius;
-}
-
-#pragma mark - Animaciones
-
-- (void)animateEntrance {
-    self.licenseField.alpha = 0;
-    self.continueButton.alpha = 0;
-    self.buttonShadow.alpha = 0;
-    
-    [UIView animateWithDuration:0.6 delay:0.0 usingSpringWithDamping:0.75 initialSpringVelocity:0.3 options:0 animations:^{
-        self.licenseField.alpha = 1;
-    } completion:nil];
-    
-    [UIView animateWithDuration:0.6 delay:0.2 usingSpringWithDamping:0.7 initialSpringVelocity:0.4 options:0 animations:^{
-        self.continueButton.alpha = 1;
-        self.buttonShadow.alpha = 1;
-    } completion:nil];
 }
 
 #pragma mark - License formatting
