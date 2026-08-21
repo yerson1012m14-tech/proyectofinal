@@ -132,7 +132,6 @@
     buttonShadow.userInteractionEnabled = NO;
     [self.view insertSubview:buttonShadow belowSubview:self.continueButton];
     
-    // BOTÓN DE CONFIGURACIÓN
     self.settingsButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.settingsButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.settingsButton setImage:[UIImage systemImageNamed:@"gearshape.fill"] forState:UIControlStateNormal];
@@ -219,11 +218,13 @@
     svc.selectedLanguage = self.selectedLanguage;
     svc.screenProtection = self.screenProtection;
     
+    // ✅ FIX: usar __weak para svc también y evitar retain cycle
     __weak typeof(self) weakSelf = self;
+    __weak typeof(svc) weakSvc = svc;
     svc.onSettingsChanged = ^{
-        if (!weakSelf) return;
-        weakSelf.selectedLanguage = svc.selectedLanguage;
-        weakSelf.screenProtection = svc.screenProtection;
+        if (!weakSelf || !weakSvc) return;
+        weakSelf.selectedLanguage = weakSvc.selectedLanguage;
+        weakSelf.screenProtection = weakSvc.screenProtection;
         [weakSelf saveSettings];
         [Translations setLanguage:weakSelf.selectedLanguage];
         [weakSelf updateButtonText];
