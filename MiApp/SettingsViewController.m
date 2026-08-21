@@ -5,6 +5,7 @@
 @property (nonatomic, strong) UIView *contentView;
 @property (nonatomic, strong) NSLayoutConstraint *langOptionsHeight;
 @property (nonatomic, strong) NSLayoutConstraint *protOptionsHeight;
+@property (nonatomic, strong) NSLayoutConstraint *contentHeight;
 @property (nonatomic, assign) BOOL langExpanded;
 @property (nonatomic, assign) BOOL protExpanded;
 @property (nonatomic, strong) UIButton *langChevron;
@@ -12,6 +13,7 @@
 @property (nonatomic, strong) UIView *langOptions;
 @property (nonatomic, strong) UIView *protOptions;
 @property (nonatomic, strong) UISwitch *protSwitch;
+@property (nonatomic, strong) UIView *lastCard;
 @end
 
 @implementation SettingsViewController
@@ -103,7 +105,6 @@
     ];
     
     for (int i = 0; i < 3; i++) {
-        // Botón completo de fila (para que toda la fila sea clickeable)
         UIButton *rowBtn = [UIButton buttonWithType:UIButtonTypeCustom];
         rowBtn.translatesAutoresizingMaskIntoConstraints = NO;
         rowBtn.tag = 200 + i;
@@ -134,7 +135,7 @@
         UIButton *radio = [UIButton buttonWithType:UIButtonTypeCustom];
         radio.translatesAutoresizingMaskIntoConstraints = NO;
         radio.tag = 300 + i;
-        radio.userInteractionEnabled = NO; // El botón padre maneja el toque
+        radio.userInteractionEnabled = NO;
         [radio setImage:[UIImage systemImageNamed:(i == self.selectedLanguage ? @"largecircle.fill.circle" : @"circle")] forState:UIControlStateNormal];
         [radio setTintColor:(i == self.selectedLanguage ? red : muted)];
         [rowBtn addSubview:radio];
@@ -204,11 +205,12 @@
         [self.protOptions.leadingAnchor constraintEqualToAnchor:protCard.leadingAnchor],
         [self.protOptions.trailingAnchor constraintEqualToAnchor:protCard.trailingAnchor],
         [self.protOptions.bottomAnchor constraintEqualToAnchor:protCard.bottomAnchor constant:-16],
-        
         [self.protSwitch.centerXAnchor constraintEqualToAnchor:self.protOptions.centerXAnchor],
         [self.protSwitch.topAnchor constraintEqualToAnchor:self.protOptions.topAnchor constant:16],
         [self.protSwitch.bottomAnchor constraintEqualToAnchor:self.protOptions.bottomAnchor constant:-16],
     ]];
+    
+    self.lastCard = protCard;
     
     // ===== CONSTRAINTS PRINCIPALES =====
     [NSLayoutConstraint activateConstraints:@[
@@ -259,6 +261,7 @@
         [protCard.topAnchor constraintEqualToAnchor:langCard.bottomAnchor constant:12],
         [protCard.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:16],
         [protCard.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-16],
+        [protCard.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor constant:-20],
         
         [protIcon.topAnchor constraintEqualToAnchor:protCard.topAnchor constant:16],
         [protIcon.leadingAnchor constraintEqualToAnchor:protCard.leadingAnchor constant:16],
@@ -274,7 +277,6 @@
         [self.protChevron.heightAnchor constraintEqualToConstant:20],
     ]];
     
-    // Alturas dinámicas
     self.langOptionsHeight = [self.langOptions.heightAnchor constraintEqualToConstant:(self.langExpanded ? 156 : 0)];
     self.langOptionsHeight.active = YES;
     
