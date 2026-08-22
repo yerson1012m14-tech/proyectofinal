@@ -921,11 +921,13 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, strong) UIView *categoryTabsView;
 @property (nonatomic, strong) UIButton *hologramTabButton;
 @property (nonatomic, strong) UIButton *aimbotTabButton;
+@property (nonatomic, strong) UIButton *fpsTabButton;
 @property (nonatomic, copy) NSString *selectedCategory;
 
 @property (nonatomic, strong) NSIndexPath *selectedOptionIndexPath;
 @property (nonatomic, strong) NSIndexPath *selectedAimbotIndexPath;
 @property (nonatomic, strong) NSIndexPath *selectedHologramIndexPath;
+@property (nonatomic, strong) NSIndexPath *selectedFPSIndexPath;
 
 @property (nonatomic, strong) NSArray<XITForgeOption *> *pendingActivationOptions;
 @property (nonatomic, strong) NSMutableArray<XITForgeOption *> *activationSucceededOptions;
@@ -1043,10 +1045,16 @@ static NSURL *XITForgeExistingDirectoryChild(
 }
 
 - (NSArray<XITForgeOption *> *)optionsForCategory:(NSString *)categoryName {
-    NSString *wantedCategory =
-        [categoryName.lowercaseString isEqualToString:@"aimbot"]
-            ? @"aimbot"
-            : @"holograma";
+    NSString *normalized =
+        categoryName.lowercaseString ?: @"";
+
+    NSString *wantedCategory = @"holograma";
+
+    if ([normalized isEqualToString:@"aimbot"]) {
+        wantedCategory = @"aimbot";
+    } else if ([normalized isEqualToString:@"fps"]) {
+        wantedCategory = @"fps";
+    }
 
     NSMutableArray<XITForgeOption *> *items =
         [NSMutableArray array];
@@ -1097,7 +1105,7 @@ static NSURL *XITForgeExistingDirectoryChild(
 
 - (NSArray<XITForgeOption *> *)selectedOptions {
     NSMutableArray<XITForgeOption *> *selected =
-        [NSMutableArray arrayWithCapacity:2];
+        [NSMutableArray arrayWithCapacity:3];
 
     XITForgeOption *aimbot =
         [self optionAtIndexPath:self.selectedAimbotIndexPath
@@ -1107,9 +1115,13 @@ static NSURL *XITForgeExistingDirectoryChild(
         [self optionAtIndexPath:self.selectedHologramIndexPath
                    forCategory:@"holograma"];
 
+    XITForgeOption *fps =
+        [self optionAtIndexPath:self.selectedFPSIndexPath
+                   forCategory:@"fps"];
+
     /*
-     * AIMBOT siempre va primero. Si el usuario también eligió
-     * un holograma, el mismo botón ACTIVAR aplica ambos.
+     * Se puede elegir una opción por categoría y ACTIVAR
+     * aplica todas las seleccionadas en el mismo proceso.
      */
     if (aimbot) {
         [selected addObject:aimbot];
@@ -1119,45 +1131,87 @@ static NSURL *XITForgeExistingDirectoryChild(
         [selected addObject:hologram];
     }
 
+    if (fps) {
+        [selected addObject:fps];
+    }
+
     return [selected copy];
 }
 
+- (NSString *)selectionHintText {
+    NSInteger count =
+        [self selectedOptions].count;
+
+    if (count > 1) {
+        return [NSString stringWithFormat:
+            @"%ld OPCIONES SELECCIONADAS",
+            (long)count];
+    }
+
+    return @"SELECCIONA UNA OPCIÓN";
+}
+
 - (void)updateCategoryTabAppearance {
+    BOOL aimbotSelected =
+        [self.selectedCategory isEqualToString:@"aimbot"];
+
     BOOL hologramSelected =
-        ![self.selectedCategory isEqualToString:@"aimbot"];
+        [self.selectedCategory isEqualToString:@"holograma"];
+
+    BOOL fpsSelected =
+        [self.selectedCategory isEqualToString:@"fps"];
 
     UIColor *accent = XITForgeAccentColor();
     UIColor *inactive =
         [UIColor colorWithWhite:0.085 alpha:1.0];
+    UIColor *inactiveBorder =
+        [UIColor colorWithWhite:1.0 alpha:0.08];
+
+    self.aimbotTabButton.backgroundColor =
+        aimbotSelected ? accent : inactive;
 
     self.hologramTabButton.backgroundColor =
         hologramSelected ? accent : inactive;
 
-    self.aimbotTabButton.backgroundColor =
-        hologramSelected ? inactive : accent;
+    self.fpsTabButton.backgroundColor =
+        fpsSelected ? accent : inactive;
+
+    self.aimbotTabButton.layer.borderColor =
+        (aimbotSelected
+            ? [accent colorWithAlphaComponent:0.95]
+            : inactiveBorder).CGColor;
 
     self.hologramTabButton.layer.borderColor =
         (hologramSelected
             ? [accent colorWithAlphaComponent:0.95]
-            : [UIColor colorWithWhite:1.0 alpha:0.08]).CGColor;
+            : inactiveBorder).CGColor;
 
-    self.aimbotTabButton.layer.borderColor =
-        (!hologramSelected
+    self.fpsTabButton.layer.borderColor =
+        (fpsSelected
             ? [accent colorWithAlphaComponent:0.95]
-            : [UIColor colorWithWhite:1.0 alpha:0.08]).CGColor;
+            : inactiveBorder).CGColor;
+
+    self.aimbotTabButton.alpha =
+        aimbotSelected ? 1.0 : 0.72;
 
     self.hologramTabButton.alpha =
         hologramSelected ? 1.0 : 0.72;
 
-    self.aimbotTabButton.alpha =
-        hologramSelected ? 0.72 : 1.0;
+    self.fpsTabButton.alpha =
+        fpsSelected ? 1.0 : 0.72;
 }
 
 - (void)switchToCategory:(NSString *)category {
-    NSString *normalized =
-        [category.lowercaseString isEqualToString:@"aimbot"]
-            ? @"aimbot"
-            : @"holograma";
+    NSString *lower =
+        category.lowercaseString ?: @"";
+
+    NSString *normalized = @"holograma";
+
+    if ([lower isEqualToString:@"aimbot"]) {
+        normalized = @"aimbot";
+    } else if ([lower isEqualToString:@"fps"]) {
+        normalized = @"fps";
+    }
 
     if ([self.selectedCategory isEqualToString:normalized]) {
         return;
@@ -1166,19 +1220,22 @@ static NSURL *XITForgeExistingDirectoryChild(
     self.selectedCategory = normalized;
 
     /*
-     * No borramos la selección de la otra pestaña.
-     * Así se puede elegir 1 AIMBOT + 1 HOLOGRAMA y luego
-     * activarlos juntos desde el mismo botón.
+     * Conserva la selección de las otras pestañas.
+     * Así se puede elegir AIMBOT + HOLOGRAMA + FPS.
      */
-    self.selectedOptionIndexPath =
-        [normalized isEqualToString:@"aimbot"]
-            ? self.selectedAimbotIndexPath
-            : self.selectedHologramIndexPath;
+    if ([normalized isEqualToString:@"aimbot"]) {
+        self.selectedOptionIndexPath =
+            self.selectedAimbotIndexPath;
+    } else if ([normalized isEqualToString:@"fps"]) {
+        self.selectedOptionIndexPath =
+            self.selectedFPSIndexPath;
+    } else {
+        self.selectedOptionIndexPath =
+            self.selectedHologramIndexPath;
+    }
 
     self.selectionHintLabel.text =
-        [self selectedOptions].count > 1
-            ? @"2 OPCIONES SELECCIONADAS"
-            : @"SELECCIONA UNA OPCIÓN";
+        [self selectionHintText];
 
     self.selectionHintLabel.textColor =
         [UIColor colorWithWhite:0.48 alpha:1.0];
@@ -1210,6 +1267,10 @@ static NSURL *XITForgeExistingDirectoryChild(
 
 - (void)aimbotTabTapped {
     [self switchToCategory:@"aimbot"];
+}
+
+- (void)fpsTabTapped {
+    [self switchToCategory:@"fps"];
 }
 
 - (void)updateActivateButtonForCurrentSelection {
@@ -1438,6 +1499,9 @@ static NSURL *XITForgeExistingDirectoryChild(
     self.selectedHologramIndexPath =
         nil;
 
+    self.selectedFPSIndexPath =
+        nil;
+
     self.selectedCategory =
         @"aimbot";
 
@@ -1525,6 +1589,38 @@ static NSURL *XITForgeExistingDirectoryChild(
         forControlEvents:UIControlEventTouchUpInside];
 
     [self.categoryTabsView addSubview:self.aimbotTabButton];
+
+
+    self.fpsTabButton =
+        [UIButton buttonWithType:UIButtonTypeSystem];
+
+    self.fpsTabButton.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    [self.fpsTabButton
+        setTitle:@"FPS"
+        forState:UIControlStateNormal];
+
+    [self.fpsTabButton
+        setTitleColor:[UIColor whiteColor]
+        forState:UIControlStateNormal];
+
+    self.fpsTabButton.titleLabel.font =
+        [UIFont systemFontOfSize:13.0
+                          weight:UIFontWeightBold];
+
+    self.fpsTabButton.layer.cornerRadius =
+        15.0;
+
+    self.fpsTabButton.layer.borderWidth =
+        1.0;
+
+    [self.fpsTabButton
+        addTarget:self
+        action:@selector(fpsTabTapped)
+        forControlEvents:UIControlEventTouchUpInside];
+
+    [self.categoryTabsView addSubview:self.fpsTabButton];
 
     [self updateCategoryTabAppearance];
 
@@ -1801,10 +1897,10 @@ static NSURL *XITForgeExistingDirectoryChild(
                 self.categoryTabsView.bottomAnchor
                 constant:-4.0],
 
-        [self.hologramTabButton.trailingAnchor
+        [self.hologramTabButton.leadingAnchor
             constraintEqualToAnchor:
-                self.categoryTabsView.trailingAnchor
-                constant:-4.0],
+                self.aimbotTabButton.trailingAnchor
+                constant:4.0],
 
         [self.hologramTabButton.topAnchor
             constraintEqualToAnchor:
@@ -1816,14 +1912,33 @@ static NSURL *XITForgeExistingDirectoryChild(
                 self.categoryTabsView.bottomAnchor
                 constant:-4.0],
 
-        [self.hologramTabButton.leadingAnchor
+        [self.fpsTabButton.leadingAnchor
             constraintEqualToAnchor:
-                self.aimbotTabButton.trailingAnchor
+                self.hologramTabButton.trailingAnchor
                 constant:4.0],
+
+        [self.fpsTabButton.trailingAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.trailingAnchor
+                constant:-4.0],
+
+        [self.fpsTabButton.topAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.topAnchor
+                constant:4.0],
+
+        [self.fpsTabButton.bottomAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.bottomAnchor
+                constant:-4.0],
 
         [self.aimbotTabButton.widthAnchor
             constraintEqualToAnchor:
                 self.hologramTabButton.widthAnchor],
+
+        [self.hologramTabButton.widthAnchor
+            constraintEqualToAnchor:
+                self.fpsTabButton.widthAnchor],
 
 
         [self.selectionHintLabel.topAnchor
@@ -2215,10 +2330,13 @@ static NSURL *XITForgeExistingDirectoryChild(
                         NSString *lowerName =
                             option.name.lowercaseString ?: @"";
 
-                        option.category =
-                            [lowerName containsString:@"aimbot"]
-                                ? @"aimbot"
-                                : @"holograma";
+                        if ([lowerName containsString:@"aimbot"]) {
+                            option.category = @"aimbot";
+                        } else if ([lowerName containsString:@"fps"]) {
+                            option.category = @"fps";
+                        } else {
+                            option.category = @"holograma";
+                        }
                     }
 
                     if (
@@ -2290,6 +2408,9 @@ static NSURL *XITForgeExistingDirectoryChild(
                     nil;
 
                 self.selectedHologramIndexPath =
+                    nil;
+
+                self.selectedFPSIndexPath =
                     nil;
 
                 self.activationInProgress =
@@ -2467,6 +2588,8 @@ heightForRowAtIndexPath:
 
     if ([self.selectedCategory isEqualToString:@"aimbot"]) {
         self.selectedAimbotIndexPath = indexPath;
+    } else if ([self.selectedCategory isEqualToString:@"fps"]) {
+        self.selectedFPSIndexPath = indexPath;
     } else {
         self.selectedHologramIndexPath = indexPath;
     }
@@ -2474,9 +2597,7 @@ heightForRowAtIndexPath:
     if (!self.activationInProgress) {
 
         self.selectionHintLabel.text =
-            [self selectedOptions].count > 1
-                ? @"2 OPCIONES SELECCIONADAS"
-                : @"SELECCIONA UNA OPCIÓN";
+            [self selectionHintText];
 
         self.selectionHintLabel.textColor =
             [UIColor colorWithWhite:0.48
@@ -2586,9 +2707,7 @@ heightForRowAtIndexPath:
     if (success) {
 
         self.selectionHintLabel.text =
-            [self selectedOptions].count > 1
-                ? @"2 OPCIONES SELECCIONADAS"
-                : @"SELECCIONA UNA OPCIÓN";
+            [self selectionHintText];
 
         self.selectionHintLabel.textColor =
             [UIColor colorWithWhite:0.48
