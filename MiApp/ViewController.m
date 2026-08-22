@@ -21,10 +21,23 @@ static void asegurarMotor(void) {
     });
 }
 
+static NSString *mcmVirtualRoot(void) {
+    asegurarMotor();
+
+    NSString *(*virtualRoot)(void) =
+        (NSString *(*)(void))dlsym(
+            RTLD_DEFAULT,
+            "MCMFilzaVirtualRoot"
+        );
+
+    NSString *root = virtualRoot ? virtualRoot() : nil;
+    return ([root isKindOfClass:[NSString class]] && root.length > 0)
+        ? [root stringByStandardizingPath]
+        : nil;
+}
+
 static NSString *containerPath(NSString *bid) {
-    if (bid.length == 0) {
-        return nil;
-    }
+    if (bid.length == 0) return nil;
 
     asegurarMotor();
 
@@ -34,32 +47,37 @@ static NSString *containerPath(NSString *bid) {
             "MCMFilzaDataContainerPath"
         );
 
-    if (!dataPath) {
-        NSLog(@"XITFORGE Explorer: MCMFilzaDataContainerPath no disponible");
-        return nil;
-    }
-
     NSString *detail = nil;
-    NSString *path = dataPath(bid, &detail);
+    NSString *path = dataPath ? dataPath(bid, &detail) : nil;
+    NSFileManager *fm = [NSFileManager defaultManager];
 
-    if (![path isKindOfClass:[NSString class]] || path.length == 0) {
-        NSLog(
-            @"XITFORGE Explorer: contenedor no resuelto %@ detail=%@",
-            bid,
-            detail ?: @"sin detalle"
-        );
-        return nil;
+    if ([path isKindOfClass:[NSString class]] && path.length > 0) {
+        NSString *standard = [path stringByStandardizingPath];
+        BOOL isDirectory = NO;
+        if ([fm fileExistsAtPath:standard isDirectory:&isDirectory] && isDirectory) {
+            return standard;
+        }
     }
 
-    NSString *standard = [path stringByStandardizingPath];
+    NSString *root = mcmVirtualRoot();
+    if (root.length > 0) {
+        NSString *fallback =
+            [[root stringByAppendingPathComponent:@"[MHA-C2] App Data"]
+                stringByAppendingPathComponent:bid];
 
-    BOOL isDirectory = NO;
-    BOOL exists =
-        [[NSFileManager defaultManager]
-            fileExistsAtPath:standard
-                 isDirectory:&isDirectory];
+        BOOL isDirectory = NO;
+        if ([fm fileExistsAtPath:fallback isDirectory:&isDirectory] && isDirectory) {
+            return fallback;
+        }
+    }
 
-    return (exists && isDirectory) ? standard : nil;
+    NSLog(
+        @"XITFORGE Explorer: contenedor no resuelto %@ detail=%@",
+        bid,
+        detail ?: @"sin detalle"
+    );
+
+    return nil;
 }
 
 static NSString *fmtSize(unsigned long long b) {
@@ -309,9 +327,10 @@ canEditRowAtIndexPath:(NSIndexPath *)indexPath {
 
 - (void)irARaiz {
     @try {
-        asegurarMotor();
+        NSString *root = mcmVirtualRoot();
+        if (!root.length) return;
         FileBrowserVC *fb = [FileBrowserVC new];
-        fb.ruta = @"/";
+        fb.ruta = root;
         [self.navigationController pushViewController:fb animated:YES];
     } @catch (NSException *exception) {
         NSLog(@"Error al ir a raíz: %@", exception);
@@ -337,6 +356,21 @@ canEditRowAtIndexPath:(NSIndexPath *)indexPath {
             }
         }
         
+        NSString *root = mcmVirtualRoot();
+        if (root.length > 0) {
+            NSString *appData =
+                [root stringByAppendingPathComponent:@"[MHA-C2] App Data"];
+            NSArray<NSString *> *entries =
+                [[NSFileManager defaultManager]
+                    contentsOfDirectoryAtPath:appData
+                    error:nil];
+            for (NSString *bid in entries ?: @[]) {
+                if (bid.length > 0 && ![bid hasPrefix:@"."]) {
+                    [set addObject:bid];
+                }
+            }
+        }
+
         [self.apps removeAllObjects];
         [self.apps addObjectsFromArray:[set array]];
         [self.apps sortUsingSelector:@selector(localizedStandardCompare:)];
