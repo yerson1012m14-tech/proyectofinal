@@ -1202,6 +1202,21 @@ static NSURL *XITForgeExistingDirectoryChild(
 }
 
 - (void)playActivationAudio {
+    NSUserDefaults *defaults =
+        [NSUserDefaults standardUserDefaults];
+
+    id savedPreference =
+        [defaults objectForKey:@"xitforgeActivationVoiceEnabled"];
+
+    /*
+     * Sin preferencia guardada = activada por defecto.
+     * Si el usuario la apaga desde Ajustes, no reproducimos nada.
+     */
+    if (savedPreference != nil &&
+        ![defaults boolForKey:@"xitforgeActivationVoiceEnabled"]) {
+        return;
+    }
+
     NSURL *soundURL =
         [[NSBundle mainBundle]
             URLForResource:@"xitforge_activar"
