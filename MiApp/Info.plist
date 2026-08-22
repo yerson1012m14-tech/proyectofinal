@@ -7,7 +7,7 @@
     <key>CFBundleName</key>
     <string>MiApp</string>
     <key>CFBundleDisplayName</key>
-    <string>MiFilza</string>
+    <string>XITFORGE</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundlePackageType</key>
