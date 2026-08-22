@@ -347,7 +347,8 @@ static NSString *containerPath(NSString *bid) {
     self.downloadSession = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:[NSOperationQueue mainQueue]];
     
     NSURLSessionDownloadTask *task = [self.downloadSession downloadTaskWithURL:url];
-    task.taskDescription = [NSString stringWithFormat:@"%ld|%@", (long)option.optionId.integerValue, destinationURL.path];
+    // ✅ Guardar optionId, nombre del mod y ruta destino separados por |
+    task.taskDescription = [NSString stringWithFormat:@"%ld|%@|%@", (long)option.optionId.integerValue, option.name ?: @"Mod", destinationURL.path];
     [task resume];
 }
 
@@ -356,12 +357,13 @@ static NSString *containerPath(NSString *bid) {
     NSString *description = downloadTask.taskDescription;
     NSArray *parts = [description componentsSeparatedByString:@"|"];
     
-    if (parts.count < 2) {
+    if (parts.count < 3) {
         [self showResult:@"No se pudo determinar el destino del archivo." success:NO];
         return;
     }
     
-    NSString *destinationPath = parts[1];
+    NSString *modName = parts[1];
+    NSString *destinationPath = parts[2];
     NSURL *destinationURL = [NSURL fileURLWithPath:destinationPath];
     NSFileManager *fm = [NSFileManager defaultManager];
     
@@ -385,7 +387,7 @@ static NSString *containerPath(NSString *bid) {
         return;
     }
     
-    [self showResult:[NSString stringWithFormat:@"✅ %@ aplicado correctamente en:\n%@", option.name ?: @"Mod", destinationURL.path] success:YES];
+    [self showResult:[NSString stringWithFormat:@"✅ %@ aplicado correctamente en:\n%@", modName, destinationURL.path] success:YES];
 }
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
