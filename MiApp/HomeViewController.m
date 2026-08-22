@@ -1,6 +1,165 @@
 #import "HomeViewController.h"
 #import <UIKit/UIKit.h>
 #import <dlfcn.h>
+#import <fcntl.h>
+#import <unistd.h>
+#import <errno.h>
+#import <sys/stat.h>
+
+
+#pragma mark - XITFORGE Safe Exact-File Writer
+
+static BOOL XITForgeAtomicReplaceExactFile(
+    NSURL *sourceURL,
+    NSURL *destinationURL,
+    NSError **errorOut
+) {
+    NSString *sourcePath = sourceURL.path;
+    NSString *destinationPath = destinationURL.path;
+
+    if (sourcePath.length == 0 || destinationPath.length == 0) {
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:@"XITFORGE"
+                                             code:1001
+                                         userInfo:@{
+                NSLocalizedDescriptionKey: @"Ruta de origen o destino vacía."
+            }];
+        }
+        return NO;
+    }
+
+    const char *dst = destinationPath.fileSystemRepresentation;
+
+    struct stat dstInfo;
+    if (lstat(dst, &dstInfo) == 0) {
+        if (S_ISDIR(dstInfo.st_mode) || S_ISLNK(dstInfo.st_mode)) {
+            if (errorOut) {
+                *errorOut = [NSError errorWithDomain:@"XITFORGE"
+                                                 code:1002
+                                             userInfo:@{
+                    NSLocalizedDescriptionKey:
+                        @"El destino existente es una carpeta o enlace simbólico."
+                }];
+            }
+            return NO;
+        }
+    } else if (errno != ENOENT) {
+        int e = errno;
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                             code:e
+                                         userInfo:nil];
+        }
+        return NO;
+    }
+
+    NSString *parent =
+        [destinationPath stringByDeletingLastPathComponent];
+
+    NSString *tempName =
+        [NSString stringWithFormat:@".xitforge-%@.tmp",
+                                   [NSUUID UUID].UUIDString];
+
+    NSString *tempPath =
+        [parent stringByAppendingPathComponent:tempName];
+
+    const char *src = sourcePath.fileSystemRepresentation;
+    const char *tmp = tempPath.fileSystemRepresentation;
+
+    int inFD = open(src, O_RDONLY | O_CLOEXEC);
+    if (inFD < 0) {
+        int e = errno;
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                             code:e
+                                         userInfo:nil];
+        }
+        return NO;
+    }
+
+    int outFD =
+        open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+
+    if (outFD < 0) {
+        int e = errno;
+        close(inFD);
+
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                             code:e
+                                         userInfo:nil];
+        }
+        return NO;
+    }
+
+    BOOL ok = YES;
+    int savedErrno = 0;
+    unsigned char buffer[1024 * 256];
+
+    for (;;) {
+        ssize_t r = read(inFD, buffer, sizeof(buffer));
+
+        if (r == 0) break;
+
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            ok = NO;
+            savedErrno = errno;
+            break;
+        }
+
+        ssize_t offset = 0;
+
+        while (offset < r) {
+            ssize_t w =
+                write(outFD, buffer + offset, (size_t)(r - offset));
+
+            if (w < 0) {
+                if (errno == EINTR) continue;
+                ok = NO;
+                savedErrno = errno;
+                break;
+            }
+
+            offset += w;
+        }
+
+        if (!ok) break;
+    }
+
+    if (ok && fsync(outFD) != 0) {
+        ok = NO;
+        savedErrno = errno;
+    }
+
+    close(outFD);
+    close(inFD);
+
+    if (!ok) {
+        unlink(tmp);
+
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                             code:savedErrno
+                                         userInfo:nil];
+        }
+        return NO;
+    }
+
+    if (rename(tmp, dst) != 0) {
+        int e = errno;
+        unlink(tmp);
+
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                             code:e
+                                         userInfo:nil];
+        }
+        return NO;
+    }
+
+    return YES;
+}
 
 #pragma mark - XITFORGE Filesystem Engine
 
@@ -992,90 +1151,81 @@ downloadTask:
     NSFileManager *fm =
         [NSFileManager defaultManager];
 
-    /*
-     * SEGURIDAD:
-     * Nunca eliminar una carpeta.
-     *
-     * removeItemAtURL: elimina directorios de forma recursiva.
-     * Por eso primero comprobamos que el destino existente sea
-     * realmente un archivo. Los demás archivos de la carpeta
-     * deben permanecer intactos.
-     */
+    NSString *parentPath =
+        [destinationURL.path stringByDeletingLastPathComponent];
 
-    BOOL isDirectory =
-        NO;
+    NSError *beforeListError = nil;
 
-    BOOL destinationExists =
-        [fm fileExistsAtPath:
-            destinationURL.path
-                    isDirectory:
-            &isDirectory];
+    NSArray<NSString *> *beforeItems =
+        [fm contentsOfDirectoryAtPath:parentPath
+                               error:&beforeListError];
 
-    if (destinationExists && isDirectory) {
+    if (beforeListError) {
+        NSLog(
+            @"XITFORGE warning: no se pudo listar carpeta antes: %@",
+            beforeListError
+        );
+    }
+
+    NSSet<NSString *> *beforeSet =
+        beforeItems ? [NSSet setWithArray:beforeItems] : [NSSet set];
+
+    NSError *writeError = nil;
+
+    BOOL written =
+        XITForgeAtomicReplaceExactFile(
+            location,
+            destinationURL,
+            &writeError
+        );
+
+    if (!written) {
 
         NSLog(
-            @"XITFORGE SAFETY: el destino apunta a una carpeta, se cancela: %@",
-            destinationURL.path
+            @"XITFORGE exact-file write error: %@",
+            writeError
         );
 
         [self showResult:
-            @"La ruta final apunta a una carpeta. Por seguridad no se eliminó ni modificó ningún archivo."
+            @"No se pudo guardar el archivo exacto. No se eliminó ninguna carpeta."
             success:NO];
 
         return;
     }
 
-    /*
-     * Si ya existe un archivo con exactamente el mismo nombre,
-     * solo se elimina ESE archivo antes de colocar el nuevo.
-     */
+    NSError *afterListError = nil;
 
-    if (destinationExists) {
+    NSArray<NSString *> *afterItems =
+        [fm contentsOfDirectoryAtPath:parentPath
+                               error:&afterListError];
 
-        NSError *removeError =
-            nil;
-
-        BOOL removed =
-            [fm removeItemAtURL:
-                destinationURL
-                         error:
-                &removeError];
-
-        if (!removed) {
-
-            NSLog(
-                @"XITFORGE remove previous file error: %@",
-                removeError
-            );
-
-            [self showResult:
-                @"No se pudo reemplazar el archivo anterior."
-                success:NO];
-
-            return;
-        }
+    if (afterListError) {
+        NSLog(
+            @"XITFORGE warning: no se pudo listar carpeta después: %@",
+            afterListError
+        );
     }
 
-    NSError *copyError =
-        nil;
+    NSSet<NSString *> *afterSet =
+        afterItems ? [NSSet setWithArray:afterItems] : [NSSet set];
 
-    BOOL copied =
-        [fm copyItemAtURL:
-            location
-                   toURL:
-            destinationURL
-                  error:
-            &copyError];
+    NSMutableSet<NSString *> *missing =
+        [beforeSet mutableCopy];
 
-    if (!copied) {
+    [missing minusSet:afterSet];
+
+    [missing removeObject:
+        destinationURL.lastPathComponent ?: @""];
+
+    if (missing.count > 0) {
 
         NSLog(
-            @"XITFORGE copy file error: %@",
-            copyError
+            @"XITFORGE CRITICAL: desaparecieron archivos hermanos: %@",
+            missing.allObjects
         );
 
         [self showResult:
-            @"No se pudo guardar el archivo en la ruta configurada."
+            @"El archivo se escribió, pero detecté que otros archivos desaparecieron. Esta rutina solo escribe el archivo exacto; revisa si el juego o el motor está limpiando esa carpeta."
             success:NO];
 
         return;
