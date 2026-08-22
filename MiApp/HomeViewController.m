@@ -577,6 +577,7 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, copy) NSString *route;
 @property (nonatomic, copy) NSString *fileName;
 @property (nonatomic, copy) NSString *fileUrl;
+@property (nonatomic, copy) NSString *originalFileUrl;
 
 @end
 
@@ -908,6 +909,10 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, strong) UIActivityIndicatorView *activateSpinner;
 @property (nonatomic, assign) BOOL activationInProgress;
 
+@property (nonatomic, strong) UIButton *deactivateButton;
+@property (nonatomic, strong) UIActivityIndicatorView *deactivateSpinner;
+@property (nonatomic, assign) BOOL deactivationInProgress;
+
 @property (nonatomic, strong) NSURLSession *downloadSession;
 
 @end
@@ -1097,6 +1102,78 @@ static NSURL *XITForgeExistingDirectoryChild(
         self.activateSpinner];
 
 
+    /*
+     * DESACTIVAR restaura desde el servidor todos los archivos
+     * originales configurados para el juego actual.
+     */
+    self.deactivateButton =
+        [UIButton buttonWithType:UIButtonTypeSystem];
+
+    self.deactivateButton.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    [self.deactivateButton
+        setTitle:@"DESACTIVAR"
+        forState:UIControlStateNormal];
+
+    [self.deactivateButton
+        setTitleColor:
+            [UIColor colorWithRed:1.0
+                            green:0.26
+                             blue:0.30
+                            alpha:1.0]
+        forState:UIControlStateNormal];
+
+    self.deactivateButton.titleLabel.font =
+        [UIFont systemFontOfSize:14.0
+                          weight:UIFontWeightBold];
+
+    self.deactivateButton.backgroundColor =
+        [UIColor colorWithWhite:0.075
+                          alpha:1.0];
+
+    self.deactivateButton.layer.cornerRadius =
+        17.0;
+
+    self.deactivateButton.layer.borderWidth =
+        1.0;
+
+    self.deactivateButton.layer.borderColor =
+        [UIColor colorWithRed:1.0
+                        green:0.26
+                         blue:0.30
+                        alpha:0.26].CGColor;
+
+    [self.deactivateButton
+        addTarget:self
+        action:@selector(deactivateAllOptions)
+        forControlEvents:UIControlEventTouchUpInside];
+
+    [self.view addSubview:
+        self.deactivateButton];
+
+
+    self.deactivateSpinner =
+        [[UIActivityIndicatorView alloc]
+            initWithActivityIndicatorStyle:
+                UIActivityIndicatorViewStyleMedium];
+
+    self.deactivateSpinner.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.deactivateSpinner.color =
+        [UIColor colorWithRed:1.0
+                        green:0.26
+                         blue:0.30
+                        alpha:1.0];
+
+    self.deactivateSpinner.hidesWhenStopped =
+        YES;
+
+    [self.deactivateButton addSubview:
+        self.deactivateSpinner];
+
+
     self.activityIndicator =
         [[UIActivityIndicatorView alloc]
             initWithActivityIndicatorStyle:
@@ -1163,8 +1240,8 @@ static NSURL *XITForgeExistingDirectoryChild(
 
         [self.activateButton.bottomAnchor
             constraintEqualToAnchor:
-                self.view.safeAreaLayoutGuide.bottomAnchor
-                constant:-16.0],
+                self.deactivateButton.topAnchor
+                constant:-10.0],
 
         [self.activateButton.heightAnchor
             constraintEqualToConstant:58.0],
@@ -1177,6 +1254,34 @@ static NSURL *XITForgeExistingDirectoryChild(
             constraintEqualToAnchor:
                 self.activateButton.centerXAnchor
                 constant:-54.0],
+
+
+        [self.deactivateButton.leadingAnchor
+            constraintEqualToAnchor:
+                self.view.leadingAnchor
+                constant:22.0],
+
+        [self.deactivateButton.trailingAnchor
+            constraintEqualToAnchor:
+                self.view.trailingAnchor
+                constant:-22.0],
+
+        [self.deactivateButton.bottomAnchor
+            constraintEqualToAnchor:
+                self.view.safeAreaLayoutGuide.bottomAnchor
+                constant:-14.0],
+
+        [self.deactivateButton.heightAnchor
+            constraintEqualToConstant:50.0],
+
+        [self.deactivateSpinner.centerYAnchor
+            constraintEqualToAnchor:
+                self.deactivateButton.centerYAnchor],
+
+        [self.deactivateSpinner.trailingAnchor
+            constraintEqualToAnchor:
+                self.deactivateButton.centerXAnchor
+                constant:-64.0],
 
 
         [self.tableView.topAnchor
@@ -1232,6 +1337,35 @@ static NSURL *XITForgeExistingDirectoryChild(
 
 - (NSString *)apiBaseURL {
     return @"https://xitforge-license-server.onrender.com";
+}
+
+- (NSURL *)absoluteServerURLForString:
+    (NSString *)value {
+
+    NSString *trimmed =
+        [value stringByTrimmingCharactersInSet:
+            [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    if (trimmed.length == 0) {
+        return nil;
+    }
+
+    NSURL *direct =
+        [NSURL URLWithString:trimmed];
+
+    if (direct.scheme.length > 0) {
+        return direct;
+    }
+
+    NSString *base =
+        [self apiBaseURL];
+
+    NSString *absolute =
+        [trimmed hasPrefix:@"/"]
+            ? [NSString stringWithFormat:@"%@%@", base, trimmed]
+            : [NSString stringWithFormat:@"%@/%@", base, trimmed];
+
+    return [NSURL URLWithString:absolute];
 }
 
 - (void)loadOptions {
@@ -1473,6 +1607,14 @@ static NSURL *XITForgeExistingDirectoryChild(
                             raw[@"fileUrl"];
                     }
 
+                    if (
+                        [raw[@"originalFileUrl"] isKindOfClass:
+                            [NSString class]]
+                    ) {
+                        option.originalFileUrl =
+                            raw[@"originalFileUrl"];
+                    }
+
                     [parsed addObject:
                         option];
                 }
@@ -1498,6 +1640,22 @@ static NSURL *XITForgeExistingDirectoryChild(
 
                 self.activateButton.alpha =
                     0.45;
+
+                self.deactivationInProgress =
+                    NO;
+
+                [self.deactivateSpinner
+                    stopAnimating];
+
+                [self.deactivateButton
+                    setTitle:@"DESACTIVAR"
+                    forState:UIControlStateNormal];
+
+                self.deactivateButton.enabled =
+                    YES;
+
+                self.deactivateButton.alpha =
+                    1.0;
 
                 [self.tableView
                     reloadData];
@@ -1681,7 +1839,10 @@ heightForRowAtIndexPath:
 
 - (void)beginActivationUI {
 
-    if (self.activationInProgress) {
+    if (
+        self.activationInProgress ||
+        self.deactivationInProgress
+    ) {
         return;
     }
 
@@ -1696,6 +1857,12 @@ heightForRowAtIndexPath:
 
     self.activateButton.alpha =
         1.0;
+
+    self.deactivateButton.enabled =
+        NO;
+
+    self.deactivateButton.alpha =
+        0.42;
 
     [self.activateButton
         setTitle:@"ACTIVANDO..."
@@ -1750,6 +1917,14 @@ heightForRowAtIndexPath:
     self.activateButton.alpha =
         hasSelection ? 1.0 : 0.45;
 
+    if (!self.deactivationInProgress) {
+        self.deactivateButton.enabled =
+            YES;
+
+        self.deactivateButton.alpha =
+            1.0;
+    }
+
     if (success) {
 
         UIColor *successGreen =
@@ -1799,7 +1974,10 @@ heightForRowAtIndexPath:
 
 - (void)activateSelectedOption {
 
-    if (self.activationInProgress) {
+    if (
+        self.activationInProgress ||
+        self.deactivationInProgress
+    ) {
         return;
     }
 
@@ -1820,6 +1998,535 @@ heightForRowAtIndexPath:
 
     [self applyOption:option];
 }
+
+#pragma mark - Deactivate From Server
+
+- (void)beginDeactivationUI {
+
+    if (
+        self.activationInProgress ||
+        self.deactivationInProgress
+    ) {
+        return;
+    }
+
+    self.deactivationInProgress =
+        YES;
+
+    self.tableView.userInteractionEnabled =
+        NO;
+
+    self.activateButton.enabled =
+        NO;
+
+    self.activateButton.alpha =
+        0.45;
+
+    self.deactivateButton.enabled =
+        NO;
+
+    self.deactivateButton.alpha =
+        1.0;
+
+    [self.deactivateButton
+        setTitle:@"DESACTIVANDO..."
+        forState:UIControlStateNormal];
+
+    [self.deactivateSpinner
+        startAnimating];
+
+    self.statusLabel.hidden =
+        YES;
+
+    [self.activityIndicator
+        stopAnimating];
+
+    self.selectionHintLabel.text =
+        @"RESTAURANDO ORIGINALES";
+
+    self.selectionHintLabel.textColor =
+        [UIColor colorWithWhite:0.50
+                          alpha:1.0];
+}
+
+
+- (void)finishDeactivationUIWithSuccess:
+    (BOOL)success
+    noOriginals:(BOOL)noOriginals {
+
+    self.deactivationInProgress =
+        NO;
+
+    self.tableView.userInteractionEnabled =
+        YES;
+
+    [self.deactivateSpinner
+        stopAnimating];
+
+    [self.deactivateButton
+        setTitle:@"DESACTIVAR"
+        forState:UIControlStateNormal];
+
+    self.deactivateButton.enabled =
+        YES;
+
+    self.deactivateButton.alpha =
+        1.0;
+
+    BOOL hasSelection =
+        self.selectedOptionIndexPath != nil;
+
+    self.activateButton.enabled =
+        hasSelection;
+
+    self.activateButton.alpha =
+        hasSelection ? 1.0 : 0.45;
+
+    if (noOriginals) {
+
+        self.selectionHintLabel.text =
+            @"SIN ORIGINALES CONFIGURADOS";
+
+        self.selectionHintLabel.textColor =
+            [UIColor colorWithWhite:0.52
+                              alpha:1.0];
+
+        return;
+    }
+
+    if (success) {
+
+        UIColor *successGreen =
+            [UIColor colorWithRed:0.22
+                            green:0.86
+                             blue:0.49
+                            alpha:1.0];
+
+        self.selectionHintLabel.text =
+            @"✓  DESACTIVADO";
+
+        self.selectionHintLabel.textColor =
+            successGreen;
+
+        UINotificationFeedbackGenerator *feedback =
+            [[UINotificationFeedbackGenerator alloc] init];
+
+        [feedback
+            notificationOccurred:
+                UINotificationFeedbackTypeSuccess];
+
+    } else {
+
+        UIColor *errorRed =
+            [UIColor colorWithRed:1.0
+                            green:0.32
+                             blue:0.36
+                            alpha:1.0];
+
+        self.selectionHintLabel.text =
+            @"NO SE PUDO DESACTIVAR";
+
+        self.selectionHintLabel.textColor =
+            errorRed;
+
+        UINotificationFeedbackGenerator *feedback =
+            [[UINotificationFeedbackGenerator alloc] init];
+
+        [feedback
+            notificationOccurred:
+                UINotificationFeedbackTypeError];
+    }
+}
+
+
+- (void)deactivateAllOptions {
+
+    if (
+        self.activationInProgress ||
+        self.deactivationInProgress
+    ) {
+        return;
+    }
+
+    [self beginDeactivationUI];
+
+    NSString *encodedGame =
+        [self.game
+            stringByAddingPercentEncodingWithAllowedCharacters:
+                [NSCharacterSet URLQueryAllowedCharacterSet]];
+
+    NSString *urlString =
+        [NSString stringWithFormat:
+            @"%@/api/app/originals?game=%@",
+            [self apiBaseURL],
+            encodedGame ?: @""];
+
+    NSURL *url =
+        [NSURL URLWithString:urlString];
+
+    if (!url) {
+        [self
+            finishDeactivationUIWithSuccess:NO
+            noOriginals:NO];
+        return;
+    }
+
+    NSMutableURLRequest *request =
+        [NSMutableURLRequest requestWithURL:url];
+
+    request.HTTPMethod =
+        @"GET";
+
+    request.timeoutInterval =
+        20.0;
+
+    NSURLSessionDataTask *task =
+        [[NSURLSession sharedSession]
+            dataTaskWithRequest:request
+              completionHandler:
+        ^(NSData * _Nullable data,
+          NSURLResponse * _Nullable response,
+          NSError * _Nullable error) {
+
+        if (error || !data) {
+
+            NSLog(
+                @"XITFORGE originals list error: %@",
+                error
+            );
+
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                });
+
+            return;
+        }
+
+        NSError *jsonError =
+            nil;
+
+        id json =
+            [NSJSONSerialization
+                JSONObjectWithData:data
+                options:0
+                error:&jsonError];
+
+        if (
+            jsonError ||
+            ![json isKindOfClass:[NSDictionary class]]
+        ) {
+
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                });
+
+            return;
+        }
+
+        NSDictionary *dictionary =
+            (NSDictionary *)json;
+
+        NSNumber *ok =
+            dictionary[@"ok"];
+
+        NSArray *rawOriginals =
+            dictionary[@"originals"];
+
+        if (
+            ![ok isKindOfClass:[NSNumber class]] ||
+            !ok.boolValue ||
+            ![rawOriginals isKindOfClass:[NSArray class]]
+        ) {
+
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                });
+
+            return;
+        }
+
+        if (rawOriginals.count == 0) {
+
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:YES
+                        noOriginals:YES];
+                });
+
+            return;
+        }
+
+        /*
+         * Resolver el contenedor/rutas del juego se hace en main,
+         * igual que ACTIVAR, para no invocar el motor MCM desde
+         * una cola de red en segundo plano.
+         */
+        dispatch_async(
+            dispatch_get_main_queue(),
+            ^{
+            NSString *responseBundleId =
+                [dictionary[@"bundleId"] isKindOfClass:[NSString class]]
+                    ? dictionary[@"bundleId"]
+                    : self.bundleId;
+
+            NSMutableArray *items =
+                [NSMutableArray array];
+
+            /*
+             * Primero resolvemos TODAS las rutas. Si alguna es inválida,
+             * no empezamos a reemplazar archivos y evitamos una restauración
+             * parcial por un simple error de configuración.
+             */
+            for (id rawItem in rawOriginals) {
+
+                if (![rawItem isKindOfClass:[NSDictionary class]]) {
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                    return;
+                }
+
+                NSDictionary *raw =
+                    (NSDictionary *)rawItem;
+
+                XITForgeOption *option =
+                    [[XITForgeOption alloc] init];
+
+                option.bundleId =
+                    [raw[@"bundleId"] isKindOfClass:[NSString class]]
+                        ? raw[@"bundleId"]
+                        : responseBundleId;
+
+                option.route =
+                    [raw[@"route"] isKindOfClass:[NSString class]]
+                        ? raw[@"route"]
+                        : nil;
+
+                option.fileName =
+                    [raw[@"fileName"] isKindOfClass:[NSString class]]
+                        ? raw[@"fileName"]
+                        : nil;
+
+                option.originalFileUrl =
+                    [raw[@"originalFileUrl"] isKindOfClass:[NSString class]]
+                        ? raw[@"originalFileUrl"]
+                        : nil;
+
+                if (
+                    option.route.length == 0 ||
+                    option.fileName.length == 0 ||
+                    option.originalFileUrl.length == 0
+                ) {
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                    return;
+                }
+
+                NSString *resolveError =
+                    nil;
+
+                NSURL *destinationURL =
+                    [self
+                        destinationURLForOption:option
+                        error:&resolveError];
+
+                NSURL *downloadURL =
+                    [self absoluteServerURLForString:
+                        option.originalFileUrl];
+
+                if (
+                    !destinationURL ||
+                    !downloadURL
+                ) {
+
+                    NSLog(
+                        @"XITFORGE original resolve error: %@",
+                        resolveError
+                    );
+
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                    return;
+                }
+
+                [items addObject:@{
+                    @"downloadURL": downloadURL,
+                    @"destinationURL": destinationURL
+                }];
+            }
+
+            [self
+                restoreOriginalItems:items
+                index:0];
+
+            });
+    }];
+
+    [task resume];
+}
+
+
+- (void)restoreOriginalItems:
+    (NSArray<NSDictionary *> *)items
+    index:(NSUInteger)index {
+
+    if (index >= items.count) {
+
+        [self
+            finishDeactivationUIWithSuccess:YES
+            noOriginals:NO];
+
+        return;
+    }
+
+    NSDictionary *item =
+        items[index];
+
+    NSURL *downloadURL =
+        item[@"downloadURL"];
+
+    NSURL *destinationURL =
+        item[@"destinationURL"];
+
+    if (!downloadURL || !destinationURL) {
+        [self
+            finishDeactivationUIWithSuccess:NO
+            noOriginals:NO];
+        return;
+    }
+
+    NSURLSessionDownloadTask *task =
+        [[NSURLSession sharedSession]
+            downloadTaskWithURL:downloadURL
+              completionHandler:
+        ^(NSURL * _Nullable location,
+          NSURLResponse * _Nullable response,
+          NSError * _Nullable error) {
+
+        NSHTTPURLResponse *http =
+            [response isKindOfClass:[NSHTTPURLResponse class]]
+                ? (NSHTTPURLResponse *)response
+                : nil;
+
+        BOOL httpOK =
+            !http ||
+            (http.statusCode >= 200 &&
+             http.statusCode <= 299);
+
+        if (
+            error ||
+            !location ||
+            !httpOK
+        ) {
+
+            NSLog(
+                @"XITFORGE original download failed: %@ HTTP=%ld",
+                error,
+                (long)http.statusCode
+            );
+
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                });
+
+            return;
+        }
+
+        NSError *writeError =
+            nil;
+
+        BOOL written =
+            XITForgeWriteExactFile(
+                location,
+                destinationURL,
+                &writeError
+            );
+
+        if (!written) {
+
+            NSLog(
+                @"XITFORGE original write failed: %@ destination=%@",
+                writeError,
+                destinationURL.path
+            );
+
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                });
+
+            return;
+        }
+
+        NSError *verifyError =
+            nil;
+
+        BOOL verified =
+            XITForgeFilesAreIdentical(
+                location,
+                destinationURL,
+                &verifyError
+            );
+
+        if (!verified) {
+
+            NSLog(
+                @"XITFORGE original verify failed: %@ destination=%@",
+                verifyError,
+                destinationURL.path
+            );
+
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                });
+
+            return;
+        }
+
+        NSLog(
+            @"XITFORGE ORIGINAL RESTORED destination=%@",
+            destinationURL.path
+        );
+
+        dispatch_async(
+            dispatch_get_main_queue(),
+            ^{
+                [self
+                    restoreOriginalItems:items
+                    index:(index + 1)];
+            });
+    }];
+
+    [task resume];
+}
+
 
 #pragma mark - File Application
 
@@ -2029,7 +2736,7 @@ heightForRowAtIndexPath:
     }
 
     NSURL *downloadURL =
-        [NSURL URLWithString:
+        [self absoluteServerURLForString:
             option.fileUrl];
 
     if (!downloadURL) {
