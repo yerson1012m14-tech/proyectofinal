@@ -147,6 +147,55 @@
                         tag:2];
 
     /*
+     * Solo CONFIGURACIÓN usa título rojo arriba.
+     * No cambia el color de Inicio ni el resto de la interfaz.
+     */
+    UIColor *settingsRed =
+        [UIColor colorWithRed:0.95
+                        green:0.08
+                         blue:0.10
+                        alpha:1.0];
+
+    UINavigationBarAppearance *settingsAppearance =
+        [[UINavigationBarAppearance alloc] init];
+
+    [settingsAppearance configureWithOpaqueBackground];
+
+    settingsAppearance.backgroundColor =
+        [UIColor blackColor];
+
+    settingsAppearance.shadowColor =
+        [UIColor colorWithWhite:0.25 alpha:1.0];
+
+    NSDictionary *settingsTitleAttributes = @{
+        NSForegroundColorAttributeName: settingsRed,
+        NSFontAttributeName:
+            [UIFont fontWithName:@"Menlo-Bold" size:17.0]
+    };
+
+    settingsAppearance.titleTextAttributes =
+        settingsTitleAttributes;
+
+    settingsAppearance.largeTitleTextAttributes =
+        @{
+            NSForegroundColorAttributeName: settingsRed,
+            NSFontAttributeName:
+                [UIFont boldSystemFontOfSize:32.0]
+        };
+
+    settingsNav.navigationBar.standardAppearance =
+        settingsAppearance;
+
+    settingsNav.navigationBar.scrollEdgeAppearance =
+        settingsAppearance;
+
+    settingsNav.navigationBar.compactAppearance =
+        settingsAppearance;
+
+    settingsNav.navigationBar.tintColor =
+        settingsRed;
+
+    /*
      * =========================================================
      * TAB BAR PRINCIPAL
      * =========================================================
@@ -155,10 +204,15 @@
     self.mainTabBar =
         [[UITabBarController alloc] init];
 
+    /*
+     * EXPLORAR queda creado arriba y su código NO se borra.
+     * Simplemente no lo incluimos por ahora en las pestañas visibles.
+     * Para mostrarlo otra vez, basta con volver a agregar explorerNav
+     * a este arreglo.
+     */
     self.mainTabBar.viewControllers =
         @[
             homeNav,
-            explorerNav,
             settingsNav
         ];
 
