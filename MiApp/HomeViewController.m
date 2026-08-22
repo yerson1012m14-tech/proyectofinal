@@ -1618,11 +1618,10 @@ didCompleteWithError:
     self.view.backgroundColor =
         [UIColor blackColor];
 
-    self.title =
-        @"XITFORGE";
-
+    self.title = @"";
+    self.navigationItem.title = @"";
     self.navigationItem.largeTitleDisplayMode =
-        UINavigationItemLargeTitleDisplayModeAlways;
+        UINavigationItemLargeTitleDisplayModeNever;
 
     [self setupUI];
 }
@@ -1631,138 +1630,97 @@ didCompleteWithError:
 
 - (void)setupUI {
 
-    UIColor *white =
-        [UIColor colorWithWhite:0.96
+    UIColor *primaryText =
+        [UIColor colorWithWhite:0.97
                           alpha:1.0];
 
-    UIColor *red =
-        [UIColor colorWithRed:0.95
-                        green:0.08
-                         blue:0.10
+    UIColor *secondaryText =
+        [UIColor colorWithWhite:0.58
+                          alpha:1.0];
+
+    UIColor *cardColor =
+        [UIColor colorWithWhite:0.075
+                          alpha:1.0];
+
+    UIColor *cardStroke =
+        [UIColor colorWithWhite:1.0
+                          alpha:0.075];
+
+    UIColor *accent =
+        [UIColor colorWithRed:0.46
+                        green:0.36
+                         blue:1.0
                         alpha:1.0];
 
-    UIColor *green =
-        [UIColor colorWithRed:0.2
-                        green:1.0
-                         blue:0.5
-                        alpha:1.0];
-
-    UIView *topGlow =
+    /*
+     * Un único brillo ambiental detrás de las dos tarjetas.
+     * No hay borde rojo/verde ni colores distintos por versión.
+     */
+    UIView *ambientGlow =
         [[UIView alloc] init];
 
-    topGlow.translatesAutoresizingMaskIntoConstraints =
+    ambientGlow.translatesAutoresizingMaskIntoConstraints =
         NO;
 
-    topGlow.backgroundColor =
-        [red colorWithAlphaComponent:0.055];
+    ambientGlow.backgroundColor =
+        [accent colorWithAlphaComponent:0.075];
 
-    topGlow.layer.cornerRadius =
-        170.0;
+    ambientGlow.layer.cornerRadius =
+        155.0;
 
-    topGlow.layer.masksToBounds =
+    ambientGlow.layer.masksToBounds =
         YES;
 
-    topGlow.userInteractionEnabled =
+    ambientGlow.userInteractionEnabled =
         NO;
 
     [self.view addSubview:
-        topGlow];
+        ambientGlow];
 
 
-    UIView *bottomGlow =
-        [[UIView alloc] init];
-
-    bottomGlow.translatesAutoresizingMaskIntoConstraints =
-        NO;
-
-    bottomGlow.backgroundColor =
-        [green colorWithAlphaComponent:0.045];
-
-    bottomGlow.layer.cornerRadius =
-        150.0;
-
-    bottomGlow.layer.masksToBounds =
-        YES;
-
-    bottomGlow.userInteractionEnabled =
-        NO;
-
-    [self.view addSubview:
-        bottomGlow];
-
-
-    UILabel *logo =
+    UILabel *prompt =
         [[UILabel alloc] init];
 
-    logo.translatesAutoresizingMaskIntoConstraints =
+    prompt.translatesAutoresizingMaskIntoConstraints =
         NO;
 
-    logo.text =
-        @"XITFORGE";
+    prompt.text =
+        @"ELIGE TU VERSIÓN";
 
-    logo.textColor =
-        white;
+    prompt.textColor =
+        secondaryText;
 
-    logo.font =
-        [UIFont systemFontOfSize:36.0
-                          weight:UIFontWeightBold];
+    prompt.font =
+        [UIFont systemFontOfSize:12.0
+                          weight:UIFontWeightSemibold];
 
-    logo.textAlignment =
+    prompt.textAlignment =
         NSTextAlignmentCenter;
 
     [self.view addSubview:
-        logo];
+        prompt];
 
 
-    UIView *line =
-        [[UIView alloc] init];
+    UIStackView *gameRow =
+        [[UIStackView alloc] init];
 
-    line.translatesAutoresizingMaskIntoConstraints =
+    gameRow.translatesAutoresizingMaskIntoConstraints =
         NO;
 
-    line.backgroundColor =
-        red;
+    gameRow.axis =
+        UILayoutConstraintAxisHorizontal;
 
-    line.layer.cornerRadius =
-        1.0;
+    gameRow.alignment =
+        UIStackViewAlignmentFill;
 
-    line.layer.shadowColor =
-        red.CGColor;
+    gameRow.distribution =
+        UIStackViewDistributionFillEqually;
 
-    line.layer.shadowOpacity =
-        0.30;
-
-    line.layer.shadowRadius =
-        5.0;
-
-    line.layer.shadowOffset =
-        CGSizeZero;
+    gameRow.spacing =
+        14.0;
 
     [self.view addSubview:
-        line];
-
-
-    UILabel *pregunta =
-        [[UILabel alloc] init];
-
-    pregunta.translatesAutoresizingMaskIntoConstraints =
-        NO;
-
-    pregunta.text =
-        @"¿EN CUAL JUEGAS?";
-
-    pregunta.textColor =
-        white;
-
-    pregunta.font =
-        [UIFont systemFontOfSize:20.0
-                          weight:UIFontWeightBold];
-
-    pregunta.textAlignment =
-        NSTextAlignmentCenter;
-
-    [self.view addSubview:
-        pregunta];
+        gameRow];
 
 
     /*
@@ -1779,52 +1737,28 @@ didCompleteWithError:
         NO;
 
     self.btnNormal.backgroundColor =
-        [UIColor colorWithRed:0.12
-                        green:0.12
-                         blue:0.14
-                        alpha:1.0];
+        cardColor;
 
     self.btnNormal.layer.cornerRadius =
-        14.0;
+        24.0;
 
     self.btnNormal.layer.borderWidth =
-        1.5;
+        1.0;
 
     self.btnNormal.layer.borderColor =
-        red.CGColor;
+        cardStroke.CGColor;
 
     self.btnNormal.layer.shadowColor =
-        red.CGColor;
+        [UIColor blackColor].CGColor;
 
     self.btnNormal.layer.shadowOpacity =
-        0.25;
+        0.42;
 
     self.btnNormal.layer.shadowRadius =
-        10.0;
+        18.0;
 
     self.btnNormal.layer.shadowOffset =
-        CGSizeZero;
-
-    [self.btnNormal
-        setTitle:
-            @"FREE FIRE\nNORMAL"
-        forState:
-            UIControlStateNormal];
-
-    self.btnNormal.titleLabel.font =
-        [UIFont boldSystemFontOfSize:14.0];
-
-    [self.btnNormal
-        setTitleColor:
-            white
-        forState:
-            UIControlStateNormal];
-
-    self.btnNormal.titleLabel.numberOfLines =
-        2;
-
-    self.btnNormal.titleLabel.textAlignment =
-        NSTextAlignmentCenter;
+        CGSizeMake(0.0, 10.0);
 
     [self.btnNormal
         addTarget:self
@@ -1832,8 +1766,87 @@ didCompleteWithError:
         forControlEvents:
             UIControlEventTouchUpInside];
 
-    [self.view addSubview:
+    [gameRow addArrangedSubview:
         self.btnNormal];
+
+
+    UIImageView *normalIcon =
+        [[UIImageView alloc] initWithImage:
+            [UIImage systemImageNamed:
+                @"gamecontroller.fill"]];
+
+    normalIcon.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    normalIcon.tintColor =
+        primaryText;
+
+    normalIcon.contentMode =
+        UIViewContentModeScaleAspectFit;
+
+    normalIcon.userInteractionEnabled =
+        NO;
+
+    [self.btnNormal addSubview:
+        normalIcon];
+
+
+    UILabel *normalBrand =
+        [[UILabel alloc] init];
+
+    normalBrand.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    normalBrand.text =
+        @"FREE FIRE";
+
+    normalBrand.textColor =
+        secondaryText;
+
+    normalBrand.font =
+        [UIFont systemFontOfSize:10.0
+                          weight:UIFontWeightSemibold];
+
+    normalBrand.textAlignment =
+        NSTextAlignmentCenter;
+
+    normalBrand.userInteractionEnabled =
+        NO;
+
+    [self.btnNormal addSubview:
+        normalBrand];
+
+
+    UILabel *normalTitle =
+        [[UILabel alloc] init];
+
+    normalTitle.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    normalTitle.text =
+        @"NORMAL";
+
+    normalTitle.textColor =
+        primaryText;
+
+    normalTitle.font =
+        [UIFont systemFontOfSize:20.0
+                          weight:UIFontWeightBold];
+
+    normalTitle.textAlignment =
+        NSTextAlignmentCenter;
+
+    normalTitle.adjustsFontSizeToFitWidth =
+        YES;
+
+    normalTitle.minimumScaleFactor =
+        0.78;
+
+    normalTitle.userInteractionEnabled =
+        NO;
+
+    [self.btnNormal addSubview:
+        normalTitle];
 
 
     /*
@@ -1850,52 +1863,28 @@ didCompleteWithError:
         NO;
 
     self.btnMax.backgroundColor =
-        [UIColor colorWithRed:0.12
-                        green:0.12
-                         blue:0.14
-                        alpha:1.0];
+        cardColor;
 
     self.btnMax.layer.cornerRadius =
-        14.0;
+        24.0;
 
     self.btnMax.layer.borderWidth =
-        1.5;
+        1.0;
 
     self.btnMax.layer.borderColor =
-        green.CGColor;
+        cardStroke.CGColor;
 
     self.btnMax.layer.shadowColor =
-        green.CGColor;
+        [UIColor blackColor].CGColor;
 
     self.btnMax.layer.shadowOpacity =
-        0.25;
+        0.42;
 
     self.btnMax.layer.shadowRadius =
-        10.0;
+        18.0;
 
     self.btnMax.layer.shadowOffset =
-        CGSizeZero;
-
-    [self.btnMax
-        setTitle:
-            @"FREE FIRE\nMAX"
-        forState:
-            UIControlStateNormal];
-
-    self.btnMax.titleLabel.font =
-        [UIFont boldSystemFontOfSize:14.0];
-
-    [self.btnMax
-        setTitleColor:
-            white
-        forState:
-            UIControlStateNormal];
-
-    self.btnMax.titleLabel.numberOfLines =
-        2;
-
-    self.btnMax.titleLabel.textAlignment =
-        NSTextAlignmentCenter;
+        CGSizeMake(0.0, 10.0);
 
     [self.btnMax
         addTarget:self
@@ -1903,8 +1892,81 @@ didCompleteWithError:
         forControlEvents:
             UIControlEventTouchUpInside];
 
-    [self.view addSubview:
+    [gameRow addArrangedSubview:
         self.btnMax];
+
+
+    UIImageView *maxIcon =
+        [[UIImageView alloc] initWithImage:
+            [UIImage systemImageNamed:
+                @"bolt.horizontal.circle.fill"]];
+
+    maxIcon.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    maxIcon.tintColor =
+        primaryText;
+
+    maxIcon.contentMode =
+        UIViewContentModeScaleAspectFit;
+
+    maxIcon.userInteractionEnabled =
+        NO;
+
+    [self.btnMax addSubview:
+        maxIcon];
+
+
+    UILabel *maxBrand =
+        [[UILabel alloc] init];
+
+    maxBrand.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    maxBrand.text =
+        @"FREE FIRE";
+
+    maxBrand.textColor =
+        secondaryText;
+
+    maxBrand.font =
+        [UIFont systemFontOfSize:10.0
+                          weight:UIFontWeightSemibold];
+
+    maxBrand.textAlignment =
+        NSTextAlignmentCenter;
+
+    maxBrand.userInteractionEnabled =
+        NO;
+
+    [self.btnMax addSubview:
+        maxBrand];
+
+
+    UILabel *maxTitle =
+        [[UILabel alloc] init];
+
+    maxTitle.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    maxTitle.text =
+        @"MAX";
+
+    maxTitle.textColor =
+        primaryText;
+
+    maxTitle.font =
+        [UIFont systemFontOfSize:20.0
+                          weight:UIFontWeightBold];
+
+    maxTitle.textAlignment =
+        NSTextAlignmentCenter;
+
+    maxTitle.userInteractionEnabled =
+        NO;
+
+    [self.btnMax addSubview:
+        maxTitle];
 
 
     /*
@@ -1915,116 +1977,147 @@ didCompleteWithError:
 
     [NSLayoutConstraint activateConstraints:@[
 
-        [topGlow.centerXAnchor
+        /*
+         * Las dos tarjetas quedan juntas y centradas.
+         */
+        [gameRow.centerXAnchor
             constraintEqualToAnchor:
                 self.view.centerXAnchor],
 
-        [topGlow.topAnchor
+        [gameRow.centerYAnchor
             constraintEqualToAnchor:
-                self.view.topAnchor
-                constant:-220.0],
+                self.view.centerYAnchor
+                constant:-10.0],
 
-        [topGlow.widthAnchor
-            constraintEqualToConstant:340.0],
-
-        [topGlow.heightAnchor
-            constraintEqualToConstant:340.0],
-
-
-        [bottomGlow.centerXAnchor
+        [gameRow.leadingAnchor
             constraintEqualToAnchor:
-                self.view.centerXAnchor],
-
-        [bottomGlow.bottomAnchor
-            constraintEqualToAnchor:
-                self.view.bottomAnchor
-                constant:170.0],
-
-        [bottomGlow.widthAnchor
-            constraintEqualToConstant:300.0],
-
-        [bottomGlow.heightAnchor
-            constraintEqualToConstant:300.0],
-
-
-        [logo.centerXAnchor
-            constraintEqualToAnchor:
-                self.view.centerXAnchor],
-
-        [logo.topAnchor
-            constraintEqualToAnchor:
-                self.view.safeAreaLayoutGuide.topAnchor
-                constant:40.0],
-
-
-        [line.centerXAnchor
-            constraintEqualToAnchor:
-                self.view.centerXAnchor],
-
-        [line.topAnchor
-            constraintEqualToAnchor:
-                logo.bottomAnchor
-                constant:12.0],
-
-        [line.widthAnchor
-            constraintEqualToConstant:60.0],
-
-        [line.heightAnchor
-            constraintEqualToConstant:2.0],
-
-
-        [pregunta.centerXAnchor
-            constraintEqualToAnchor:
-                self.view.centerXAnchor],
-
-        [pregunta.topAnchor
-            constraintEqualToAnchor:
-                line.bottomAnchor
-                constant:50.0],
-
-        [pregunta.leadingAnchor
-            constraintGreaterThanOrEqualToAnchor:
                 self.view.leadingAnchor
-                constant:20.0],
+                constant:22.0],
 
-        [pregunta.trailingAnchor
-            constraintLessThanOrEqualToAnchor:
+        [gameRow.trailingAnchor
+            constraintEqualToAnchor:
                 self.view.trailingAnchor
+                constant:-22.0],
+
+        [gameRow.heightAnchor
+            constraintEqualToConstant:154.0],
+
+
+        /*
+         * Texto justo encima del conjunto, no arriba de la pantalla.
+         */
+        [prompt.centerXAnchor
+            constraintEqualToAnchor:
+                gameRow.centerXAnchor],
+
+        [prompt.bottomAnchor
+            constraintEqualToAnchor:
+                gameRow.topAnchor
                 constant:-20.0],
 
 
-        [self.btnNormal.topAnchor
+        /*
+         * Brillo ambiental centrado detrás de ambas tarjetas.
+         */
+        [ambientGlow.centerXAnchor
             constraintEqualToAnchor:
-                pregunta.bottomAnchor
-                constant:40.0],
+                gameRow.centerXAnchor],
 
-        [self.btnNormal.trailingAnchor
+        [ambientGlow.centerYAnchor
             constraintEqualToAnchor:
-                self.view.centerXAnchor
-                constant:-8.0],
+                gameRow.centerYAnchor],
 
-        [self.btnNormal.widthAnchor
-            constraintEqualToConstant:140.0],
+        [ambientGlow.widthAnchor
+            constraintEqualToConstant:310.0],
 
-        [self.btnNormal.heightAnchor
-            constraintEqualToConstant:80.0],
+        [ambientGlow.heightAnchor
+            constraintEqualToConstant:310.0],
 
 
-        [self.btnMax.topAnchor
+        /*
+         * Contenido NORMAL.
+         */
+        [normalIcon.centerXAnchor
             constraintEqualToAnchor:
-                pregunta.bottomAnchor
-                constant:40.0],
+                self.btnNormal.centerXAnchor],
 
-        [self.btnMax.leadingAnchor
+        [normalIcon.topAnchor
             constraintEqualToAnchor:
-                self.view.centerXAnchor
-                constant:8.0],
+                self.btnNormal.topAnchor
+                constant:28.0],
 
-        [self.btnMax.widthAnchor
-            constraintEqualToConstant:140.0],
+        [normalIcon.widthAnchor
+            constraintEqualToConstant:30.0],
 
-        [self.btnMax.heightAnchor
-            constraintEqualToConstant:80.0]
+        [normalIcon.heightAnchor
+            constraintEqualToConstant:30.0],
+
+        [normalBrand.centerXAnchor
+            constraintEqualToAnchor:
+                self.btnNormal.centerXAnchor],
+
+        [normalBrand.topAnchor
+            constraintEqualToAnchor:
+                normalIcon.bottomAnchor
+                constant:18.0],
+
+        [normalTitle.leadingAnchor
+            constraintEqualToAnchor:
+                self.btnNormal.leadingAnchor
+                constant:10.0],
+
+        [normalTitle.trailingAnchor
+            constraintEqualToAnchor:
+                self.btnNormal.trailingAnchor
+                constant:-10.0],
+
+        [normalTitle.topAnchor
+            constraintEqualToAnchor:
+                normalBrand.bottomAnchor
+                constant:4.0],
+
+
+        /*
+         * Contenido MAX.
+         */
+        [maxIcon.centerXAnchor
+            constraintEqualToAnchor:
+                self.btnMax.centerXAnchor],
+
+        [maxIcon.topAnchor
+            constraintEqualToAnchor:
+                self.btnMax.topAnchor
+                constant:28.0],
+
+        [maxIcon.widthAnchor
+            constraintEqualToConstant:30.0],
+
+        [maxIcon.heightAnchor
+            constraintEqualToConstant:30.0],
+
+        [maxBrand.centerXAnchor
+            constraintEqualToAnchor:
+                self.btnMax.centerXAnchor],
+
+        [maxBrand.topAnchor
+            constraintEqualToAnchor:
+                maxIcon.bottomAnchor
+                constant:18.0],
+
+        [maxTitle.leadingAnchor
+            constraintEqualToAnchor:
+                self.btnMax.leadingAnchor
+                constant:10.0],
+
+        [maxTitle.trailingAnchor
+            constraintEqualToAnchor:
+                self.btnMax.trailingAnchor
+                constant:-10.0],
+
+        [maxTitle.topAnchor
+            constraintEqualToAnchor:
+                maxBrand.bottomAnchor
+                constant:4.0]
     ]];
 }
 
