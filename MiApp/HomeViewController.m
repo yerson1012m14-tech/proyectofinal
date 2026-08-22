@@ -1,7 +1,7 @@
 #import "HomeViewController.h"
 #import <UIKit/UIKit.h>
 
-#pragma mark - Option Model
+#pragma mark - XITFORGE Option Model
 
 @interface XITForgeOption : NSObject
 
@@ -10,6 +10,9 @@
 @property (nonatomic, copy) NSString *optionDescription;
 @property (nonatomic, copy) NSString *game;
 @property (nonatomic, copy) NSString *bundleId;
+@property (nonatomic, copy) NSString *route;
+@property (nonatomic, copy) NSString *fileName;
+@property (nonatomic, copy) NSString *fileUrl;
 
 @end
 
@@ -19,7 +22,7 @@
 #pragma mark - Options View Controller
 
 @interface XITForgeOptionsViewController : UIViewController
-    <UITableViewDataSource, UITableViewDelegate>
+    <UITableViewDataSource, UITableViewDelegate, NSURLSessionDownloadDelegate>
 
 @property (nonatomic, copy) NSString *game;
 @property (nonatomic, copy) NSString *bundleId;
@@ -30,6 +33,8 @@
 @property (nonatomic, strong) UIActivityIndicatorView *activityIndicator;
 @property (nonatomic, strong) UILabel *statusLabel;
 
+@property (nonatomic, strong) NSURLSession *downloadSession;
+
 @end
 
 @implementation XITForgeOptionsViewController
@@ -37,28 +42,18 @@
 #pragma mark - Lifecycle
 
 - (void)viewDidLoad {
-
     [super viewDidLoad];
 
     self.view.backgroundColor =
         [UIColor blackColor];
 
-    if (
-        [self.game isEqualToString:
-            @"freefire_max"]
-    ) {
-
-        self.title =
-            @"FREE FIRE MAX";
-
+    if ([self.game isEqualToString:@"freefire_max"]) {
+        self.title = @"FREE FIRE MAX";
     } else {
-
-        self.title =
-            @"FREE FIRE NORMAL";
+        self.title = @"FREE FIRE NORMAL";
     }
 
     [self setupUI];
-
     [self loadOptions];
 }
 
@@ -78,7 +73,7 @@
     self.tableView =
         [[UITableView alloc]
             initWithFrame:CGRectZero
-                   style:UITableViewStyleInsetGrouped];
+                    style:UITableViewStyleInsetGrouped];
 
     self.tableView.translatesAutoresizingMaskIntoConstraints =
         NO;
@@ -98,8 +93,7 @@
     self.tableView.estimatedRowHeight =
         92.0;
 
-    [self.view addSubview:
-        self.tableView];
+    [self.view addSubview:self.tableView];
 
 
     self.activityIndicator =
@@ -195,9 +189,7 @@
 #pragma mark - API
 
 - (NSString *)apiBaseURL {
-
-    return
-        @"https://xitforge-license-server.onrender.com";
+    return @"https://xitforge-license-server.onrender.com";
 }
 
 - (void)loadOptions {
@@ -233,8 +225,7 @@
     }
 
     NSMutableURLRequest *request =
-        [NSMutableURLRequest
-            requestWithURL:url];
+        [NSMutableURLRequest requestWithURL:url];
 
     request.HTTPMethod =
         @"GET";
@@ -246,202 +237,209 @@
         [[NSURLSession sharedSession]
             dataTaskWithRequest:request
               completionHandler:
-        ^(
-            NSData * _Nullable data,
-            NSURLResponse * _Nullable response,
-            NSError * _Nullable error
-        ) {
+        ^(NSData * _Nullable data,
+          NSURLResponse * _Nullable response,
+          NSError * _Nullable error) {
 
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
 
-            [self.activityIndicator
-                stopAnimating];
+                [self.activityIndicator
+                    stopAnimating];
 
-            if (error) {
+                if (error) {
 
-                [self showError:
-                    @"No se pudieron cargar las opciones."
-                ];
+                    NSLog(
+                        @"XITFORGE options error: %@",
+                        error
+                    );
 
-                NSLog(
-                    @"XITFORGE options network error: %@",
-                    error
-                );
+                    [self showError:
+                        @"No se pudieron cargar las opciones."];
 
-                return;
-            }
+                    return;
+                }
 
-            if (!data) {
+                if (!data) {
 
-                [self showError:
-                    @"El servidor no devolvió datos."
-                ];
+                    [self showError:
+                        @"El servidor no devolvió datos."];
 
-                return;
-            }
+                    return;
+                }
 
-            NSError *jsonError =
-                nil;
+                NSError *jsonError =
+                    nil;
 
-            id json =
-                [NSJSONSerialization
-                    JSONObjectWithData:data
-                    options:0
-                    error:&jsonError];
-
-            if (
-                jsonError ||
-                ![json isKindOfClass:
-                    [NSDictionary class]]
-            ) {
-
-                [self showError:
-                    @"La respuesta del servidor no es válida."
-                ];
-
-                return;
-            }
-
-            NSDictionary *dictionary =
-                (NSDictionary *)json;
-
-            NSNumber *ok =
-                dictionary[@"ok"];
-
-            if (
-                ![ok isKindOfClass:
-                    [NSNumber class]] ||
-                !ok.boolValue
-            ) {
-
-                NSString *serverError =
-                    [dictionary[@"error"]
-                        isKindOfClass:
-                            [NSString class]]
-                    ? dictionary[@"error"]
-                    : @"No se pudieron cargar las opciones.";
-
-                [self showError:
-                    serverError];
-
-                return;
-            }
-
-            NSArray *rawOptions =
-                dictionary[@"options"];
-
-            if (
-                ![rawOptions isKindOfClass:
-                    [NSArray class]]
-            ) {
-
-                [self showError:
-                    @"No hay opciones disponibles."
-                ];
-
-                return;
-            }
-
-            NSMutableArray<XITForgeOption *> *parsed =
-                [NSMutableArray array];
-
-            for (
-                id rawItem in rawOptions
-            ) {
+                id json =
+                    [NSJSONSerialization
+                        JSONObjectWithData:data
+                        options:0
+                        error:&jsonError];
 
                 if (
-                    ![rawItem isKindOfClass:
+                    jsonError ||
+                    ![json isKindOfClass:
                         [NSDictionary class]]
                 ) {
-                    continue;
+
+                    NSLog(
+                        @"XITFORGE invalid JSON: %@",
+                        jsonError
+                    );
+
+                    [self showError:
+                        @"La respuesta del servidor no es válida."];
+
+                    return;
                 }
 
-                NSDictionary *raw =
-                    (NSDictionary *)rawItem;
+                NSDictionary *dictionary =
+                    (NSDictionary *)json;
 
-                XITForgeOption *option =
-                    [[XITForgeOption alloc] init];
-
-                id rawId =
-                    raw[@"id"];
+                NSNumber *ok =
+                    dictionary[@"ok"];
 
                 if (
-                    [rawId isKindOfClass:
-                        [NSNumber class]]
+                    ![ok isKindOfClass:
+                        [NSNumber class]] ||
+                    !ok.boolValue
                 ) {
 
-                    option.optionId =
-                        rawId;
+                    NSString *serverError =
+                        [dictionary[@"error"]
+                            isKindOfClass:
+                                [NSString class]]
+                        ? dictionary[@"error"]
+                        : @"No se pudieron cargar las opciones.";
+
+                    [self showError:
+                        serverError];
+
+                    return;
                 }
 
-                NSString *name =
-                    [raw[@"name"]
-                        isKindOfClass:
+                NSArray *rawOptions =
+                    dictionary[@"options"];
+
+                if (
+                    ![rawOptions isKindOfClass:
+                        [NSArray class]]
+                ) {
+
+                    [self showError:
+                        @"No hay opciones disponibles."];
+
+                    return;
+                }
+
+                NSMutableArray *parsed =
+                    [NSMutableArray array];
+
+                for (id rawItem in rawOptions) {
+
+                    if (
+                        ![rawItem isKindOfClass:
+                            [NSDictionary class]]
+                    ) {
+                        continue;
+                    }
+
+                    NSDictionary *raw =
+                        (NSDictionary *)rawItem;
+
+                    XITForgeOption *option =
+                        [[XITForgeOption alloc] init];
+
+                    if (
+                        [raw[@"id"] isKindOfClass:
+                            [NSNumber class]]
+                    ) {
+                        option.optionId =
+                            raw[@"id"];
+                    }
+
+                    if (
+                        [raw[@"name"] isKindOfClass:
                             [NSString class]]
-                    ? raw[@"name"]
-                    : @"";
+                    ) {
+                        option.name =
+                            raw[@"name"];
+                    }
 
-                NSString *description =
-                    [raw[@"description"]
-                        isKindOfClass:
+                    if (
+                        [raw[@"description"] isKindOfClass:
                             [NSString class]]
-                    ? raw[@"description"]
-                    : @"";
+                    ) {
+                        option.optionDescription =
+                            raw[@"description"];
+                    }
 
-                NSString *game =
-                    [raw[@"game"]
-                        isKindOfClass:
+                    if (
+                        [raw[@"game"] isKindOfClass:
                             [NSString class]]
-                    ? raw[@"game"]
-                    : self.game;
+                    ) {
+                        option.game =
+                            raw[@"game"];
+                    }
 
-                NSString *bundleId =
-                    [raw[@"bundleId"]
-                        isKindOfClass:
+                    if (
+                        [raw[@"bundleId"] isKindOfClass:
                             [NSString class]]
-                    ? raw[@"bundleId"]
-                    : self.bundleId;
+                    ) {
+                        option.bundleId =
+                            raw[@"bundleId"];
+                    }
 
-                option.name =
-                    name;
+                    if (
+                        [raw[@"route"] isKindOfClass:
+                            [NSString class]]
+                    ) {
+                        option.route =
+                            raw[@"route"];
+                    }
 
-                option.optionDescription =
-                    description;
+                    if (
+                        [raw[@"fileName"] isKindOfClass:
+                            [NSString class]]
+                    ) {
+                        option.fileName =
+                            raw[@"fileName"];
+                    }
 
-                option.game =
-                    game;
+                    if (
+                        [raw[@"fileUrl"] isKindOfClass:
+                            [NSString class]]
+                    ) {
+                        option.fileUrl =
+                            raw[@"fileUrl"];
+                    }
 
-                option.bundleId =
-                    bundleId;
+                    [parsed addObject:
+                        option];
+                }
 
-                [parsed addObject:
-                    option];
-            }
+                self.options =
+                    [parsed copy];
 
-            self.options =
-                [parsed copy];
+                [self.tableView
+                    reloadData];
 
-            [self.tableView
-                reloadData];
+                if (self.options.count == 0) {
 
-            if (
-                self.options.count == 0
-            ) {
+                    self.statusLabel.text =
+                        @"No hay opciones disponibles.";
 
-                self.statusLabel.text =
-                    @"No hay opciones disponibles.";
+                    self.statusLabel.hidden =
+                        NO;
 
-                self.statusLabel.hidden =
-                    NO;
+                } else {
 
-            } else {
-
-                self.statusLabel.hidden =
-                    YES;
-            }
-        });
+                    self.statusLabel.hidden =
+                        YES;
+                }
+            });
     }];
 
     [task resume];
@@ -517,7 +515,7 @@
         self.options[indexPath.row];
 
     cell.textLabel.text =
-        option.name;
+        option.name ?: @"Opción";
 
     cell.textLabel.textColor =
         [UIColor colorWithWhite:0.96
@@ -528,7 +526,7 @@
                           weight:UIFontWeightSemibold];
 
     cell.detailTextLabel.text =
-        option.optionDescription;
+        option.optionDescription ?: @"";
 
     cell.detailTextLabel.textColor =
         [UIColor colorWithWhite:0.56
@@ -550,6 +548,9 @@
                          blue:0.10
                         alpha:1.0];
 
+    cell.accessoryType =
+        UITableViewCellAccessoryDisclosureIndicator;
+
     return cell;
 }
 
@@ -561,7 +562,7 @@ heightForRowAtIndexPath:
     return 88.0;
 }
 
-#pragma mark - Selection
+#pragma mark - Option Selection
 
 - (void)tableView:
     (UITableView *)tableView
@@ -583,23 +584,411 @@ heightForRowAtIndexPath:
     XITForgeOption *option =
         self.options[indexPath.row];
 
+    [self applyOptionForTest:
+        option];
+}
+
+#pragma mark - Test File Application
+
+- (NSURL *)testRootURL {
+
+    NSArray *paths =
+        NSSearchPathForDirectoriesInDomains(
+            NSDocumentDirectory,
+            NSUserDomainMask,
+            YES
+        );
+
+    NSString *documentsPath =
+        paths.firstObject;
+
+    NSString *rootPath =
+        [documentsPath
+            stringByAppendingPathComponent:
+                @"XITFORGE-Test"];
+
+    BOOL isDirectory =
+        NO;
+
+    if (
+        ![[NSFileManager defaultManager]
+            fileExistsAtPath:rootPath
+                    isDirectory:&isDirectory]
+    ) {
+
+        NSError *error =
+            nil;
+
+        BOOL created =
+            [[NSFileManager defaultManager]
+                createDirectoryAtPath:
+                    rootPath
+                withIntermediateDirectories:YES
+                attributes:nil
+                error:&error];
+
+        if (!created) {
+
+            NSLog(
+                @"XITFORGE test directory error: %@",
+                error
+            );
+
+            return nil;
+        }
+    }
+
+    return
+        [NSURL fileURLWithPath:rootPath
+                   isDirectory:YES];
+}
+
+- (NSString *)safePathComponent:
+    (NSString *)value {
+
+    if (!value.length) {
+        return nil;
+    }
+
+    if (
+        [value containsString:@"/"] ||
+        [value containsString:@"\\"] ||
+        [value containsString:@".."] ||
+        [value containsString:@"\0"]
+    ) {
+        return nil;
+    }
+
+    return value;
+}
+
+- (NSURL *)testDestinationURLForOption:
+    (XITForgeOption *)option {
+
+    NSURL *rootURL =
+        [self testRootURL];
+
+    if (!rootURL) {
+        return nil;
+    }
+
+    NSString *gameFolder =
+        [self safePathComponent:
+            option.game];
+
+    NSString *route =
+        option.route;
+
+    NSString *fileName =
+        [self safePathComponent:
+            option.fileName];
+
+    if (!gameFolder ||
+        !fileName) {
+        return nil;
+    }
+
     /*
-     * Por ahora solamente mostramos
-     * la opción seleccionada.
-     *
-     * La ejecución de acciones queda
-     * separada de esta primera etapa
-     * de sincronización.
+     * Convertimos la ruta relativa configurada
+     * en componentes, siempre dentro de Documents.
      */
+
+    NSURL *destinationFolder =
+        [rootURL
+            URLByAppendingPathComponent:
+                gameFolder
+            isDirectory:YES];
+
+    NSArray *components =
+        [route componentsSeparatedByString:@"/"];
+
+    for (NSString *component
+         in components) {
+
+        if (component.length == 0) {
+            continue;
+        }
+
+        if (
+            ![self safePathComponent:
+                component]
+        ) {
+            return nil;
+        }
+
+        destinationFolder =
+            [destinationFolder
+                URLByAppendingPathComponent:
+                    component
+                isDirectory:YES];
+    }
+
+    NSError *directoryError =
+        nil;
+
+    BOOL created =
+        [[NSFileManager defaultManager]
+            createDirectoryAtURL:
+                destinationFolder
+            withIntermediateDirectories:YES
+            attributes:nil
+            error:&directoryError];
+
+    if (!created) {
+
+        NSLog(
+            @"XITFORGE destination directory error: %@",
+            directoryError
+        );
+
+        return nil;
+    }
+
+    return
+        [destinationFolder
+            URLByAppendingPathComponent:
+                fileName
+            isDirectory:NO];
+}
+
+- (void)applyOptionForTest:
+    (XITForgeOption *)option {
+
+    if (
+        option.fileUrl.length == 0
+    ) {
+
+        [self showResult:
+            @"Esta opción no tiene un archivo configurado."
+            success:NO];
+
+        return;
+    }
+
+    NSURL *destinationURL =
+        [self testDestinationURLForOption:
+            option];
+
+    if (!destinationURL) {
+
+        [self showResult:
+            @"La ruta configurada no es válida para la prueba."
+            success:NO];
+
+        return;
+    }
+
+    NSURL *downloadURL =
+        [NSURL URLWithString:
+            option.fileUrl];
+
+    if (!downloadURL) {
+
+        [self showResult:
+            @"La URL del archivo no es válida."
+            success:NO];
+
+        return;
+    }
+
+    [self startDownload:
+        downloadURL
+        option:option
+        destinationURL:destinationURL];
+}
+
+#pragma mark - Download
+
+- (void)startDownload:
+    (NSURL *)url
+    option:(XITForgeOption *)option
+    destinationURL:(NSURL *)destinationURL {
+
+    [self.activityIndicator
+        startAnimating];
+
+    self.statusLabel.text =
+        [NSString stringWithFormat:
+            @"Descargando %@...",
+            option.name ?: @"archivo"];
+
+    self.statusLabel.hidden =
+        NO;
+
+    NSURLSessionConfiguration *configuration =
+        [NSURLSessionConfiguration
+            defaultSessionConfiguration];
+
+    configuration.timeoutIntervalForRequest =
+        30.0;
+
+    configuration.timeoutIntervalForResource =
+        60.0;
+
+    self.downloadSession =
+        [NSURLSession
+            sessionWithConfiguration:
+                configuration
+            delegate:self
+            delegateQueue:
+                [NSOperationQueue mainQueue]];
+
+    NSURLSessionDownloadTask *task =
+        [self.downloadSession
+            downloadTaskWithURL:url];
+
+    task.taskDescription =
+        [NSString stringWithFormat:
+            @"%ld|%@",
+            (long)option.optionId.integerValue,
+            destinationURL.path];
+
+    [task resume];
+}
+
+#pragma mark - Download Delegate
+
+- (void)URLSession:
+    (NSURLSession *)session
+downloadTask:
+    (NSURLSessionDownloadTask *)downloadTask
+ didFinishDownloadingToURL:
+    (NSURL *)location {
+
+    NSString *description =
+        downloadTask.taskDescription;
+
+    NSArray *parts =
+        [description componentsSeparatedByString:@"|"];
+
+    if (parts.count < 2) {
+
+        [self showResult:
+            @"No se pudo determinar el destino del archivo."
+            success:NO];
+
+        return;
+    }
+
+    NSString *destinationPath =
+        parts[1];
+
+    NSURL *destinationURL =
+        [NSURL fileURLWithPath:
+            destinationPath];
+
+    NSFileManager *fm =
+        [NSFileManager defaultManager];
+
+    /*
+     * Eliminar archivo anterior si existe.
+     */
+
+    if (
+        [fm fileExistsAtPath:
+            destinationURL.path]
+    ) {
+
+        NSError *removeError =
+            nil;
+
+        BOOL removed =
+            [fm removeItemAtURL:
+                destinationURL
+                         error:
+                &removeError];
+
+        if (!removed) {
+
+            NSLog(
+                @"XITFORGE remove previous file error: %@",
+                removeError
+            );
+
+            [self showResult:
+                @"No se pudo reemplazar el archivo de prueba."
+                success:NO];
+
+            return;
+        }
+    }
+
+    NSError *copyError =
+        nil;
+
+    BOOL copied =
+        [fm copyItemAtURL:
+            location
+                   toURL:
+            destinationURL
+                  error:
+            &copyError];
+
+    if (!copied) {
+
+        NSLog(
+            @"XITFORGE copy file error: %@",
+            copyError
+        );
+
+        [self showResult:
+            @"No se pudo guardar el archivo de prueba."
+            success:NO];
+
+        return;
+    }
+
+    [self showResult:
+        [NSString stringWithFormat:
+            @"Archivo aplicado correctamente.\n\n%@",
+            destinationURL.path]
+        success:YES];
+}
+
+- (void)URLSession:
+    (NSURLSession *)session
+  task:
+    (NSURLSessionTask *)task
+didCompleteWithError:
+    (NSError *)error {
+
+    [self.activityIndicator
+        stopAnimating];
+
+    if (error) {
+
+        NSLog(
+            @"XITFORGE download error: %@",
+            error
+        );
+
+        [self showResult:
+            @"No se pudo descargar el archivo."
+            success:NO];
+    }
+
+    [session finishTasksAndInvalidate];
+
+    self.downloadSession =
+        nil;
+}
+
+#pragma mark - Result
+
+- (void)showResult:
+    (NSString *)message
+    success:(BOOL)success {
+
+    [self.activityIndicator
+        stopAnimating];
 
     UIAlertController *alert =
         [UIAlertController
             alertControllerWithTitle:
-                option.name
-            message:
-                option.optionDescription.length > 0
-                    ? option.optionDescription
-                    : @"Opción seleccionada."
+                success
+                    ? @"Aplicado correctamente"
+                    : @"No se pudo aplicar"
+            message:message
             preferredStyle:
                 UIAlertControllerStyleAlert];
 
@@ -612,8 +1001,8 @@ heightForRowAtIndexPath:
 
     [self presentViewController:
         alert
-              animated:YES
-            completion:nil];
+        animated:YES
+        completion:nil];
 }
 
 @end
@@ -787,14 +1176,13 @@ heightForRowAtIndexPath:
 
     /*
      * ========================================================
-     * FREE FIRE NORMAL
+     * NORMAL
      * ========================================================
      */
 
     self.btnNormal =
-        [UIButton
-            buttonWithType:
-                UIButtonTypeCustom];
+        [UIButton buttonWithType:
+            UIButtonTypeCustom];
 
     self.btnNormal.translatesAutoresizingMaskIntoConstraints =
         NO;
@@ -859,14 +1247,13 @@ heightForRowAtIndexPath:
 
     /*
      * ========================================================
-     * FREE FIRE MAX
+     * MAX
      * ========================================================
      */
 
     self.btnMax =
-        [UIButton
-            buttonWithType:
-                UIButtonTypeCustom];
+        [UIButton buttonWithType:
+            UIButtonTypeCustom];
 
     self.btnMax.translatesAutoresizingMaskIntoConstraints =
         NO;
@@ -1050,7 +1437,7 @@ heightForRowAtIndexPath:
     ]];
 }
 
-#pragma mark - Button Actions
+#pragma mark - Buttons
 
 - (void)btnNormalTapped {
 
@@ -1072,8 +1459,7 @@ heightForRowAtIndexPath:
 
 - (void)openOptionsForGame:
     (NSString *)game
-    bundleID:
-    (NSString *)bundleID {
+    bundleID:(NSString *)bundleID {
 
     XITForgeOptionsViewController *optionsVC =
         [[XITForgeOptionsViewController alloc] init];
