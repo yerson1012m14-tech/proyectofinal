@@ -597,6 +597,9 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, strong) UIActivityIndicatorView *activityIndicator;
 @property (nonatomic, strong) UILabel *statusLabel;
 
+@property (nonatomic, strong) NSIndexPath *selectedOptionIndexPath;
+@property (nonatomic, strong) UIButton *activateButton;
+
 @property (nonatomic, strong) NSURLSession *downloadSession;
 
 @end
@@ -631,13 +634,22 @@ static NSURL *XITForgeExistingDirectoryChild(
                          blue:0.03
                         alpha:1.0];
 
+    UIColor *accent =
+        [UIColor colorWithRed:0.48
+                        green:0.38
+                         blue:1.0
+                        alpha:1.0];
+
     self.view.backgroundColor =
         background;
+
+    self.selectedOptionIndexPath =
+        nil;
 
     self.tableView =
         [[UITableView alloc]
             initWithFrame:CGRectZero
-                    style:UITableViewStyleInsetGrouped];
+                    style:UITableViewStylePlain];
 
     self.tableView.translatesAutoresizingMaskIntoConstraints =
         NO;
@@ -652,12 +664,66 @@ static NSURL *XITForgeExistingDirectoryChild(
         self;
 
     self.tableView.separatorStyle =
-        UITableViewCellSeparatorStyleNone;
+        UITableViewCellSeparatorStyleSingleLine;
+
+    self.tableView.separatorColor =
+        [UIColor colorWithWhite:1.0
+                          alpha:0.07];
+
+    self.tableView.separatorInset =
+        UIEdgeInsetsMake(0.0, 62.0, 0.0, 22.0);
 
     self.tableView.estimatedRowHeight =
-        92.0;
+        76.0;
+
+    self.tableView.contentInset =
+        UIEdgeInsetsMake(10.0, 0.0, 12.0, 0.0);
 
     [self.view addSubview:self.tableView];
+
+
+    self.activateButton =
+        [UIButton buttonWithType:UIButtonTypeSystem];
+
+    self.activateButton.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    [self.activateButton
+        setTitle:@"ACTIVAR"
+        forState:UIControlStateNormal];
+
+    [self.activateButton
+        setTitleColor:[UIColor whiteColor]
+        forState:UIControlStateNormal];
+
+    self.activateButton.titleLabel.font =
+        [UIFont systemFontOfSize:16.0
+                          weight:UIFontWeightBold];
+
+    self.activateButton.backgroundColor =
+        [accent colorWithAlphaComponent:0.32];
+
+    self.activateButton.layer.cornerRadius =
+        16.0;
+
+    self.activateButton.layer.borderWidth =
+        1.0;
+
+    self.activateButton.layer.borderColor =
+        [accent colorWithAlphaComponent:0.55].CGColor;
+
+    self.activateButton.enabled =
+        NO;
+
+    self.activateButton.alpha =
+        0.45;
+
+    [self.activateButton
+        addTarget:self
+        action:@selector(activateSelectedOption)
+        forControlEvents:UIControlEventTouchUpInside];
+
+    [self.view addSubview:self.activateButton];
 
 
     self.activityIndicator =
@@ -669,13 +735,9 @@ static NSURL *XITForgeExistingDirectoryChild(
         NO;
 
     self.activityIndicator.color =
-        [UIColor colorWithRed:0.95
-                        green:0.08
-                         blue:0.10
-                        alpha:1.0];
+        accent;
 
-    [self.view addSubview:
-        self.activityIndicator];
+    [self.view addSubview:self.activityIndicator];
 
 
     self.statusLabel =
@@ -697,11 +759,29 @@ static NSURL *XITForgeExistingDirectoryChild(
     self.statusLabel.numberOfLines =
         0;
 
-    [self.view addSubview:
-        self.statusLabel];
+    [self.view addSubview:self.statusLabel];
 
 
     [NSLayoutConstraint activateConstraints:@[
+
+        [self.activateButton.leadingAnchor
+            constraintEqualToAnchor:
+                self.view.leadingAnchor
+                constant:24.0],
+
+        [self.activateButton.trailingAnchor
+            constraintEqualToAnchor:
+                self.view.trailingAnchor
+                constant:-24.0],
+
+        [self.activateButton.bottomAnchor
+            constraintEqualToAnchor:
+                self.view.safeAreaLayoutGuide.bottomAnchor
+                constant:-16.0],
+
+        [self.activateButton.heightAnchor
+            constraintEqualToConstant:54.0],
+
 
         [self.tableView.topAnchor
             constraintEqualToAnchor:
@@ -717,7 +797,8 @@ static NSURL *XITForgeExistingDirectoryChild(
 
         [self.tableView.bottomAnchor
             constraintEqualToAnchor:
-                self.view.bottomAnchor],
+                self.activateButton.topAnchor
+                constant:-12.0],
 
 
         [self.activityIndicator.centerXAnchor
@@ -1002,6 +1083,15 @@ static NSURL *XITForgeExistingDirectoryChild(
                 self.options =
                     [parsed copy];
 
+                self.selectedOptionIndexPath =
+                    nil;
+
+                self.activateButton.enabled =
+                    NO;
+
+                self.activateButton.alpha =
+                    0.45;
+
                 [self.tableView
                     reloadData];
 
@@ -1058,7 +1148,7 @@ static NSURL *XITForgeExistingDirectoryChild(
     (NSIndexPath *)indexPath {
 
     static NSString *identifier =
-        @"XITForgeOptionCell";
+        @"XITForgeOptionSelectionCell";
 
     UITableViewCell *cell =
         [tableView
@@ -1075,23 +1165,25 @@ static NSURL *XITForgeExistingDirectoryChild(
                     identifier];
 
         cell.backgroundColor =
-            [UIColor colorWithRed:0.07
-                            green:0.07
-                             blue:0.09
-                            alpha:1.0];
-
-        cell.layer.cornerRadius =
-            16.0;
-
-        cell.layer.masksToBounds =
-            YES;
+            [UIColor clearColor];
 
         cell.selectionStyle =
-            UITableViewCellSelectionStyleDefault;
+            UITableViewCellSelectionStyleNone;
+
+        cell.textLabel.numberOfLines =
+            1;
+
+        cell.detailTextLabel.numberOfLines =
+            2;
     }
 
     XITForgeOption *option =
         self.options[indexPath.row];
+
+    BOOL selected =
+        self.selectedOptionIndexPath &&
+        [self.selectedOptionIndexPath
+            isEqual:indexPath];
 
     cell.textLabel.text =
         option.name ?: @"Opción";
@@ -1108,27 +1200,70 @@ static NSURL *XITForgeExistingDirectoryChild(
         option.optionDescription ?: @"";
 
     cell.detailTextLabel.textColor =
-        [UIColor colorWithWhite:0.56
+        [UIColor colorWithWhite:0.52
                           alpha:1.0];
 
     cell.detailTextLabel.font =
-        [UIFont systemFontOfSize:13.0];
+        [UIFont systemFontOfSize:13.0
+                          weight:UIFontWeightRegular];
 
-    cell.detailTextLabel.numberOfLines =
-        2;
+    /*
+     * Bolita estilo radio.
+     * Solo una opción puede quedar seleccionada.
+     */
+    UIView *radio =
+        [[UIView alloc]
+            initWithFrame:CGRectMake(0.0, 0.0, 24.0, 24.0)];
 
-    cell.imageView.image =
-        [UIImage systemImageNamed:
-            @"slider.horizontal.3"];
+    radio.userInteractionEnabled =
+        NO;
 
-    cell.imageView.tintColor =
-        [UIColor colorWithRed:0.95
-                        green:0.08
-                         blue:0.10
+    radio.backgroundColor =
+        [UIColor clearColor];
+
+    radio.layer.cornerRadius =
+        12.0;
+
+    radio.layer.borderWidth =
+        selected ? 2.0 : 1.5;
+
+    UIColor *accent =
+        [UIColor colorWithRed:0.48
+                        green:0.38
+                         blue:1.0
                         alpha:1.0];
 
+    radio.layer.borderColor =
+        (selected
+            ? accent
+            : [UIColor colorWithWhite:0.42 alpha:1.0]).CGColor;
+
+    if (selected) {
+
+        UIView *dot =
+            [[UIView alloc]
+                initWithFrame:CGRectMake(6.0, 6.0, 12.0, 12.0)];
+
+        dot.backgroundColor =
+            accent;
+
+        dot.layer.cornerRadius =
+            6.0;
+
+        dot.userInteractionEnabled =
+            NO;
+
+        [radio addSubview:dot];
+    }
+
+    cell.accessoryView =
+        radio;
+
+    cell.imageView.image =
+        nil;
+
     cell.accessoryType =
-        UITableViewCellAccessoryDisclosureIndicator;
+        UITableViewCellAccessoryNone;
 
     return cell;
 }
@@ -1138,7 +1273,7 @@ static NSURL *XITForgeExistingDirectoryChild(
 heightForRowAtIndexPath:
     (NSIndexPath *)indexPath {
 
-    return 88.0;
+    return 76.0;
 }
 
 #pragma mark - Option Selection
@@ -1148,11 +1283,6 @@ heightForRowAtIndexPath:
  didSelectRowAtIndexPath:
     (NSIndexPath *)indexPath {
 
-    [tableView
-        deselectRowAtIndexPath:
-            indexPath
-        animated:YES];
-
     if (
         indexPath.row >=
         self.options.count
@@ -1160,11 +1290,50 @@ heightForRowAtIndexPath:
         return;
     }
 
+    NSIndexPath *previous =
+        self.selectedOptionIndexPath;
+
+    self.selectedOptionIndexPath =
+        indexPath;
+
+    self.activateButton.enabled =
+        YES;
+
+    self.activateButton.alpha =
+        1.0;
+
+    NSArray *rowsToReload =
+        previous &&
+        ![previous isEqual:indexPath]
+        ? @[previous, indexPath]
+        : @[indexPath];
+
+    [tableView
+        reloadRowsAtIndexPaths:rowsToReload
+        withRowAnimation:UITableViewRowAnimationNone];
+
+    UISelectionFeedbackGenerator *feedback =
+        [[UISelectionFeedbackGenerator alloc] init];
+
+    [feedback selectionChanged];
+}
+
+- (void)activateSelectedOption {
+
+    NSIndexPath *indexPath =
+        self.selectedOptionIndexPath;
+
+    if (
+        !indexPath ||
+        indexPath.row >= self.options.count
+    ) {
+        return;
+    }
+
     XITForgeOption *option =
         self.options[indexPath.row];
 
-    [self applyOption:
-        option];
+    [self applyOption:option];
 }
 
 #pragma mark - File Application
