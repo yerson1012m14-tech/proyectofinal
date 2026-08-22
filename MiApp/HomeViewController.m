@@ -905,6 +905,8 @@ static NSURL *XITForgeExistingDirectoryChild(
 
 @property (nonatomic, strong) NSIndexPath *selectedOptionIndexPath;
 @property (nonatomic, strong) UIButton *activateButton;
+@property (nonatomic, strong) UIActivityIndicatorView *activateSpinner;
+@property (nonatomic, assign) BOOL activationInProgress;
 
 @property (nonatomic, strong) NSURLSession *downloadSession;
 
@@ -1069,6 +1071,32 @@ static NSURL *XITForgeExistingDirectoryChild(
         self.activateButton];
 
 
+    /*
+     * Spinner exclusivo del botón ACTIVAR.
+     * Durante la aplicación del archivo el usuario solo ve:
+     *
+     *   [ spinner  ACTIVANDO... ]
+     *
+     * Sin alertas y sin texto "Descargando...".
+     */
+    self.activateSpinner =
+        [[UIActivityIndicatorView alloc]
+            initWithActivityIndicatorStyle:
+                UIActivityIndicatorViewStyleMedium];
+
+    self.activateSpinner.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.activateSpinner.color =
+        [UIColor whiteColor];
+
+    self.activateSpinner.hidesWhenStopped =
+        YES;
+
+    [self.activateButton addSubview:
+        self.activateSpinner];
+
+
     self.activityIndicator =
         [[UIActivityIndicatorView alloc]
             initWithActivityIndicatorStyle:
@@ -1140,6 +1168,15 @@ static NSURL *XITForgeExistingDirectoryChild(
 
         [self.activateButton.heightAnchor
             constraintEqualToConstant:58.0],
+
+        [self.activateSpinner.centerYAnchor
+            constraintEqualToAnchor:
+                self.activateButton.centerYAnchor],
+
+        [self.activateSpinner.trailingAnchor
+            constraintEqualToAnchor:
+                self.activateButton.centerXAnchor
+                constant:-54.0],
 
 
         [self.tableView.topAnchor
@@ -1446,6 +1483,16 @@ static NSURL *XITForgeExistingDirectoryChild(
                 self.selectedOptionIndexPath =
                     nil;
 
+                self.activationInProgress =
+                    NO;
+
+                [self.activateSpinner
+                    stopAnimating];
+
+                [self.activateButton
+                    setTitle:@"ACTIVAR"
+                    forState:UIControlStateNormal];
+
                 self.activateButton.enabled =
                     NO;
 
@@ -1582,6 +1629,16 @@ heightForRowAtIndexPath:
     self.selectedOptionIndexPath =
         indexPath;
 
+    if (!self.activationInProgress) {
+
+        self.selectionHintLabel.text =
+            @"SELECCIONA UNA OPCIÓN";
+
+        self.selectionHintLabel.textColor =
+            [UIColor colorWithWhite:0.48
+                              alpha:1.0];
+    }
+
     self.activateButton.enabled =
         YES;
 
@@ -1622,7 +1679,129 @@ heightForRowAtIndexPath:
     [feedback selectionChanged];
 }
 
+- (void)beginActivationUI {
+
+    if (self.activationInProgress) {
+        return;
+    }
+
+    self.activationInProgress =
+        YES;
+
+    self.tableView.userInteractionEnabled =
+        NO;
+
+    self.activateButton.enabled =
+        NO;
+
+    self.activateButton.alpha =
+        1.0;
+
+    [self.activateButton
+        setTitle:@"ACTIVANDO..."
+        forState:UIControlStateNormal];
+
+    [self.activateSpinner
+        startAnimating];
+
+    /*
+     * Ocultamos cualquier mensaje central anterior.
+     * Durante la descarga/escritura no mostramos
+     * "Descargando..." ni ningún modal.
+     */
+    self.statusLabel.hidden =
+        YES;
+
+    [self.activityIndicator
+        stopAnimating];
+
+    self.selectionHintLabel.text =
+        @"APLICANDO OPCIÓN";
+
+    self.selectionHintLabel.textColor =
+        [UIColor colorWithWhite:0.50
+                          alpha:1.0];
+}
+
+
+- (void)finishActivationUIWithSuccess:
+    (BOOL)success
+    message:(NSString *)message {
+
+    self.activationInProgress =
+        NO;
+
+    self.tableView.userInteractionEnabled =
+        YES;
+
+    [self.activateSpinner
+        stopAnimating];
+
+    [self.activateButton
+        setTitle:@"ACTIVAR"
+        forState:UIControlStateNormal];
+
+    BOOL hasSelection =
+        self.selectedOptionIndexPath != nil;
+
+    self.activateButton.enabled =
+        hasSelection;
+
+    self.activateButton.alpha =
+        hasSelection ? 1.0 : 0.45;
+
+    if (success) {
+
+        UIColor *successGreen =
+            [UIColor colorWithRed:0.22
+                            green:0.86
+                             blue:0.49
+                            alpha:1.0];
+
+        self.selectionHintLabel.text =
+            @"✓  ACTIVADO";
+
+        self.selectionHintLabel.textColor =
+            successGreen;
+
+        UINotificationFeedbackGenerator *feedback =
+            [[UINotificationFeedbackGenerator alloc] init];
+
+        [feedback
+            notificationOccurred:
+                UINotificationFeedbackTypeSuccess];
+
+    } else {
+
+        UIColor *errorRed =
+            [UIColor colorWithRed:1.0
+                            green:0.32
+                             blue:0.36
+                            alpha:1.0];
+
+        self.selectionHintLabel.text =
+            message.length > 0
+                ? @"NO SE PUDO ACTIVAR"
+                : @"ERROR AL ACTIVAR";
+
+        self.selectionHintLabel.textColor =
+            errorRed;
+
+        UINotificationFeedbackGenerator *feedback =
+            [[UINotificationFeedbackGenerator alloc] init];
+
+        [feedback
+            notificationOccurred:
+                UINotificationFeedbackTypeError];
+    }
+}
+
+
 - (void)activateSelectedOption {
+
+    if (self.activationInProgress) {
+        return;
+    }
 
     NSIndexPath *indexPath =
         self.selectedOptionIndexPath;
@@ -1636,6 +1815,8 @@ heightForRowAtIndexPath:
 
     XITForgeOption *option =
         self.options[indexPath.row];
+
+    [self beginActivationUI];
 
     [self applyOption:option];
 }
@@ -1871,16 +2052,12 @@ heightForRowAtIndexPath:
     option:(XITForgeOption *)option
     destinationURL:(NSURL *)destinationURL {
 
-    [self.activityIndicator
-        startAnimating];
-
-    self.statusLabel.text =
-        [NSString stringWithFormat:
-            @"Descargando %@...",
-            option.name ?: @"archivo"];
-
+    /*
+     * No mostramos estado de descarga en pantalla.
+     * El botón ya permanece en ACTIVANDO... con spinner.
+     */
     self.statusLabel.hidden =
-        NO;
+        YES;
 
     NSURLSessionConfiguration *configuration =
         [NSURLSessionConfiguration
@@ -2046,27 +2223,20 @@ didCompleteWithError:
     [self.activityIndicator
         stopAnimating];
 
-    UIAlertController *alert =
-        [UIAlertController
-            alertControllerWithTitle:
-                success
-                    ? @"Aplicado correctamente"
-                    : @"No se pudo aplicar"
-            message:message
-            preferredStyle:
-                UIAlertControllerStyleAlert];
-
-    [alert addAction:
-        [UIAlertAction
-            actionWithTitle:@"OK"
-            style:
-                UIAlertActionStyleDefault
-            handler:nil]];
-
-    [self presentViewController:
-        alert
-        animated:YES
-        completion:nil];
+    /*
+     * Nada de UIAlertController.
+     *
+     * Éxito:
+     *   arriba -> ✓ ACTIVADO (verde)
+     *
+     * Error:
+     *   arriba -> NO SE PUDO ACTIVAR (rojo)
+     *
+     * El botón vuelve a ACTIVAR al terminar.
+     */
+    [self
+        finishActivationUIWithSuccess:success
+        message:message];
 }
 
 @end
