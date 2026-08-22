@@ -583,6 +583,311 @@ static NSURL *XITForgeExistingDirectoryChild(
 @implementation XITForgeOption
 @end
 
+@interface XITForgeOptionCell : UITableViewCell
+
+@property (nonatomic, strong) UIView *cardView;
+@property (nonatomic, strong) UILabel *nameLabel;
+@property (nonatomic, strong) UILabel *descriptionLabel;
+@property (nonatomic, strong) UIView *radioOuter;
+@property (nonatomic, strong) UIView *radioInner;
+
+- (void)configureSelected:(BOOL)selected
+                   accent:(UIColor *)accent;
+
+@end
+
+@implementation XITForgeOptionCell
+
+- (instancetype)initWithStyle:
+    (UITableViewCellStyle)style
+              reuseIdentifier:
+    (NSString *)reuseIdentifier {
+
+    self =
+        [super initWithStyle:style
+             reuseIdentifier:reuseIdentifier];
+
+    if (!self) {
+        return nil;
+    }
+
+    self.backgroundColor =
+        [UIColor clearColor];
+
+    self.selectionStyle =
+        UITableViewCellSelectionStyleNone;
+
+    self.contentView.backgroundColor =
+        [UIColor clearColor];
+
+
+    self.cardView =
+        [[UIView alloc] init];
+
+    self.cardView.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.cardView.backgroundColor =
+        [UIColor colorWithWhite:0.075
+                          alpha:1.0];
+
+    self.cardView.layer.cornerRadius =
+        20.0;
+
+    self.cardView.layer.borderWidth =
+        1.0;
+
+    self.cardView.layer.borderColor =
+        [UIColor colorWithWhite:1.0
+                          alpha:0.07].CGColor;
+
+    self.cardView.layer.shadowColor =
+        [UIColor blackColor].CGColor;
+
+    self.cardView.layer.shadowOpacity =
+        0.20;
+
+    self.cardView.layer.shadowRadius =
+        12.0;
+
+    self.cardView.layer.shadowOffset =
+        CGSizeMake(0.0, 7.0);
+
+    [self.contentView addSubview:
+        self.cardView];
+
+
+    self.nameLabel =
+        [[UILabel alloc] init];
+
+    self.nameLabel.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.nameLabel.textColor =
+        [UIColor colorWithWhite:0.98
+                          alpha:1.0];
+
+    self.nameLabel.font =
+        [UIFont systemFontOfSize:17.0
+                          weight:UIFontWeightSemibold];
+
+    self.nameLabel.numberOfLines =
+        1;
+
+    [self.cardView addSubview:
+        self.nameLabel];
+
+
+    self.descriptionLabel =
+        [[UILabel alloc] init];
+
+    self.descriptionLabel.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.descriptionLabel.textColor =
+        [UIColor colorWithWhite:0.56
+                          alpha:1.0];
+
+    self.descriptionLabel.font =
+        [UIFont systemFontOfSize:13.5
+                          weight:UIFontWeightRegular];
+
+    self.descriptionLabel.numberOfLines =
+        2;
+
+    [self.cardView addSubview:
+        self.descriptionLabel];
+
+
+    self.radioOuter =
+        [[UIView alloc] init];
+
+    self.radioOuter.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.radioOuter.userInteractionEnabled =
+        NO;
+
+    self.radioOuter.backgroundColor =
+        [UIColor colorWithWhite:0.10
+                          alpha:1.0];
+
+    self.radioOuter.layer.cornerRadius =
+        14.0;
+
+    self.radioOuter.layer.borderWidth =
+        1.5;
+
+    [self.cardView addSubview:
+        self.radioOuter];
+
+
+    self.radioInner =
+        [[UIView alloc] init];
+
+    self.radioInner.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.radioInner.userInteractionEnabled =
+        NO;
+
+    self.radioInner.layer.cornerRadius =
+        7.0;
+
+    self.radioInner.alpha =
+        0.0;
+
+    [self.radioOuter addSubview:
+        self.radioInner];
+
+
+    [NSLayoutConstraint activateConstraints:@[
+
+        [self.cardView.topAnchor
+            constraintEqualToAnchor:
+                self.contentView.topAnchor
+                constant:6.0],
+
+        [self.cardView.bottomAnchor
+            constraintEqualToAnchor:
+                self.contentView.bottomAnchor
+                constant:-6.0],
+
+        [self.cardView.leadingAnchor
+            constraintEqualToAnchor:
+                self.contentView.leadingAnchor
+                constant:20.0],
+
+        [self.cardView.trailingAnchor
+            constraintEqualToAnchor:
+                self.contentView.trailingAnchor
+                constant:-20.0],
+
+
+        [self.radioOuter.trailingAnchor
+            constraintEqualToAnchor:
+                self.cardView.trailingAnchor
+                constant:-18.0],
+
+        [self.radioOuter.centerYAnchor
+            constraintEqualToAnchor:
+                self.cardView.centerYAnchor],
+
+        [self.radioOuter.widthAnchor
+            constraintEqualToConstant:28.0],
+
+        [self.radioOuter.heightAnchor
+            constraintEqualToConstant:28.0],
+
+
+        [self.radioInner.centerXAnchor
+            constraintEqualToAnchor:
+                self.radioOuter.centerXAnchor],
+
+        [self.radioInner.centerYAnchor
+            constraintEqualToAnchor:
+                self.radioOuter.centerYAnchor],
+
+        [self.radioInner.widthAnchor
+            constraintEqualToConstant:14.0],
+
+        [self.radioInner.heightAnchor
+            constraintEqualToConstant:14.0],
+
+
+        [self.nameLabel.topAnchor
+            constraintEqualToAnchor:
+                self.cardView.topAnchor
+                constant:17.0],
+
+        [self.nameLabel.leadingAnchor
+            constraintEqualToAnchor:
+                self.cardView.leadingAnchor
+                constant:18.0],
+
+        [self.nameLabel.trailingAnchor
+            constraintLessThanOrEqualToAnchor:
+                self.radioOuter.leadingAnchor
+                constant:-14.0],
+
+
+        [self.descriptionLabel.topAnchor
+            constraintEqualToAnchor:
+                self.nameLabel.bottomAnchor
+                constant:6.0],
+
+        [self.descriptionLabel.leadingAnchor
+            constraintEqualToAnchor:
+                self.nameLabel.leadingAnchor],
+
+        [self.descriptionLabel.trailingAnchor
+            constraintLessThanOrEqualToAnchor:
+                self.radioOuter.leadingAnchor
+                constant:-14.0],
+
+        [self.descriptionLabel.bottomAnchor
+            constraintLessThanOrEqualToAnchor:
+                self.cardView.bottomAnchor
+                constant:-15.0]
+    ]];
+
+    return self;
+}
+
+
+- (void)configureSelected:
+    (BOOL)selected
+                   accent:
+    (UIColor *)accent {
+
+    UIColor *normalCard =
+        [UIColor colorWithWhite:0.075
+                          alpha:1.0];
+
+    UIColor *selectedCard =
+        [UIColor colorWithRed:0.105
+                        green:0.090
+                         blue:0.155
+                        alpha:1.0];
+
+    self.cardView.backgroundColor =
+        selected
+        ? selectedCard
+        : normalCard;
+
+    self.cardView.layer.borderColor =
+        (selected
+            ? [accent colorWithAlphaComponent:0.62]
+            : [UIColor colorWithWhite:1.0
+                                alpha:0.07]).CGColor;
+
+    self.radioOuter.layer.borderColor =
+        (selected
+            ? accent
+            : [UIColor colorWithWhite:0.34
+                                alpha:1.0]).CGColor;
+
+    self.radioOuter.backgroundColor =
+        selected
+        ? [accent colorWithAlphaComponent:0.12]
+        : [UIColor colorWithWhite:0.10
+                            alpha:1.0];
+
+    self.radioInner.backgroundColor =
+        accent;
+
+    self.radioInner.alpha =
+        selected ? 1.0 : 0.0;
+
+    self.cardView.layer.shadowOpacity =
+        selected ? 0.34 : 0.20;
+
+    self.cardView.layer.shadowRadius =
+        selected ? 16.0 : 12.0;
+}
+
+@end
+
 #pragma mark - Options View Controller
 
 @interface XITForgeOptionsViewController : UIViewController
@@ -596,6 +901,7 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) UIActivityIndicatorView *activityIndicator;
 @property (nonatomic, strong) UILabel *statusLabel;
+@property (nonatomic, strong) UILabel *selectionHintLabel;
 
 @property (nonatomic, strong) NSIndexPath *selectedOptionIndexPath;
 @property (nonatomic, strong) UIButton *activateButton;
@@ -629,14 +935,14 @@ static NSURL *XITForgeExistingDirectoryChild(
 - (void)setupUI {
 
     UIColor *background =
-        [UIColor colorWithRed:0.02
-                        green:0.02
-                         blue:0.03
+        [UIColor colorWithRed:0.018
+                        green:0.018
+                         blue:0.025
                         alpha:1.0];
 
     UIColor *accent =
-        [UIColor colorWithRed:0.48
-                        green:0.38
+        [UIColor colorWithRed:0.49
+                        green:0.39
                          blue:1.0
                         alpha:1.0];
 
@@ -645,6 +951,31 @@ static NSURL *XITForgeExistingDirectoryChild(
 
     self.selectedOptionIndexPath =
         nil;
+
+
+    self.selectionHintLabel =
+        [[UILabel alloc] init];
+
+    self.selectionHintLabel.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.selectionHintLabel.text =
+        @"SELECCIONA UNA OPCIÓN";
+
+    self.selectionHintLabel.textColor =
+        [UIColor colorWithWhite:0.48
+                          alpha:1.0];
+
+    self.selectionHintLabel.font =
+        [UIFont systemFontOfSize:11.0
+                          weight:UIFontWeightSemibold];
+
+    self.selectionHintLabel.textAlignment =
+        NSTextAlignmentLeft;
+
+    [self.view addSubview:
+        self.selectionHintLabel];
+
 
     self.tableView =
         [[UITableView alloc]
@@ -664,22 +995,19 @@ static NSURL *XITForgeExistingDirectoryChild(
         self;
 
     self.tableView.separatorStyle =
-        UITableViewCellSeparatorStyleSingleLine;
+        UITableViewCellSeparatorStyleNone;
 
-    self.tableView.separatorColor =
-        [UIColor colorWithWhite:1.0
-                          alpha:0.07];
-
-    self.tableView.separatorInset =
-        UIEdgeInsetsMake(0.0, 62.0, 0.0, 22.0);
+    self.tableView.showsVerticalScrollIndicator =
+        NO;
 
     self.tableView.estimatedRowHeight =
-        76.0;
+        94.0;
 
     self.tableView.contentInset =
-        UIEdgeInsetsMake(10.0, 0.0, 12.0, 0.0);
+        UIEdgeInsetsMake(2.0, 0.0, 12.0, 0.0);
 
-    [self.view addSubview:self.tableView];
+    [self.view addSubview:
+        self.tableView];
 
 
     self.activateButton =
@@ -701,29 +1029,44 @@ static NSURL *XITForgeExistingDirectoryChild(
                           weight:UIFontWeightBold];
 
     self.activateButton.backgroundColor =
-        [accent colorWithAlphaComponent:0.32];
+        [UIColor colorWithWhite:0.105
+                          alpha:1.0];
 
     self.activateButton.layer.cornerRadius =
-        16.0;
+        19.0;
 
     self.activateButton.layer.borderWidth =
         1.0;
 
     self.activateButton.layer.borderColor =
-        [accent colorWithAlphaComponent:0.55].CGColor;
+        [UIColor colorWithWhite:1.0
+                          alpha:0.08].CGColor;
+
+    self.activateButton.layer.shadowColor =
+        [UIColor blackColor].CGColor;
+
+    self.activateButton.layer.shadowOpacity =
+        0.26;
+
+    self.activateButton.layer.shadowRadius =
+        14.0;
+
+    self.activateButton.layer.shadowOffset =
+        CGSizeMake(0.0, 8.0);
 
     self.activateButton.enabled =
         NO;
 
     self.activateButton.alpha =
-        0.45;
+        0.48;
 
     [self.activateButton
         addTarget:self
         action:@selector(activateSelectedOption)
         forControlEvents:UIControlEventTouchUpInside];
 
-    [self.view addSubview:self.activateButton];
+    [self.view addSubview:
+        self.activateButton];
 
 
     self.activityIndicator =
@@ -764,15 +1107,31 @@ static NSURL *XITForgeExistingDirectoryChild(
 
     [NSLayoutConstraint activateConstraints:@[
 
-        [self.activateButton.leadingAnchor
+        [self.selectionHintLabel.topAnchor
+            constraintEqualToAnchor:
+                self.view.safeAreaLayoutGuide.topAnchor
+                constant:14.0],
+
+        [self.selectionHintLabel.leadingAnchor
             constraintEqualToAnchor:
                 self.view.leadingAnchor
                 constant:24.0],
 
-        [self.activateButton.trailingAnchor
+        [self.selectionHintLabel.trailingAnchor
             constraintEqualToAnchor:
                 self.view.trailingAnchor
                 constant:-24.0],
+
+
+        [self.activateButton.leadingAnchor
+            constraintEqualToAnchor:
+                self.view.leadingAnchor
+                constant:22.0],
+
+        [self.activateButton.trailingAnchor
+            constraintEqualToAnchor:
+                self.view.trailingAnchor
+                constant:-22.0],
 
         [self.activateButton.bottomAnchor
             constraintEqualToAnchor:
@@ -780,12 +1139,13 @@ static NSURL *XITForgeExistingDirectoryChild(
                 constant:-16.0],
 
         [self.activateButton.heightAnchor
-            constraintEqualToConstant:54.0],
+            constraintEqualToConstant:58.0],
 
 
         [self.tableView.topAnchor
             constraintEqualToAnchor:
-                self.view.topAnchor],
+                self.selectionHintLabel.bottomAnchor
+                constant:10.0],
 
         [self.tableView.leadingAnchor
             constraintEqualToAnchor:
@@ -1148,9 +1508,10 @@ static NSURL *XITForgeExistingDirectoryChild(
     (NSIndexPath *)indexPath {
 
     static NSString *identifier =
-        @"XITForgeOptionSelectionCell";
+        @"XITForgeProfessionalOptionCell";
 
-    UITableViewCell *cell =
+    XITForgeOptionCell *cell =
+        (XITForgeOptionCell *)
         [tableView
             dequeueReusableCellWithIdentifier:
                 identifier];
@@ -1158,23 +1519,11 @@ static NSURL *XITForgeExistingDirectoryChild(
     if (!cell) {
 
         cell =
-            [[UITableViewCell alloc]
+            [[XITForgeOptionCell alloc]
                 initWithStyle:
-                    UITableViewCellStyleSubtitle
+                    UITableViewCellStyleDefault
                 reuseIdentifier:
                     identifier];
-
-        cell.backgroundColor =
-            [UIColor clearColor];
-
-        cell.selectionStyle =
-            UITableViewCellSelectionStyleNone;
-
-        cell.textLabel.numberOfLines =
-            1;
-
-        cell.detailTextLabel.numberOfLines =
-            2;
     }
 
     XITForgeOption *option =
@@ -1185,95 +1534,32 @@ static NSURL *XITForgeExistingDirectoryChild(
         [self.selectedOptionIndexPath
             isEqual:indexPath];
 
-    cell.textLabel.text =
+    cell.nameLabel.text =
         option.name ?: @"Opción";
 
-    cell.textLabel.textColor =
-        [UIColor colorWithWhite:0.96
-                          alpha:1.0];
-
-    cell.textLabel.font =
-        [UIFont systemFontOfSize:17.0
-                          weight:UIFontWeightSemibold];
-
-    cell.detailTextLabel.text =
+    cell.descriptionLabel.text =
         option.optionDescription ?: @"";
 
-    cell.detailTextLabel.textColor =
-        [UIColor colorWithWhite:0.52
-                          alpha:1.0];
-
-    cell.detailTextLabel.font =
-        [UIFont systemFontOfSize:13.0
-                          weight:UIFontWeightRegular];
-
-    /*
-     * Bolita estilo radio.
-     * Solo una opción puede quedar seleccionada.
-     */
-    UIView *radio =
-        [[UIView alloc]
-            initWithFrame:CGRectMake(0.0, 0.0, 24.0, 24.0)];
-
-    radio.userInteractionEnabled =
-        NO;
-
-    radio.backgroundColor =
-        [UIColor clearColor];
-
-    radio.layer.cornerRadius =
-        12.0;
-
-    radio.layer.borderWidth =
-        selected ? 2.0 : 1.5;
-
     UIColor *accent =
-        [UIColor colorWithRed:0.48
-                        green:0.38
+        [UIColor colorWithRed:0.49
+                        green:0.39
                          blue:1.0
                         alpha:1.0];
 
-    radio.layer.borderColor =
-        (selected
-            ? accent
-            : [UIColor colorWithWhite:0.42 alpha:1.0]).CGColor;
-
-    if (selected) {
-
-        UIView *dot =
-            [[UIView alloc]
-                initWithFrame:CGRectMake(6.0, 6.0, 12.0, 12.0)];
-
-        dot.backgroundColor =
-            accent;
-
-        dot.layer.cornerRadius =
-            6.0;
-
-        dot.userInteractionEnabled =
-            NO;
-
-        [radio addSubview:dot];
-    }
-
-    cell.accessoryView =
-        radio;
-
-    cell.imageView.image =
-        nil;
-
-    cell.accessoryType =
-        UITableViewCellAccessoryNone;
+    [cell
+        configureSelected:selected
+                   accent:accent];
 
     return cell;
 }
+
 
 - (CGFloat)tableView:
     (UITableView *)tableView
 heightForRowAtIndexPath:
     (NSIndexPath *)indexPath {
 
-    return 76.0;
+    return 94.0;
 }
 
 #pragma mark - Option Selection
@@ -1302,6 +1588,24 @@ heightForRowAtIndexPath:
     self.activateButton.alpha =
         1.0;
 
+    UIColor *accent =
+        [UIColor colorWithRed:0.49
+                        green:0.39
+                         blue:1.0
+                        alpha:1.0];
+
+    self.activateButton.backgroundColor =
+        accent;
+
+    self.activateButton.layer.borderColor =
+        [accent colorWithAlphaComponent:0.90].CGColor;
+
+    self.activateButton.layer.shadowColor =
+        accent.CGColor;
+
+    self.activateButton.layer.shadowOpacity =
+        0.25;
+
     NSArray *rowsToReload =
         previous &&
         ![previous isEqual:indexPath]
@@ -1310,7 +1614,7 @@ heightForRowAtIndexPath:
 
     [tableView
         reloadRowsAtIndexPaths:rowsToReload
-        withRowAnimation:UITableViewRowAnimationNone];
+        withRowAnimation:UITableViewRowAnimationFade];
 
     UISelectionFeedbackGenerator *feedback =
         [[UISelectionFeedbackGenerator alloc] init];
