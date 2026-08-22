@@ -1,11 +1,27 @@
 #import "HomeViewController.h"
 #import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
 #import <dlfcn.h>
 #import <fcntl.h>
 #import <unistd.h>
 #import <errno.h>
 #import <sys/stat.h>
 #import <string.h>
+
+
+static UIColor *XITForgeAccentColor(void) {
+    return [UIColor colorWithRed:0.95
+                           green:0.10
+                            blue:0.16
+                           alpha:1.0];
+}
+
+static UIColor *XITForgeAccentDarkColor(void) {
+    return [UIColor colorWithRed:0.16
+                           green:0.035
+                            blue:0.045
+                           alpha:1.0];
+}
 
 
 #pragma mark - XITFORGE Exact File Writer
@@ -846,10 +862,7 @@ static NSURL *XITForgeExistingDirectoryChild(
                           alpha:1.0];
 
     UIColor *selectedCard =
-        [UIColor colorWithRed:0.105
-                        green:0.090
-                         blue:0.155
-                        alpha:1.0];
+        XITForgeAccentDarkColor();
 
     self.cardView.backgroundColor =
         selected
@@ -913,6 +926,9 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, strong) UIActivityIndicatorView *deactivateSpinner;
 @property (nonatomic, assign) BOOL deactivationInProgress;
 
+@property (nonatomic, strong) NSMutableSet<NSString *> *activeOptionKeys;
+@property (nonatomic, strong) AVAudioPlayer *activationAudioPlayer;
+
 @property (nonatomic, strong) NSURLSession *downloadSession;
 
 @end
@@ -927,14 +943,259 @@ static NSURL *XITForgeExistingDirectoryChild(
     self.view.backgroundColor =
         [UIColor blackColor];
 
-    if ([self.game isEqualToString:@"freefire_max"]) {
-        self.title = @"FREE FIRE MAX";
-    } else {
-        self.title = @"FREE FIRE NORMAL";
-    }
+    [self loadPersistedActiveOptions];
+    [self configureNavigationTitle];
 
     [self setupUI];
     [self loadOptions];
+}
+
+#pragma mark - Visual / Activation State
+
+- (NSString *)activeOptionsDefaultsKey {
+    NSString *gameKey = self.game.length > 0 ? self.game : @"unknown";
+    return [NSString stringWithFormat:@"XITFORGE_ACTIVE_OPTIONS_%@", gameKey];
+}
+
+- (NSString *)activationKeyForOption:(XITForgeOption *)option {
+    if (option.optionId != nil) {
+        return [NSString stringWithFormat:@"id:%@", option.optionId.stringValue];
+    }
+
+    NSString *route = option.route ?: @"";
+    NSString *fileName = option.fileName ?: @"";
+    return [NSString stringWithFormat:@"file:%@|%@", route, fileName];
+}
+
+- (void)loadPersistedActiveOptions {
+    NSArray *stored =
+        [[NSUserDefaults standardUserDefaults]
+            arrayForKey:[self activeOptionsDefaultsKey]];
+
+    self.activeOptionKeys =
+        [NSMutableSet setWithArray:stored ?: @[]];
+}
+
+- (void)persistActiveOptions {
+    NSArray *values = self.activeOptionKeys.allObjects ?: @[];
+    [[NSUserDefaults standardUserDefaults]
+        setObject:values
+        forKey:[self activeOptionsDefaultsKey]];
+}
+
+- (BOOL)isOptionActivated:(XITForgeOption *)option {
+    if (!option) {
+        return NO;
+    }
+
+    NSString *key = [self activationKeyForOption:option];
+    return key.length > 0 && [self.activeOptionKeys containsObject:key];
+}
+
+- (void)markOptionActivated:(XITForgeOption *)option {
+    if (!option) {
+        return;
+    }
+
+    NSString *key = [self activationKeyForOption:option];
+    if (key.length == 0) {
+        return;
+    }
+
+    [self.activeOptionKeys addObject:key];
+    [self persistActiveOptions];
+}
+
+- (void)clearActivatedOptions {
+    [self.activeOptionKeys removeAllObjects];
+    [self persistActiveOptions];
+}
+
+- (void)configureNavigationTitle {
+    UILabel *titleLabel = [[UILabel alloc] init];
+    titleLabel.text =
+        [self.game isEqualToString:@"freefire_max"]
+            ? @"FREE FIRE MAX"
+            : @"FREE FIRE NORMAL";
+    titleLabel.textColor = XITForgeAccentColor();
+    titleLabel.font =
+        [UIFont systemFontOfSize:17.0
+                          weight:UIFontWeightBold];
+    titleLabel.textAlignment = NSTextAlignmentCenter;
+    [titleLabel sizeToFit];
+
+    self.navigationItem.titleView = titleLabel;
+    self.title = @"";
+}
+
+- (void)updateActivateButtonForCurrentSelection {
+    if (!self.activateButton) {
+        return;
+    }
+
+    BOOL hasSelection =
+        self.selectedOptionIndexPath != nil &&
+        self.selectedOptionIndexPath.row < self.options.count;
+
+    XITForgeOption *option =
+        hasSelection
+            ? self.options[self.selectedOptionIndexPath.row]
+            : nil;
+
+    BOOL alreadyActive =
+        option != nil && [self isOptionActivated:option];
+
+    UIColor *accent = XITForgeAccentColor();
+
+    if (!hasSelection) {
+        [self.activateButton setTitle:@"ACTIVAR" forState:UIControlStateNormal];
+        self.activateButton.enabled = NO;
+        self.activateButton.alpha = 0.48;
+        self.activateButton.backgroundColor =
+            [UIColor colorWithWhite:0.105 alpha:1.0];
+        self.activateButton.layer.borderColor =
+            [UIColor colorWithWhite:1.0 alpha:0.08].CGColor;
+        self.activateButton.layer.shadowOpacity = 0.0;
+        return;
+    }
+
+    if (alreadyActive) {
+        [self.activateButton setTitle:@"ACTIVADO" forState:UIControlStateNormal];
+        self.activateButton.enabled = NO;
+        self.activateButton.alpha = 0.78;
+        self.activateButton.backgroundColor = XITForgeAccentDarkColor();
+        self.activateButton.layer.borderColor =
+            [accent colorWithAlphaComponent:0.45].CGColor;
+        self.activateButton.layer.shadowColor = accent.CGColor;
+        self.activateButton.layer.shadowOpacity = 0.08;
+        return;
+    }
+
+    [self.activateButton setTitle:@"ACTIVAR" forState:UIControlStateNormal];
+    self.activateButton.enabled = YES;
+    self.activateButton.alpha = 1.0;
+    self.activateButton.backgroundColor = accent;
+    self.activateButton.layer.borderColor =
+        [accent colorWithAlphaComponent:0.90].CGColor;
+    self.activateButton.layer.shadowColor = accent.CGColor;
+    self.activateButton.layer.shadowOpacity = 0.22;
+}
+
+- (void)playActivationAudio {
+    NSURL *soundURL =
+        [[NSBundle mainBundle]
+            URLForResource:@"xitforge_activar"
+            withExtension:@"m4a"];
+
+    if (!soundURL) {
+        return;
+    }
+
+    NSError *audioError = nil;
+    self.activationAudioPlayer =
+        [[AVAudioPlayer alloc]
+            initWithContentsOfURL:soundURL
+            error:&audioError];
+
+    if (!self.activationAudioPlayer || audioError) {
+        return;
+    }
+
+    self.activationAudioPlayer.volume = 1.0;
+    [self.activationAudioPlayer prepareToPlay];
+    [self.activationAudioPlayer play];
+}
+
+- (void)showActivationBannerForOption:(XITForgeOption *)option {
+    UIView *host = self.navigationController.view ?: self.view;
+    if (!host) {
+        return;
+    }
+
+    UIView *banner = [[UIView alloc] init];
+    banner.translatesAutoresizingMaskIntoConstraints = NO;
+    banner.backgroundColor =
+        [UIColor colorWithWhite:0.055 alpha:0.98];
+    banner.layer.cornerRadius = 18.0;
+    banner.layer.borderWidth = 1.0;
+    banner.layer.borderColor =
+        [XITForgeAccentColor() colorWithAlphaComponent:0.72].CGColor;
+    banner.layer.shadowColor = [UIColor blackColor].CGColor;
+    banner.layer.shadowOpacity = 0.35;
+    banner.layer.shadowRadius = 18.0;
+    banner.layer.shadowOffset = CGSizeMake(0.0, 8.0);
+
+    UIView *accentBar = [[UIView alloc] init];
+    accentBar.translatesAutoresizingMaskIntoConstraints = NO;
+    accentBar.backgroundColor = XITForgeAccentColor();
+    accentBar.layer.cornerRadius = 2.0;
+
+    UILabel *title = [[UILabel alloc] init];
+    title.translatesAutoresizingMaskIntoConstraints = NO;
+    title.text = @"OPCIÓN ACTIVADA";
+    title.textColor = [UIColor whiteColor];
+    title.font =
+        [UIFont systemFontOfSize:13.0
+                          weight:UIFontWeightBold];
+
+    UILabel *detail = [[UILabel alloc] init];
+    detail.translatesAutoresizingMaskIntoConstraints = NO;
+    detail.text = option.name.length > 0 ? option.name : @"XITFORGE";
+    detail.textColor =
+        [UIColor colorWithWhite:0.70 alpha:1.0];
+    detail.font =
+        [UIFont systemFontOfSize:12.0
+                          weight:UIFontWeightMedium];
+
+    [banner addSubview:accentBar];
+    [banner addSubview:title];
+    [banner addSubview:detail];
+    [host addSubview:banner];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [banner.leadingAnchor constraintEqualToAnchor:host.leadingAnchor constant:14.0],
+        [banner.trailingAnchor constraintEqualToAnchor:host.trailingAnchor constant:-14.0],
+        [banner.topAnchor constraintEqualToAnchor:host.safeAreaLayoutGuide.topAnchor constant:8.0],
+        [banner.heightAnchor constraintGreaterThanOrEqualToConstant:70.0],
+
+        [accentBar.leadingAnchor constraintEqualToAnchor:banner.leadingAnchor constant:14.0],
+        [accentBar.centerYAnchor constraintEqualToAnchor:banner.centerYAnchor],
+        [accentBar.widthAnchor constraintEqualToConstant:4.0],
+        [accentBar.heightAnchor constraintEqualToConstant:34.0],
+
+        [title.leadingAnchor constraintEqualToAnchor:accentBar.trailingAnchor constant:12.0],
+        [title.trailingAnchor constraintEqualToAnchor:banner.trailingAnchor constant:-16.0],
+        [title.topAnchor constraintEqualToAnchor:banner.topAnchor constant:14.0],
+
+        [detail.leadingAnchor constraintEqualToAnchor:title.leadingAnchor],
+        [detail.trailingAnchor constraintEqualToAnchor:title.trailingAnchor],
+        [detail.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:4.0],
+        [detail.bottomAnchor constraintLessThanOrEqualToAnchor:banner.bottomAnchor constant:-12.0]
+    ]];
+
+    [host layoutIfNeeded];
+    banner.transform = CGAffineTransformMakeTranslation(0.0, -100.0);
+    banner.alpha = 0.0;
+
+    [UIView animateWithDuration:0.30
+                          delay:0.0
+         usingSpringWithDamping:0.82
+          initialSpringVelocity:0.6
+                        options:UIViewAnimationOptionCurveEaseOut
+                     animations:^{
+        banner.transform = CGAffineTransformIdentity;
+        banner.alpha = 1.0;
+    } completion:^(BOOL finished) {
+        [UIView animateWithDuration:0.24
+                              delay:1.65
+                            options:UIViewAnimationOptionCurveEaseIn
+                         animations:^{
+            banner.transform = CGAffineTransformMakeTranslation(0.0, -100.0);
+            banner.alpha = 0.0;
+        } completion:^(BOOL finishedOut) {
+            [banner removeFromSuperview];
+        }];
+    }];
 }
 
 #pragma mark - UI
@@ -947,11 +1208,7 @@ static NSURL *XITForgeExistingDirectoryChild(
                          blue:0.025
                         alpha:1.0];
 
-    UIColor *accent =
-        [UIColor colorWithRed:0.49
-                        green:0.39
-                         blue:1.0
-                        alpha:1.0];
+    UIColor *accent = XITForgeAccentColor();
 
     self.view.backgroundColor =
         background;
@@ -1117,11 +1374,7 @@ static NSURL *XITForgeExistingDirectoryChild(
         forState:UIControlStateNormal];
 
     [self.deactivateButton
-        setTitleColor:
-            [UIColor colorWithRed:1.0
-                            green:0.26
-                             blue:0.30
-                            alpha:1.0]
+        setTitleColor:XITForgeAccentColor()
         forState:UIControlStateNormal];
 
     self.deactivateButton.titleLabel.font =
@@ -1139,10 +1392,7 @@ static NSURL *XITForgeExistingDirectoryChild(
         1.0;
 
     self.deactivateButton.layer.borderColor =
-        [UIColor colorWithRed:1.0
-                        green:0.26
-                         blue:0.30
-                        alpha:0.26].CGColor;
+        [XITForgeAccentColor() colorWithAlphaComponent:0.34].CGColor;
 
     [self.deactivateButton
         addTarget:self
@@ -1162,10 +1412,7 @@ static NSURL *XITForgeExistingDirectoryChild(
         NO;
 
     self.deactivateSpinner.color =
-        [UIColor colorWithRed:1.0
-                        green:0.26
-                         blue:0.30
-                        alpha:1.0];
+        XITForgeAccentColor();
 
     self.deactivateSpinner.hidesWhenStopped =
         YES;
@@ -1745,11 +1992,7 @@ static NSURL *XITForgeExistingDirectoryChild(
     cell.descriptionLabel.text =
         option.optionDescription ?: @"";
 
-    UIColor *accent =
-        [UIColor colorWithRed:0.49
-                        green:0.39
-                         blue:1.0
-                        alpha:1.0];
+    UIColor *accent = XITForgeAccentColor();
 
     [cell
         configureSelected:selected
@@ -1797,29 +2040,7 @@ heightForRowAtIndexPath:
                               alpha:1.0];
     }
 
-    self.activateButton.enabled =
-        YES;
-
-    self.activateButton.alpha =
-        1.0;
-
-    UIColor *accent =
-        [UIColor colorWithRed:0.49
-                        green:0.39
-                         blue:1.0
-                        alpha:1.0];
-
-    self.activateButton.backgroundColor =
-        accent;
-
-    self.activateButton.layer.borderColor =
-        [accent colorWithAlphaComponent:0.90].CGColor;
-
-    self.activateButton.layer.shadowColor =
-        accent.CGColor;
-
-    self.activateButton.layer.shadowOpacity =
-        0.25;
+    [self updateActivateButtonForCurrentSelection];
 
     NSArray *rowsToReload =
         previous &&
@@ -1904,19 +2125,6 @@ heightForRowAtIndexPath:
     [self.activateSpinner
         stopAnimating];
 
-    [self.activateButton
-        setTitle:@"ACTIVAR"
-        forState:UIControlStateNormal];
-
-    BOOL hasSelection =
-        self.selectedOptionIndexPath != nil;
-
-    self.activateButton.enabled =
-        hasSelection;
-
-    self.activateButton.alpha =
-        hasSelection ? 1.0 : 0.45;
-
     if (!self.deactivationInProgress) {
         self.deactivateButton.enabled =
             YES;
@@ -1925,19 +2133,28 @@ heightForRowAtIndexPath:
             1.0;
     }
 
+    XITForgeOption *selectedOption = nil;
+    if (
+        self.selectedOptionIndexPath != nil &&
+        self.selectedOptionIndexPath.row < self.options.count
+    ) {
+        selectedOption =
+            self.options[self.selectedOptionIndexPath.row];
+    }
+
     if (success) {
 
-        UIColor *successGreen =
-            [UIColor colorWithRed:0.22
-                            green:0.86
-                             blue:0.49
-                            alpha:1.0];
+        [self markOptionActivated:selectedOption];
 
         self.selectionHintLabel.text =
-            @"✓  ACTIVADO";
+            @"SELECCIONA UNA OPCIÓN";
 
         self.selectionHintLabel.textColor =
-            successGreen;
+            [UIColor colorWithWhite:0.48
+                              alpha:1.0];
+
+        [self showActivationBannerForOption:selectedOption];
+        [self playActivationAudio];
 
         UINotificationFeedbackGenerator *feedback =
             [[UINotificationFeedbackGenerator alloc] init];
@@ -1948,19 +2165,13 @@ heightForRowAtIndexPath:
 
     } else {
 
-        UIColor *errorRed =
-            [UIColor colorWithRed:1.0
-                            green:0.32
-                             blue:0.36
-                            alpha:1.0];
-
         self.selectionHintLabel.text =
             message.length > 0
                 ? @"NO SE PUDO ACTIVAR"
                 : @"ERROR AL ACTIVAR";
 
         self.selectionHintLabel.textColor =
-            errorRed;
+            XITForgeAccentColor();
 
         UINotificationFeedbackGenerator *feedback =
             [[UINotificationFeedbackGenerator alloc] init];
@@ -1969,6 +2180,8 @@ heightForRowAtIndexPath:
             notificationOccurred:
                 UINotificationFeedbackTypeError];
     }
+
+    [self updateActivateButtonForCurrentSelection];
 }
 
 
@@ -1993,6 +2206,11 @@ heightForRowAtIndexPath:
 
     XITForgeOption *option =
         self.options[indexPath.row];
+
+    if ([self isOptionActivated:option]) {
+        [self updateActivateButtonForCurrentSelection];
+        return;
+    }
 
     [self beginActivationUI];
 
@@ -2073,16 +2291,9 @@ heightForRowAtIndexPath:
     self.deactivateButton.alpha =
         1.0;
 
-    BOOL hasSelection =
-        self.selectedOptionIndexPath != nil;
-
-    self.activateButton.enabled =
-        hasSelection;
-
-    self.activateButton.alpha =
-        hasSelection ? 1.0 : 0.45;
-
     if (noOriginals) {
+
+        [self updateActivateButtonForCurrentSelection];
 
         self.selectionHintLabel.text =
             @"SIN ORIGINALES CONFIGURADOS";
@@ -2096,17 +2307,13 @@ heightForRowAtIndexPath:
 
     if (success) {
 
-        UIColor *successGreen =
-            [UIColor colorWithRed:0.22
-                            green:0.86
-                             blue:0.49
-                            alpha:1.0];
+        [self clearActivatedOptions];
 
         self.selectionHintLabel.text =
             @"✓  DESACTIVADO";
 
         self.selectionHintLabel.textColor =
-            successGreen;
+            [UIColor colorWithWhite:0.92 alpha:1.0];
 
         UINotificationFeedbackGenerator *feedback =
             [[UINotificationFeedbackGenerator alloc] init];
@@ -2117,17 +2324,11 @@ heightForRowAtIndexPath:
 
     } else {
 
-        UIColor *errorRed =
-            [UIColor colorWithRed:1.0
-                            green:0.32
-                             blue:0.36
-                            alpha:1.0];
-
         self.selectionHintLabel.text =
             @"NO SE PUDO DESACTIVAR";
 
         self.selectionHintLabel.textColor =
-            errorRed;
+            XITForgeAccentColor();
 
         UINotificationFeedbackGenerator *feedback =
             [[UINotificationFeedbackGenerator alloc] init];
@@ -2136,6 +2337,8 @@ heightForRowAtIndexPath:
             notificationOccurred:
                 UINotificationFeedbackTypeError];
     }
+
+    [self updateActivateButtonForCurrentSelection];
 }
 
 
@@ -2934,12 +3137,11 @@ didCompleteWithError:
      * Nada de UIAlertController.
      *
      * Éxito:
-     *   arriba -> ✓ ACTIVADO (verde)
+     *   banner superior temporal + audio de confirmación.
+     *   La opción queda marcada para impedir activarla dos veces.
      *
      * Error:
-     *   arriba -> NO SE PUDO ACTIVAR (rojo)
-     *
-     * El botón vuelve a ACTIVAR al terminar.
+     *   se muestra NO SE PUDO ACTIVAR en el color de acento.
      */
     [self
         finishActivationUIWithSuccess:success
@@ -2996,11 +3198,7 @@ didCompleteWithError:
         [UIColor colorWithWhite:1.0
                           alpha:0.075];
 
-    UIColor *accent =
-        [UIColor colorWithRed:0.46
-                        green:0.36
-                         blue:1.0
-                        alpha:1.0];
+    UIColor *accent = XITForgeAccentColor();
 
     /*
      * Un único brillo ambiental detrás de las dos tarjetas.
