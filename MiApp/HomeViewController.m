@@ -2716,6 +2716,41 @@ heightForRowAtIndexPath:
         [self showActivationBannerForOptions:activatedOptions];
         [self playActivationAudio];
 
+        BOOL activatedAimbot = NO;
+
+        for (XITForgeOption *option in activatedOptions) {
+            NSString *category =
+                option.category.lowercaseString ?: @"";
+
+            if ([category isEqualToString:@"aimbot"]) {
+                activatedAimbot = YES;
+                break;
+            }
+        }
+
+        if (activatedAimbot) {
+            UIAlertController *warning =
+                [UIAlertController
+                    alertControllerWithTitle:
+                        @"ADVERTENCIA PARA EL AIMBOT"
+                    message:
+                        @"ANTES DE ENTRAR A LA CUENTA DARLE A DESACTIVAR"
+                    preferredStyle:
+                        UIAlertControllerStyleAlert];
+
+            [warning
+                addAction:
+                    [UIAlertAction
+                        actionWithTitle:@"ENTENDIDO"
+                        style:UIAlertActionStyleDefault
+                        handler:nil]];
+
+            [self
+                presentViewController:warning
+                animated:YES
+                completion:nil];
+        }
+
         UINotificationFeedbackGenerator *feedback =
             [[UINotificationFeedbackGenerator alloc] init];
 
