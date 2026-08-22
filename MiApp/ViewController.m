@@ -2,20 +2,64 @@
 #import <dlfcn.h>
 
 static void asegurarMotor(void) {
-    static BOOL on = NO;
-    if (on) return;
-    on = YES;
-    void (*tweakInit)(void) = dlsym(RTLD_DEFAULT, "TweakInit");
-    int (*start)(void) = dlsym(RTLD_DEFAULT, "MCMFilzaStart");
-    void (*setUnres)(int) = dlsym(RTLD_DEFAULT, "MCMFilzaSetUnrestrictedFilesystem");
-    if (tweakInit) tweakInit();
-    if (start) start();
-    if (setUnres) setUnres(1);
+    static dispatch_once_t onceToken;
+
+    dispatch_once(&onceToken, ^{
+        /*
+         * TweakInit es constructor del dylib y ya fue ejecutado por el loader.
+         * No se llama manualmente para evitar reinstalar hooks.
+         */
+        void (*start)(void) =
+            (void (*)(void))dlsym(
+                RTLD_DEFAULT,
+                "MCMFilzaStart"
+            );
+
+        if (start) {
+            start();
+        }
+    });
 }
 
 static NSString *containerPath(NSString *bid) {
-    NSString *(*dataPath)(NSString *) = dlsym(RTLD_DEFAULT, "MCMFilzaDataContainerPath");
-    return dataPath ? dataPath(bid) : nil;
+    if (bid.length == 0) {
+        return nil;
+    }
+
+    asegurarMotor();
+
+    NSString *(*dataPath)(NSString *, NSString **) =
+        (NSString *(*)(NSString *, NSString **))dlsym(
+            RTLD_DEFAULT,
+            "MCMFilzaDataContainerPath"
+        );
+
+    if (!dataPath) {
+        NSLog(@"XITFORGE Explorer: MCMFilzaDataContainerPath no disponible");
+        return nil;
+    }
+
+    NSString *detail = nil;
+    NSString *path = dataPath(bid, &detail);
+
+    if (![path isKindOfClass:[NSString class]] || path.length == 0) {
+        NSLog(
+            @"XITFORGE Explorer: contenedor no resuelto %@ detail=%@",
+            bid,
+            detail ?: @"sin detalle"
+        );
+        return nil;
+    }
+
+    NSString *standard = [path stringByStandardizingPath];
+
+    BOOL isDirectory = NO;
+    BOOL exists =
+        [[NSFileManager defaultManager]
+            fileExistsAtPath:standard
+                 isDirectory:&isDirectory];
+
+    return (exists && isDirectory) ? standard : nil;
 }
 
 static NSString *fmtSize(unsigned long long b) {
@@ -99,52 +143,8 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     self.tv.delegate = self;
     self.tv.contentInset = UIEdgeInsetsMake(0, 0, 60, 0);
     [self.view addSubview:self.tv];
-    
-    UIToolbar *toolbar = [[UIToolbar alloc] init];
-    toolbar.translatesAutoresizingMaskIntoConstraints = NO;
-    toolbar.barTintColor = [UIColor blackColor];
-    toolbar.tintColor = acento();
-    [self.view addSubview:toolbar];
-    
-    UIBarButtonItem *flex = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    UIBarButtonItem *newFolderBtn = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"folder.badge.plus"] style:UIBarButtonItemStylePlain target:self action:@selector(crearCarpeta)];
-    
-    toolbar.items = @[flex, newFolderBtn, flex];
-    
-    [NSLayoutConstraint activateConstraints:@[
-        [toolbar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-        [toolbar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [toolbar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],
-        [toolbar.heightAnchor constraintEqualToConstant:50],
-    ]];
-    
-    [self recargar];
+[self recargar];
 }
-
-- (void)crearCarpeta {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Nueva carpeta" message:@"Escribe el nombre" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"nombre";
-        tf.textColor = textoBlanco();
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Crear" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        NSString *name = alert.textFields.firstObject.text;
-        if (name.length > 0) {
-            NSString *newPath = [self.ruta stringByAppendingPathComponent:name];
-            NSError *err = nil;
-            if ([[NSFileManager defaultManager] createDirectoryAtPath:newPath withIntermediateDirectories:NO attributes:nil error:&err]) {
-                [self recargar];
-            } else {
-                UIAlertController *errAlert = [UIAlertController alertControllerWithTitle:@"Error" message:err.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
-                [errAlert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                [self presentViewController:errAlert animated:YES completion:nil];
-            }
-        }
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
-}
-
 - (void)recargar {
     NSMutableArray *dirs = [NSMutableArray new], *files = [NSMutableArray new];
     NSArray *all = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:self.ruta error:nil];
@@ -220,24 +220,13 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     }
 }
 
-- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
-    NSString *n = self.items[indexPath.row];
-    return ![n isEqualToString:@".."];
-}
-
-- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (editingStyle == UITableViewCellEditingStyleDelete) {
-        NSString *n = self.items[indexPath.row];
-        NSString *fullPath = [self.ruta stringByAppendingPathComponent:n];
-        NSError *err = nil;
-        if ([[NSFileManager defaultManager] removeItemAtPath:fullPath error:&err]) {
-            [self recargar];
-        } else {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error" message:err.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-            [self presentViewController:alert animated:YES completion:nil];
-        }
-    }
+- (BOOL)tableView:(UITableView *)tableView
+canEditRowAtIndexPath:(NSIndexPath *)indexPath {
+    /*
+     * Explorador de solo lectura:
+     * no hay swipe-to-delete ni borrado de archivos/carpetas.
+     */
+    return NO;
 }
 
 @end
@@ -379,7 +368,7 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
     c.textLabel.text = self.apps[ip.row];
     c.textLabel.textColor = acento();
     c.textLabel.font = [UIFont fontWithName:@"Menlo" size:13];
-    c.detailTextLabel.text = @"toca para explorar";
+    c.detailTextLabel.text = @"solo lectura";
     c.detailTextLabel.textColor = textoGris();
     c.detailTextLabel.font = [UIFont fontWithName:@"Menlo" size:10];
     ponerIcono(c, @"app.fill", acento());
@@ -400,9 +389,6 @@ static UIColor *textoGris(void) { return [UIColor colorWithWhite:0.50 alpha:1.0]
         if (self.navigationController && self.navigationController.viewControllers.count > 1) {
             [self.navigationController popToRootViewControllerAnimated:NO];
         }
-        
-        asegurarMotor();
-        
         NSString *p = nil;
         @try { p = containerPath(bid); } @catch (NSException *e) { p = nil; }
         
