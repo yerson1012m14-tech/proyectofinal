@@ -1382,8 +1382,15 @@ numberOfRowsInSection:
         cell.textLabel.text =
             [Translations tr:@"app_version"];
 
+        NSString *appVersion =
+            [[NSBundle mainBundle]
+                objectForInfoDictionaryKey:
+                    @"CFBundleShortVersionString"];
+
         cell.detailTextLabel.text =
-            @"1.0.0";
+            appVersion.length > 0
+                ? appVersion
+                : @"-";
 
         return cell;
     }
