@@ -9,6 +9,8 @@ targets:
     platform: iOS
     sources:
       - path: MiApp
+    dependencies:
+      - sdk: AVFoundation.framework
     settings:
       base:
         INFOPLIST_FILE: MiApp/Info.plist
