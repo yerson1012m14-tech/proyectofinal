@@ -589,6 +589,7 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, copy) NSString *optionDescription;
 @property (nonatomic, copy) NSString *game;
+@property (nonatomic, copy) NSString *category;
 @property (nonatomic, copy) NSString *bundleId;
 @property (nonatomic, copy) NSString *route;
 @property (nonatomic, copy) NSString *fileName;
@@ -917,6 +918,11 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, strong) UILabel *statusLabel;
 @property (nonatomic, strong) UILabel *selectionHintLabel;
 
+@property (nonatomic, strong) UIView *categoryTabsView;
+@property (nonatomic, strong) UIButton *hologramTabButton;
+@property (nonatomic, strong) UIButton *aimbotTabButton;
+@property (nonatomic, copy) NSString *selectedCategory;
+
 @property (nonatomic, strong) NSIndexPath *selectedOptionIndexPath;
 @property (nonatomic, strong) UIButton *activateButton;
 @property (nonatomic, strong) UIActivityIndicatorView *activateSpinner;
@@ -1028,19 +1034,133 @@ static NSURL *XITForgeExistingDirectoryChild(
     self.title = @"";
 }
 
+- (NSArray<XITForgeOption *> *)optionsForSection:(NSInteger)section {
+    (void)section;
+
+    NSString *wantedCategory =
+        self.selectedCategory.length > 0
+            ? self.selectedCategory.lowercaseString
+            : @"holograma";
+
+    NSMutableArray<XITForgeOption *> *items =
+        [NSMutableArray array];
+
+    for (XITForgeOption *option in self.options) {
+        NSString *category =
+            option.category.lowercaseString ?: @"holograma";
+
+        if ([category isEqualToString:wantedCategory]) {
+            [items addObject:option];
+        }
+    }
+
+    return [items copy];
+}
+
+- (XITForgeOption *)optionAtIndexPath:(NSIndexPath *)indexPath {
+    if (!indexPath || indexPath.section != 0) {
+        return nil;
+    }
+
+    NSArray<XITForgeOption *> *items =
+        [self optionsForSection:0];
+
+    if (indexPath.row < 0 || indexPath.row >= items.count) {
+        return nil;
+    }
+
+    return items[indexPath.row];
+}
+
+- (void)updateCategoryTabAppearance {
+    BOOL hologramSelected =
+        ![self.selectedCategory isEqualToString:@"aimbot"];
+
+    UIColor *accent = XITForgeAccentColor();
+    UIColor *inactive =
+        [UIColor colorWithWhite:0.085 alpha:1.0];
+
+    self.hologramTabButton.backgroundColor =
+        hologramSelected ? accent : inactive;
+
+    self.aimbotTabButton.backgroundColor =
+        hologramSelected ? inactive : accent;
+
+    self.hologramTabButton.layer.borderColor =
+        (hologramSelected
+            ? [accent colorWithAlphaComponent:0.95]
+            : [UIColor colorWithWhite:1.0 alpha:0.08]).CGColor;
+
+    self.aimbotTabButton.layer.borderColor =
+        (!hologramSelected
+            ? [accent colorWithAlphaComponent:0.95]
+            : [UIColor colorWithWhite:1.0 alpha:0.08]).CGColor;
+
+    self.hologramTabButton.alpha =
+        hologramSelected ? 1.0 : 0.72;
+
+    self.aimbotTabButton.alpha =
+        hologramSelected ? 0.72 : 1.0;
+}
+
+- (void)switchToCategory:(NSString *)category {
+    NSString *normalized =
+        [category.lowercaseString isEqualToString:@"aimbot"]
+            ? @"aimbot"
+            : @"holograma";
+
+    if ([self.selectedCategory isEqualToString:normalized]) {
+        return;
+    }
+
+    self.selectedCategory = normalized;
+    self.selectedOptionIndexPath = nil;
+
+    self.selectionHintLabel.text =
+        @"SELECCIONA UNA OPCIÓN";
+
+    self.selectionHintLabel.textColor =
+        [UIColor colorWithWhite:0.48 alpha:1.0];
+
+    [self updateCategoryTabAppearance];
+    [self updateActivateButtonForCurrentSelection];
+    [self.tableView reloadData];
+
+    if (!self.activityIndicator.isAnimating) {
+        BOOL hasItems =
+            [self optionsForSection:0].count > 0;
+
+        self.statusLabel.text =
+            hasItems
+                ? @""
+                : @"No hay opciones en esta categoría.";
+
+        self.statusLabel.hidden = hasItems;
+    }
+
+    UISelectionFeedbackGenerator *feedback =
+        [[UISelectionFeedbackGenerator alloc] init];
+    [feedback selectionChanged];
+}
+
+- (void)hologramTabTapped {
+    [self switchToCategory:@"holograma"];
+}
+
+- (void)aimbotTabTapped {
+    [self switchToCategory:@"aimbot"];
+}
+
 - (void)updateActivateButtonForCurrentSelection {
     if (!self.activateButton) {
         return;
     }
 
-    BOOL hasSelection =
-        self.selectedOptionIndexPath != nil &&
-        self.selectedOptionIndexPath.row < self.options.count;
-
     XITForgeOption *option =
-        hasSelection
-            ? self.options[self.selectedOptionIndexPath.row]
-            : nil;
+        [self optionAtIndexPath:self.selectedOptionIndexPath];
+
+    BOOL hasSelection =
+        option != nil;
 
     BOOL alreadyActive =
         option != nil && [self isOptionActivated:option];
@@ -1215,6 +1335,96 @@ static NSURL *XITForgeExistingDirectoryChild(
 
     self.selectedOptionIndexPath =
         nil;
+
+    self.selectedCategory =
+        @"holograma";
+
+
+    self.categoryTabsView =
+        [[UIView alloc] init];
+
+    self.categoryTabsView.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.categoryTabsView.backgroundColor =
+        [UIColor colorWithWhite:0.055 alpha:1.0];
+
+    self.categoryTabsView.layer.cornerRadius =
+        18.0;
+
+    self.categoryTabsView.layer.borderWidth =
+        1.0;
+
+    self.categoryTabsView.layer.borderColor =
+        [UIColor colorWithWhite:1.0 alpha:0.07].CGColor;
+
+    [self.view addSubview:self.categoryTabsView];
+
+
+    self.hologramTabButton =
+        [UIButton buttonWithType:UIButtonTypeSystem];
+
+    self.hologramTabButton.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    [self.hologramTabButton
+        setTitle:@"HOLOGRAMAS"
+        forState:UIControlStateNormal];
+
+    [self.hologramTabButton
+        setTitleColor:[UIColor whiteColor]
+        forState:UIControlStateNormal];
+
+    self.hologramTabButton.titleLabel.font =
+        [UIFont systemFontOfSize:13.0
+                          weight:UIFontWeightBold];
+
+    self.hologramTabButton.layer.cornerRadius =
+        15.0;
+
+    self.hologramTabButton.layer.borderWidth =
+        1.0;
+
+    [self.hologramTabButton
+        addTarget:self
+        action:@selector(hologramTabTapped)
+        forControlEvents:UIControlEventTouchUpInside];
+
+    [self.categoryTabsView addSubview:self.hologramTabButton];
+
+
+    self.aimbotTabButton =
+        [UIButton buttonWithType:UIButtonTypeSystem];
+
+    self.aimbotTabButton.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    [self.aimbotTabButton
+        setTitle:@"AIMBOTS"
+        forState:UIControlStateNormal];
+
+    [self.aimbotTabButton
+        setTitleColor:[UIColor whiteColor]
+        forState:UIControlStateNormal];
+
+    self.aimbotTabButton.titleLabel.font =
+        [UIFont systemFontOfSize:13.0
+                          weight:UIFontWeightBold];
+
+    self.aimbotTabButton.layer.cornerRadius =
+        15.0;
+
+    self.aimbotTabButton.layer.borderWidth =
+        1.0;
+
+    [self.aimbotTabButton
+        addTarget:self
+        action:@selector(aimbotTabTapped)
+        forControlEvents:UIControlEventTouchUpInside];
+
+    [self.categoryTabsView addSubview:self.aimbotTabButton];
+
+    [self updateCategoryTabAppearance];
 
 
     self.selectionHintLabel =
@@ -1459,9 +1669,67 @@ static NSURL *XITForgeExistingDirectoryChild(
 
     [NSLayoutConstraint activateConstraints:@[
 
-        [self.selectionHintLabel.topAnchor
+        [self.categoryTabsView.topAnchor
             constraintEqualToAnchor:
                 self.view.safeAreaLayoutGuide.topAnchor
+                constant:12.0],
+
+        [self.categoryTabsView.leadingAnchor
+            constraintEqualToAnchor:
+                self.view.leadingAnchor
+                constant:20.0],
+
+        [self.categoryTabsView.trailingAnchor
+            constraintEqualToAnchor:
+                self.view.trailingAnchor
+                constant:-20.0],
+
+        [self.categoryTabsView.heightAnchor
+            constraintEqualToConstant:52.0],
+
+        [self.hologramTabButton.leadingAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.leadingAnchor
+                constant:4.0],
+
+        [self.hologramTabButton.topAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.topAnchor
+                constant:4.0],
+
+        [self.hologramTabButton.bottomAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.bottomAnchor
+                constant:-4.0],
+
+        [self.aimbotTabButton.trailingAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.trailingAnchor
+                constant:-4.0],
+
+        [self.aimbotTabButton.topAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.topAnchor
+                constant:4.0],
+
+        [self.aimbotTabButton.bottomAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.bottomAnchor
+                constant:-4.0],
+
+        [self.aimbotTabButton.leadingAnchor
+            constraintEqualToAnchor:
+                self.hologramTabButton.trailingAnchor
+                constant:4.0],
+
+        [self.hologramTabButton.widthAnchor
+            constraintEqualToAnchor:
+                self.aimbotTabButton.widthAnchor],
+
+
+        [self.selectionHintLabel.topAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.bottomAnchor
                 constant:14.0],
 
         [self.selectionHintLabel.leadingAnchor
@@ -1839,6 +2107,22 @@ static NSURL *XITForgeExistingDirectoryChild(
                     }
 
                     if (
+                        [raw[@"category"] isKindOfClass:
+                            [NSString class]]
+                    ) {
+                        option.category =
+                            [raw[@"category"] lowercaseString];
+                    } else {
+                        NSString *lowerName =
+                            option.name.lowercaseString ?: @"";
+
+                        option.category =
+                            [lowerName containsString:@"aimbot"]
+                                ? @"aimbot"
+                                : @"holograma";
+                    }
+
+                    if (
                         [raw[@"bundleId"] isKindOfClass:
                             [NSString class]]
                     ) {
@@ -1946,6 +2230,14 @@ static NSURL *XITForgeExistingDirectoryChild(
                     self.statusLabel.hidden =
                         NO;
 
+                } else if ([self optionsForSection:0].count == 0) {
+
+                    self.statusLabel.text =
+                        @"No hay opciones en esta categoría.";
+
+                    self.statusLabel.hidden =
+                        NO;
+
                 } else {
 
                     self.statusLabel.hidden =
@@ -1977,12 +2269,18 @@ static NSURL *XITForgeExistingDirectoryChild(
 
 #pragma mark - TableView
 
+- (NSInteger)numberOfSectionsInTableView:
+    (UITableView *)tableView {
+
+    return 1;
+}
+
 - (NSInteger)tableView:
     (UITableView *)tableView
  numberOfRowsInSection:
     (NSInteger)section {
 
-    return self.options.count;
+    return [self optionsForSection:0].count;
 }
 
 - (UITableViewCell *)tableView:
@@ -2010,7 +2308,11 @@ static NSURL *XITForgeExistingDirectoryChild(
     }
 
     XITForgeOption *option =
-        self.options[indexPath.row];
+        [self optionAtIndexPath:indexPath];
+
+    if (!option) {
+        return cell;
+    }
 
     BOOL selected =
         self.selectedOptionIndexPath &&
@@ -2048,10 +2350,7 @@ heightForRowAtIndexPath:
  didSelectRowAtIndexPath:
     (NSIndexPath *)indexPath {
 
-    if (
-        indexPath.row >=
-        self.options.count
-    ) {
+    if (![self optionAtIndexPath:indexPath]) {
         return;
     }
 
@@ -2164,14 +2463,8 @@ heightForRowAtIndexPath:
             1.0;
     }
 
-    XITForgeOption *selectedOption = nil;
-    if (
-        self.selectedOptionIndexPath != nil &&
-        self.selectedOptionIndexPath.row < self.options.count
-    ) {
-        selectedOption =
-            self.options[self.selectedOptionIndexPath.row];
-    }
+    XITForgeOption *selectedOption =
+        [self optionAtIndexPath:self.selectedOptionIndexPath];
 
     if (success) {
 
@@ -2228,15 +2521,12 @@ heightForRowAtIndexPath:
     NSIndexPath *indexPath =
         self.selectedOptionIndexPath;
 
-    if (
-        !indexPath ||
-        indexPath.row >= self.options.count
-    ) {
+    XITForgeOption *option =
+        [self optionAtIndexPath:indexPath];
+
+    if (!option) {
         return;
     }
-
-    XITForgeOption *option =
-        self.options[indexPath.row];
 
     if ([self isOptionActivated:option]) {
         [self updateActivateButtonForCurrentSelection];
