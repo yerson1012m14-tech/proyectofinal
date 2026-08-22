@@ -174,8 +174,19 @@
         [[UIWindow alloc]
             initWithFrame:[UIScreen mainScreen].bounds];
 
+    /*
+     * Mientras se verifica la versión, mostramos únicamente
+     * un fondo negro. Así NO aparece por un instante ni el Home,
+     * ni el login, ni la pantalla de "Verificando versión".
+     */
+    UIViewController *versionGatePlaceholder =
+        [[UIViewController alloc] init];
+
+    versionGatePlaceholder.view.backgroundColor =
+        [UIColor blackColor];
+
     self.window.rootViewController =
-        self.mainTabBar;
+        versionGatePlaceholder;
 
     [self.window makeKeyAndVisible];
 
@@ -223,18 +234,10 @@
     }
 
     /*
-     * En el primer arranque bloqueamos la interfaz de inmediato
-     * mientras llega la respuesta del servidor.
+     * No mostramos ninguna tarjeta durante la comprobación normal.
+     * El usuario ve únicamente el fondo negro durante esos instantes.
+     * La pantalla de bloqueo solo aparece si realmente hace falta.
      */
-    if (!self.initialVersionGateCompleted) {
-        [self
-            mostrarBloqueoDeVersionConTitulo:@"Verificando versión"
-            mensaje:@"Comprobando si esta versión de XITFORGE puede continuar..."
-            versionActual:[AppVersionChecker currentVersion]
-            versionRequerida:@""
-            downloadURL:@""
-            mostrarDescarga:NO];
-    }
 
     self.versionCheckInProgress = YES;
 
@@ -308,18 +311,30 @@
 
         /*
          * Versión permitida.
+         *
+         * En el primer arranque cambiamos el fondo negro por la
+         * interfaz principal SOLO después de recibir la aprobación
+         * del servidor. Esto elimina el parpadeo visual.
          */
+        BOOL firstSuccessfulVersionCheck =
+            !strongSelf.initialVersionGateCompleted;
+
+        if (firstSuccessfulVersionCheck) {
+
+            strongSelf.initialVersionGateCompleted = YES;
+
+            strongSelf.window.rootViewController =
+                strongSelf.mainTabBar;
+        }
+
         [strongSelf cerrarBloqueoDeVersion];
 
         /*
          * El flujo de licencia solo se inicia una vez.
-         * Las comprobaciones posteriores al volver a primer plano
+         * Las comprobaciones posteriores al volver al primer plano
          * únicamente sirven para bloquear si la versión cambió.
          */
-        if (!strongSelf.initialVersionGateCompleted) {
-
-            strongSelf.initialVersionGateCompleted = YES;
-
+        if (firstSuccessfulVersionCheck) {
             [strongSelf mostrarPantallaLicencia];
         }
     }];
