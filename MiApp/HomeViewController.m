@@ -7,9 +7,18 @@
 #import <sys/stat.h>
 
 
-#pragma mark - XITFORGE Safe Exact-File Writer
+#pragma mark - XITFORGE Exact File Writer
 
-static BOOL XITForgeAtomicReplaceExactFile(
+/*
+ * Escribe SOLAMENTE el archivo exacto indicado por destinationURL.
+ *
+ * - No borra carpetas.
+ * - No enumera ni elimina archivos hermanos.
+ * - Si el archivo no existe, lo crea.
+ * - Si existe un archivo normal con el mismo nombre, lo sobrescribe.
+ * - Si el destino es una carpeta o un symlink, cancela.
+ */
+static BOOL XITForgeWriteExactFile(
     NSURL *sourceURL,
     NSURL *destinationURL,
     NSError **errorOut
@@ -20,68 +29,107 @@ static BOOL XITForgeAtomicReplaceExactFile(
     if (sourcePath.length == 0 || destinationPath.length == 0) {
         if (errorOut) {
             *errorOut = [NSError errorWithDomain:@"XITFORGE"
-                                             code:1001
+                                             code:2001
                                          userInfo:@{
-                NSLocalizedDescriptionKey: @"Ruta de origen o destino vacía."
+                NSLocalizedDescriptionKey:
+                    @"Ruta de origen o destino vacía."
             }];
         }
         return NO;
     }
 
-    const char *dst = destinationPath.fileSystemRepresentation;
+    const char *src =
+        sourcePath.fileSystemRepresentation;
+
+    const char *dst =
+        destinationPath.fileSystemRepresentation;
 
     struct stat dstInfo;
+
     if (lstat(dst, &dstInfo) == 0) {
-        if (S_ISDIR(dstInfo.st_mode) || S_ISLNK(dstInfo.st_mode)) {
+
+        if (S_ISDIR(dstInfo.st_mode)) {
             if (errorOut) {
                 *errorOut = [NSError errorWithDomain:@"XITFORGE"
-                                                 code:1002
+                                                 code:2002
                                              userInfo:@{
                     NSLocalizedDescriptionKey:
-                        @"El destino existente es una carpeta o enlace simbólico."
+                        @"El destino es una carpeta; no se modificó."
                 }];
             }
             return NO;
         }
+
+        if (S_ISLNK(dstInfo.st_mode)) {
+            if (errorOut) {
+                *errorOut = [NSError errorWithDomain:@"XITFORGE"
+                                                 code:2003
+                                             userInfo:@{
+                    NSLocalizedDescriptionKey:
+                        @"El destino es un enlace simbólico; no se modificó."
+                }];
+            }
+            return NO;
+        }
+
+        if (!S_ISREG(dstInfo.st_mode)) {
+            if (errorOut) {
+                *errorOut = [NSError errorWithDomain:@"XITFORGE"
+                                                 code:2004
+                                             userInfo:@{
+                    NSLocalizedDescriptionKey:
+                        @"El destino existente no es un archivo normal."
+                }];
+            }
+            return NO;
+        }
+
     } else if (errno != ENOENT) {
+
         int e = errno;
+
         if (errorOut) {
             *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
                                              code:e
                                          userInfo:nil];
         }
+
         return NO;
     }
 
-    NSString *parent =
-        [destinationPath stringByDeletingLastPathComponent];
+    int inFD =
+        open(src, O_RDONLY | O_CLOEXEC);
 
-    NSString *tempName =
-        [NSString stringWithFormat:@".xitforge-%@.tmp",
-                                   [NSUUID UUID].UUIDString];
-
-    NSString *tempPath =
-        [parent stringByAppendingPathComponent:tempName];
-
-    const char *src = sourcePath.fileSystemRepresentation;
-    const char *tmp = tempPath.fileSystemRepresentation;
-
-    int inFD = open(src, O_RDONLY | O_CLOEXEC);
     if (inFD < 0) {
+
         int e = errno;
+
         if (errorOut) {
             *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
                                              code:e
                                          userInfo:nil];
         }
+
         return NO;
     }
+
+    int flags =
+        O_WRONLY |
+        O_CREAT |
+        O_TRUNC |
+        O_CLOEXEC;
+
+#ifdef O_NOFOLLOW
+    flags |= O_NOFOLLOW;
+#endif
 
     int outFD =
-        open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+        open(dst, flags, 0644);
 
     if (outFD < 0) {
+
         int e = errno;
+
         close(inFD);
 
         if (errorOut) {
@@ -89,42 +137,62 @@ static BOOL XITForgeAtomicReplaceExactFile(
                                              code:e
                                          userInfo:nil];
         }
+
         return NO;
     }
 
     BOOL ok = YES;
     int savedErrno = 0;
-    unsigned char buffer[1024 * 256];
+    unsigned char buffer[256 * 1024];
 
     for (;;) {
-        ssize_t r = read(inFD, buffer, sizeof(buffer));
 
-        if (r == 0) break;
+        ssize_t bytesRead =
+            read(inFD, buffer, sizeof(buffer));
 
-        if (r < 0) {
-            if (errno == EINTR) continue;
+        if (bytesRead == 0) {
+            break;
+        }
+
+        if (bytesRead < 0) {
+
+            if (errno == EINTR) {
+                continue;
+            }
+
             ok = NO;
             savedErrno = errno;
             break;
         }
 
-        ssize_t offset = 0;
+        ssize_t writtenTotal = 0;
 
-        while (offset < r) {
-            ssize_t w =
-                write(outFD, buffer + offset, (size_t)(r - offset));
+        while (writtenTotal < bytesRead) {
 
-            if (w < 0) {
-                if (errno == EINTR) continue;
+            ssize_t bytesWritten =
+                write(
+                    outFD,
+                    buffer + writtenTotal,
+                    (size_t)(bytesRead - writtenTotal)
+                );
+
+            if (bytesWritten < 0) {
+
+                if (errno == EINTR) {
+                    continue;
+                }
+
                 ok = NO;
                 savedErrno = errno;
                 break;
             }
 
-            offset += w;
+            writtenTotal += bytesWritten;
         }
 
-        if (!ok) break;
+        if (!ok) {
+            break;
+        }
     }
 
     if (ok && fsync(outFD) != 0) {
@@ -136,25 +204,13 @@ static BOOL XITForgeAtomicReplaceExactFile(
     close(inFD);
 
     if (!ok) {
-        unlink(tmp);
 
         if (errorOut) {
             *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
                                              code:savedErrno
                                          userInfo:nil];
         }
-        return NO;
-    }
 
-    if (rename(tmp, dst) != 0) {
-        int e = errno;
-        unlink(tmp);
-
-        if (errorOut) {
-            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
-                                             code:e
-                                         userInfo:nil];
-        }
         return NO;
     }
 
@@ -1148,32 +1204,18 @@ downloadTask:
         [NSURL fileURLWithPath:
             destinationPath];
 
-    NSFileManager *fm =
-        [NSFileManager defaultManager];
-
-    NSString *parentPath =
-        [destinationURL.path stringByDeletingLastPathComponent];
-
-    NSError *beforeListError = nil;
-
-    NSArray<NSString *> *beforeItems =
-        [fm contentsOfDirectoryAtPath:parentPath
-                               error:&beforeListError];
-
-    if (beforeListError) {
-        NSLog(
-            @"XITFORGE warning: no se pudo listar carpeta antes: %@",
-            beforeListError
-        );
-    }
-
-    NSSet<NSString *> *beforeSet =
-        beforeItems ? [NSSet setWithArray:beforeItems] : [NSSet set];
+    /*
+     * IMPORTANTE:
+     * Aquí NO se borra ninguna carpeta ni ningún archivo hermano.
+     * Solo se crea/sobrescribe destinationURL, que ya incluye:
+     *
+     *   contenedor + option.route + option.fileName
+     */
 
     NSError *writeError = nil;
 
     BOOL written =
-        XITForgeAtomicReplaceExactFile(
+        XITForgeWriteExactFile(
             location,
             destinationURL,
             &writeError
@@ -1182,50 +1224,13 @@ downloadTask:
     if (!written) {
 
         NSLog(
-            @"XITFORGE exact-file write error: %@",
-            writeError
+            @"XITFORGE exact file write error: %@ | destination=%@",
+            writeError,
+            destinationURL.path
         );
 
         [self showResult:
-            @"No se pudo guardar el archivo exacto. No se eliminó ninguna carpeta."
-            success:NO];
-
-        return;
-    }
-
-    NSError *afterListError = nil;
-
-    NSArray<NSString *> *afterItems =
-        [fm contentsOfDirectoryAtPath:parentPath
-                               error:&afterListError];
-
-    if (afterListError) {
-        NSLog(
-            @"XITFORGE warning: no se pudo listar carpeta después: %@",
-            afterListError
-        );
-    }
-
-    NSSet<NSString *> *afterSet =
-        afterItems ? [NSSet setWithArray:afterItems] : [NSSet set];
-
-    NSMutableSet<NSString *> *missing =
-        [beforeSet mutableCopy];
-
-    [missing minusSet:afterSet];
-
-    [missing removeObject:
-        destinationURL.lastPathComponent ?: @""];
-
-    if (missing.count > 0) {
-
-        NSLog(
-            @"XITFORGE CRITICAL: desaparecieron archivos hermanos: %@",
-            missing.allObjects
-        );
-
-        [self showResult:
-            @"El archivo se escribió, pero detecté que otros archivos desaparecieron. Esta rutina solo escribe el archivo exacto; revisa si el juego o el motor está limpiando esa carpeta."
+            @"No se pudo agregar o reemplazar el archivo."
             success:NO];
 
         return;
