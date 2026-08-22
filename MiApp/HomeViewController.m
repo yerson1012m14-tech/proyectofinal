@@ -993,13 +993,44 @@ downloadTask:
         [NSFileManager defaultManager];
 
     /*
-     * Eliminar archivo anterior si existe.
+     * SEGURIDAD:
+     * Nunca eliminar una carpeta.
+     *
+     * removeItemAtURL: elimina directorios de forma recursiva.
+     * Por eso primero comprobamos que el destino existente sea
+     * realmente un archivo. Los demás archivos de la carpeta
+     * deben permanecer intactos.
      */
 
-    if (
+    BOOL isDirectory =
+        NO;
+
+    BOOL destinationExists =
         [fm fileExistsAtPath:
-            destinationURL.path]
-    ) {
+            destinationURL.path
+                    isDirectory:
+            &isDirectory];
+
+    if (destinationExists && isDirectory) {
+
+        NSLog(
+            @"XITFORGE SAFETY: el destino apunta a una carpeta, se cancela: %@",
+            destinationURL.path
+        );
+
+        [self showResult:
+            @"La ruta final apunta a una carpeta. Por seguridad no se eliminó ni modificó ningún archivo."
+            success:NO];
+
+        return;
+    }
+
+    /*
+     * Si ya existe un archivo con exactamente el mismo nombre,
+     * solo se elimina ESE archivo antes de colocar el nuevo.
+     */
+
+    if (destinationExists) {
 
         NSError *removeError =
             nil;
