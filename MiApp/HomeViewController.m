@@ -609,6 +609,158 @@ heightForRowAtIndexPath:
     return value;
 }
 
+- (NSURL *)dataContainerURLForBundleIdentifier:
+    (NSString *)bundleIdentifier {
+
+    NSString *bundleId =
+        [bundleIdentifier
+            stringByTrimmingCharactersInSet:
+                [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    if (!bundleId.length) {
+        return nil;
+    }
+
+    /*
+     * Primero intentamos resolver el contenedor real mediante
+     * LSApplicationProxy. Se usa de forma dinámica para no requerir
+     * headers privados en este archivo.
+     */
+
+    /* Cargar LaunchServices/MobileCoreServices si todavía no está cargado. */
+    NSArray<NSString *> *frameworkPaths = @[
+        @"/System/Library/Frameworks/MobileCoreServices.framework",
+        @"/System/Library/Frameworks/CoreServices.framework"
+    ];
+
+    for (NSString *frameworkPath in frameworkPaths) {
+        NSBundle *frameworkBundle =
+            [NSBundle bundleWithPath:frameworkPath];
+
+        if (frameworkBundle &&
+            !frameworkBundle.loaded) {
+            [frameworkBundle load];
+        }
+    }
+
+    Class proxyClass =
+        NSClassFromString(@"LSApplicationProxy");
+
+    SEL proxySelector =
+        NSSelectorFromString(@"applicationProxyForIdentifier:");
+
+    if (proxyClass &&
+        [proxyClass respondsToSelector:proxySelector]) {
+
+        NSURL *resolvedURL = nil;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        id proxy =
+            [proxyClass
+                performSelector:proxySelector
+                withObject:bundleId];
+
+        NSArray<NSString *> *containerSelectors = @[
+            @"dataContainerURL",
+            @"containerURL"
+        ];
+
+        for (NSString *selectorName in containerSelectors) {
+
+            SEL containerSelector =
+                NSSelectorFromString(selectorName);
+
+            if (proxy &&
+                [proxy respondsToSelector:containerSelector]) {
+
+                id value =
+                    [proxy performSelector:containerSelector];
+
+                if ([value isKindOfClass:[NSURL class]]) {
+                    NSURL *url = (NSURL *)value;
+
+                    if (url.path.length) {
+                        resolvedURL = url;
+                        NSLog(
+                            @"XITFORGE game container via %@: %@",
+                            selectorName,
+                            url.path
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+#pragma clang diagnostic pop
+
+        if (resolvedURL) {
+            return resolvedURL;
+        }
+    }
+
+    /*
+     * Fallback para instalaciones con acceso amplio al filesystem
+     * (por ejemplo, builds sin sandbox): buscar el contenedor por
+     * MCMMetadataIdentifier.
+     */
+
+    NSString *containersRoot =
+        @"/var/mobile/Containers/Data/Application";
+
+    NSFileManager *fm =
+        [NSFileManager defaultManager];
+
+    NSError *listError = nil;
+
+    NSArray<NSString *> *entries =
+        [fm contentsOfDirectoryAtPath:containersRoot
+                                error:&listError];
+
+    if (!entries) {
+        NSLog(
+            @"XITFORGE cannot enumerate app containers: %@",
+            listError
+        );
+        return nil;
+    }
+
+    for (NSString *entry in entries) {
+
+        NSString *containerPath =
+            [containersRoot
+                stringByAppendingPathComponent:entry];
+
+        NSString *metadataPath =
+            [containerPath
+                stringByAppendingPathComponent:
+                    @".com.apple.mobile_container_manager.metadata.plist"];
+
+        NSDictionary *metadata =
+            [NSDictionary
+                dictionaryWithContentsOfFile:metadataPath];
+
+        NSString *identifier =
+            [metadata[@"MCMMetadataIdentifier"]
+                isKindOfClass:[NSString class]]
+            ? metadata[@"MCMMetadataIdentifier"]
+            : nil;
+
+        if ([identifier isEqualToString:bundleId]) {
+            return
+                [NSURL fileURLWithPath:containerPath
+                           isDirectory:YES];
+        }
+    }
+
+    NSLog(
+        @"XITFORGE data container not found for bundleId=%@",
+        bundleId
+    );
+
+    return nil;
+}
+
 - (NSURL *)destinationURLForOption:
     (XITForgeOption *)option {
 
@@ -626,15 +778,17 @@ heightForRowAtIndexPath:
         return nil;
     }
 
+    /* Aceptar rutas copiadas con barras de Windows sin romper la ruta. */
+    route =
+        [route stringByReplacingOccurrencesOfString:@"\\"
+                                        withString:@"/"];
+
     NSURL *destinationFolder = nil;
 
     /*
-     * La ruta configurada por la API se usa directamente.
-     * No se antepone ninguna carpeta temporal ni la carpeta del juego.
-     *
-     * - Ruta absoluta: /var/...  -> se usa tal cual.
-     * - Ruta relativa: Documents/... o Library/... -> parte de NSHomeDirectory().
-     * - Ruta con ~/: se resuelve desde NSHomeDirectory().
+     * Una ruta absoluta se respeta tal cual.
+     * Una ruta relativa (Documents/..., Library/..., tmp/...)
+     * se resuelve desde el CONTENEDOR DEL JUEGO, no desde XITFORGE.
      */
 
     if ([route hasPrefix:@"~/"]) {
@@ -642,20 +796,48 @@ heightForRowAtIndexPath:
     }
 
     if ([route hasPrefix:@"/"]) {
+
         destinationFolder =
             [NSURL fileURLWithPath:route
                        isDirectory:YES];
+
     } else {
+
+        NSString *effectiveBundleId =
+            [option.bundleId
+                stringByTrimmingCharactersInSet:
+                    [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+        if (!effectiveBundleId.length) {
+            effectiveBundleId =
+                [self.bundleId
+                    stringByTrimmingCharactersInSet:
+                        [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        }
+
+        NSURL *gameContainer =
+            [self dataContainerURLForBundleIdentifier:
+                effectiveBundleId];
+
+        if (!gameContainer) {
+            NSLog(
+                @"XITFORGE no game container. bundleId=%@ route=%@",
+                effectiveBundleId,
+                route
+            );
+            return nil;
+        }
+
         destinationFolder =
-            [NSURL fileURLWithPath:NSHomeDirectory()
-                       isDirectory:YES];
+            gameContainer;
 
         NSArray *components =
             [route componentsSeparatedByString:@"/"];
 
         for (NSString *component in components) {
 
-            if (component.length == 0) {
+            if (component.length == 0 ||
+                [component isEqualToString:@"."]) {
                 continue;
             }
 
@@ -684,18 +866,28 @@ heightForRowAtIndexPath:
     if (!created) {
 
         NSLog(
-            @"XITFORGE destination directory error: %@",
-            directoryError
+            @"XITFORGE destination directory error: %@ | path=%@",
+            directoryError,
+            destinationFolder.path
         );
 
         return nil;
     }
 
-    return
+    NSURL *destinationURL =
         [destinationFolder
             URLByAppendingPathComponent:
                 fileName
             isDirectory:NO];
+
+    NSLog(
+        @"XITFORGE resolved destination: bundleId=%@ route=%@ -> %@",
+        option.bundleId.length ? option.bundleId : self.bundleId,
+        route,
+        destinationURL.path
+    );
+
+    return destinationURL;
 }
 
 - (void)applyOption:
@@ -719,7 +911,7 @@ heightForRowAtIndexPath:
     if (!destinationURL) {
 
         [self showResult:
-            @"La ruta configurada no es válida."
+            @"No se pudo resolver el contenedor del juego o la ruta configurada. Revisa bundleId, route y permisos de acceso."
             success:NO];
 
         return;
