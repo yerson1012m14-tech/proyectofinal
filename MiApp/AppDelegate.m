@@ -5,11 +5,16 @@
 #import "LicenseViewController.h"
 #import "LicenseValidator.h"
 #import "ScreenProtectionManager.h"
+#import "AppVersionChecker.h"
+#import "AppVersionLockViewController.h"
 
 @interface AppDelegate ()
 
 @property (nonatomic, strong) UIWindow *lockWindow;
 @property (nonatomic, strong) UITabBarController *mainTabBar;
+@property (nonatomic, strong) UIWindow *versionWindow;
+@property (nonatomic, assign) BOOL versionCheckInProgress;
+@property (nonatomic, assign) BOOL initialVersionGateCompleted;
 
 @end
 
@@ -184,13 +189,208 @@
 
     /*
      * =========================================================
-     * COMPROBACIÓN DE LICENCIA
+     * CONTROL DE VERSIÓN
      * =========================================================
+     *
+     * La licencia NO se muestra hasta que el servidor confirme
+     * que esta versión de la IPA puede seguir utilizándose.
      */
 
-    [self mostrarPantallaLicencia];
+    [self verificarVersionDeApp];
 
     return YES;
+}
+
+- (void)applicationDidBecomeActive:(UIApplication *)application {
+
+    /*
+     * Volver a consultar cada vez que la app regresa al frente.
+     * Así una versión que fue bloqueada mientras estaba abierta
+     * queda bloqueada al volver a la app.
+     */
+
+    if (self.window && !self.versionCheckInProgress) {
+        [self verificarVersionDeApp];
+    }
+}
+
+#pragma mark - App Version Gate
+
+- (void)verificarVersionDeApp {
+
+    if (self.versionCheckInProgress) {
+        return;
+    }
+
+    /*
+     * En el primer arranque bloqueamos la interfaz de inmediato
+     * mientras llega la respuesta del servidor.
+     */
+    if (!self.initialVersionGateCompleted) {
+        [self
+            mostrarBloqueoDeVersionConTitulo:@"Verificando versión"
+            mensaje:@"Comprobando si esta versión de XITFORGE puede continuar..."
+            versionActual:[AppVersionChecker currentVersion]
+            versionRequerida:@""
+            downloadURL:@""
+            mostrarDescarga:NO];
+    }
+
+    self.versionCheckInProgress = YES;
+
+    __weak typeof(self) weakSelf = self;
+
+    [AppVersionChecker
+        checkWithCompletion:
+    ^(BOOL success,
+      BOOL blocked,
+      BOOL updateAvailable,
+      NSString *currentVersion,
+      NSString *latestVersion,
+      NSString *minimumVersion,
+      NSString *message,
+      NSString *downloadURL,
+      NSString * _Nullable errorMessage) {
+
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+
+        if (!strongSelf) {
+            return;
+        }
+
+        strongSelf.versionCheckInProgress = NO;
+
+        /*
+         * FAIL CLOSED:
+         * Si no se puede verificar con el servidor, la app no
+         * continúa. Esto evita saltarse el control quitando Internet.
+         */
+        if (!success) {
+
+            [strongSelf
+                mostrarBloqueoDeVersionConTitulo:
+                    @"No se pudo verificar la versión"
+                mensaje:
+                    (errorMessage.length > 0
+                        ? errorMessage
+                        : @"Comprueba tu conexión a Internet y vuelve a intentarlo.")
+                versionActual:currentVersion
+                versionRequerida:@""
+                downloadURL:@""
+                mostrarDescarga:NO];
+
+            return;
+        }
+
+        if (blocked) {
+
+            NSString *finalMessage =
+                message.length > 0
+                    ? message
+                    : @"Esta versión de XITFORGE ya no está disponible. Descarga la nueva versión para continuar.";
+
+            NSString *required =
+                minimumVersion.length > 0
+                    ? minimumVersion
+                    : latestVersion;
+
+            [strongSelf
+                mostrarBloqueoDeVersionConTitulo:
+                    @"Actualización requerida"
+                mensaje:finalMessage
+                versionActual:currentVersion
+                versionRequerida:required
+                downloadURL:downloadURL
+                mostrarDescarga:(downloadURL.length > 0)];
+
+            return;
+        }
+
+        /*
+         * Versión permitida.
+         */
+        [strongSelf cerrarBloqueoDeVersion];
+
+        /*
+         * El flujo de licencia solo se inicia una vez.
+         * Las comprobaciones posteriores al volver a primer plano
+         * únicamente sirven para bloquear si la versión cambió.
+         */
+        if (!strongSelf.initialVersionGateCompleted) {
+
+            strongSelf.initialVersionGateCompleted = YES;
+
+            [strongSelf mostrarPantallaLicencia];
+        }
+    }];
+}
+
+- (void)mostrarBloqueoDeVersionConTitulo:(NSString *)titulo
+                                 mensaje:(NSString *)mensaje
+                           versionActual:(NSString *)versionActual
+                       versionRequerida:(NSString *)versionRequerida
+                             downloadURL:(NSString *)downloadURL
+                         mostrarDescarga:(BOOL)mostrarDescarga {
+
+    AppVersionLockViewController *vc = nil;
+
+    if ([self.versionWindow.rootViewController
+            isKindOfClass:[AppVersionLockViewController class]]) {
+
+        vc =
+            (AppVersionLockViewController *)
+                self.versionWindow.rootViewController;
+    }
+
+    if (!vc) {
+
+        vc = [[AppVersionLockViewController alloc] init];
+
+        self.versionWindow =
+            [[UIWindow alloc]
+                initWithFrame:[UIScreen mainScreen].bounds];
+
+        self.versionWindow.windowLevel =
+            UIWindowLevelAlert + 10;
+
+        self.versionWindow.backgroundColor =
+            [UIColor blackColor];
+
+        self.versionWindow.rootViewController = vc;
+    }
+
+    vc.headline = titulo ?: @"";
+    vc.messageText = mensaje ?: @"";
+    vc.currentVersion = versionActual ?: @"";
+    vc.requiredVersion = versionRequerida ?: @"";
+    vc.downloadURL = downloadURL ?: @"";
+    vc.showDownloadButton = mostrarDescarga;
+
+    __weak typeof(self) weakSelf = self;
+
+    vc.retryHandler = ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (strongSelf) {
+            [strongSelf verificarVersionDeApp];
+        }
+    };
+
+    [self.versionWindow makeKeyAndVisible];
+}
+
+- (void)cerrarBloqueoDeVersion {
+
+    if (!self.versionWindow) {
+        [self.window makeKeyAndVisible];
+        return;
+    }
+
+    [self.versionWindow resignKeyWindow];
+    self.versionWindow.hidden = YES;
+    self.versionWindow.rootViewController = nil;
+    self.versionWindow = nil;
+
+    [self.window makeKeyAndVisible];
 }
 
 #pragma mark - Screen Protection
