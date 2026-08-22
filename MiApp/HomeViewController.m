@@ -5,6 +5,7 @@
 #import <unistd.h>
 #import <errno.h>
 #import <sys/stat.h>
+#import <string.h>
 
 
 #pragma mark - XITFORGE Exact File Writer
@@ -217,34 +218,171 @@ static BOOL XITForgeWriteExactFile(
     return YES;
 }
 
+
+#pragma mark - XITFORGE Exact File Verification
+
+/*
+ * Verifica byte por byte que el archivo escrito sea exactamente
+ * igual al archivo descargado antes de mostrar "Aplicado correctamente".
+ */
+static BOOL XITForgeFilesAreIdentical(
+    NSURL *sourceURL,
+    NSURL *destinationURL,
+    NSError **errorOut
+) {
+    const char *src = sourceURL.path.fileSystemRepresentation;
+    const char *dst = destinationURL.path.fileSystemRepresentation;
+
+    int inFD = open(src, O_RDONLY | O_CLOEXEC);
+    if (inFD < 0) {
+        int e = errno;
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                             code:e
+                                         userInfo:nil];
+        }
+        return NO;
+    }
+
+    int outFD = open(dst, O_RDONLY | O_CLOEXEC);
+    if (outFD < 0) {
+        int e = errno;
+        close(inFD);
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                             code:e
+                                         userInfo:nil];
+        }
+        return NO;
+    }
+
+    struct stat srcInfo = {0};
+    struct stat dstInfo = {0};
+
+    if (fstat(inFD, &srcInfo) != 0 || fstat(outFD, &dstInfo) != 0) {
+        int e = errno;
+        close(inFD);
+        close(outFD);
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                             code:e
+                                         userInfo:nil];
+        }
+        return NO;
+    }
+
+    if (!S_ISREG(srcInfo.st_mode) ||
+        !S_ISREG(dstInfo.st_mode) ||
+        srcInfo.st_size != dstInfo.st_size) {
+
+        close(inFD);
+        close(outFD);
+
+        if (errorOut) {
+            *errorOut = [NSError errorWithDomain:@"XITFORGE"
+                                             code:2101
+                                         userInfo:@{
+                NSLocalizedDescriptionKey:
+                    @"El archivo escrito no coincide en tamaño con la descarga."
+            }];
+        }
+
+        return NO;
+    }
+
+    unsigned char left[256 * 1024];
+    unsigned char right[256 * 1024];
+
+    BOOL identical = YES;
+    int savedErrno = 0;
+
+    for (;;) {
+        ssize_t l = -1;
+        ssize_t r = -1;
+
+        do {
+            l = read(inFD, left, sizeof(left));
+        } while (l < 0 && errno == EINTR);
+
+        if (l < 0) {
+            identical = NO;
+            savedErrno = errno;
+            break;
+        }
+
+        do {
+            r = read(outFD, right, sizeof(right));
+        } while (r < 0 && errno == EINTR);
+
+        if (r < 0) {
+            identical = NO;
+            savedErrno = errno;
+            break;
+        }
+
+        if (l != r) {
+            identical = NO;
+            break;
+        }
+
+        if (l == 0) {
+            break;
+        }
+
+        if (memcmp(left, right, (size_t)l) != 0) {
+            identical = NO;
+            break;
+        }
+    }
+
+    close(inFD);
+    close(outFD);
+
+    if (!identical && errorOut) {
+        if (savedErrno != 0) {
+            *errorOut = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                             code:savedErrno
+                                         userInfo:nil];
+        } else {
+            *errorOut = [NSError errorWithDomain:@"XITFORGE"
+                                             code:2102
+                                         userInfo:@{
+                NSLocalizedDescriptionKey:
+                    @"El contenido escrito no coincide con la descarga."
+            }];
+        }
+    }
+
+    return identical;
+}
+
 #pragma mark - XITFORGE Filesystem Engine
 
+/*
+ * FilzaSlop exporta TweakInit como constructor del dylib.
+ * El loader ya lo ejecuta automáticamente.
+ *
+ * NO llamar TweakInit manualmente:
+ * volvería a instalar hooks ya instalados y puede provocar recursión/crash,
+ * especialmente en LSApplicationWorkspace/allApplications al abrir Explorar.
+ *
+ * Tampoco se activa MCMFilzaSetUnrestrictedFilesystem(1).
+ */
 static void XITForgeEnsureEngine(void) {
     static dispatch_once_t onceToken;
+
     dispatch_once(&onceToken, ^{
-        void (*tweakInit)(void) =
-            (void (*)(void))dlsym(RTLD_DEFAULT, "TweakInit");
-
-        int (*start)(void) =
-            (int (*)(void))dlsym(RTLD_DEFAULT, "MCMFilzaStart");
-
-        void (*setUnrestricted)(int) =
-            (void (*)(int))dlsym(
+        void (*start)(void) =
+            (void (*)(void))dlsym(
                 RTLD_DEFAULT,
-                "MCMFilzaSetUnrestrictedFilesystem"
+                "MCMFilzaStart"
             );
 
-        if (tweakInit) {
-            tweakInit();
-        }
-
         if (start) {
-            int result = start();
-            NSLog(@"XITFORGE MCMFilzaStart -> %d", result);
-        }
-
-        if (setUnrestricted) {
-            setUnrestricted(1);
+            start();
+            NSLog(@"XITFORGE: MCMFilzaStart listo");
+        } else {
+            NSLog(@"XITFORGE: MCMFilzaStart no disponible");
         }
     });
 }
@@ -256,8 +394,13 @@ static NSString *XITForgeDataContainerPath(NSString *bundleId) {
 
     XITForgeEnsureEngine();
 
-    NSString *(*dataPath)(NSString *) =
-        (NSString *(*)(NSString *))dlsym(
+    /*
+     * Firma real:
+     * NSString *MCMFilzaDataContainerPath(NSString *identifier,
+     *                                     NSString **error);
+     */
+    NSString *(*dataPath)(NSString *, NSString **) =
+        (NSString *(*)(NSString *, NSString **))dlsym(
             RTLD_DEFAULT,
             "MCMFilzaDataContainerPath"
         );
@@ -267,14 +410,36 @@ static NSString *XITForgeDataContainerPath(NSString *bundleId) {
         return nil;
     }
 
-    NSString *path = dataPath(bundleId);
+    NSString *detail = nil;
+    NSString *path = dataPath(bundleId, &detail);
 
     if (![path isKindOfClass:[NSString class]] || path.length == 0) {
-        NSLog(@"XITFORGE: contenedor no resuelto para %@", bundleId);
+        NSLog(
+            @"XITFORGE: contenedor no resuelto para %@ detail=%@",
+            bundleId,
+            detail ?: @"sin detalle"
+        );
         return nil;
     }
 
-    return [path stringByStandardizingPath];
+    NSString *standard =
+        [path stringByStandardizingPath];
+
+    BOOL isDirectory = NO;
+    BOOL exists =
+        [[NSFileManager defaultManager]
+            fileExistsAtPath:standard
+                 isDirectory:&isDirectory];
+
+    if (!exists || !isDirectory) {
+        NSLog(
+            @"XITFORGE: contenedor inválido: %@",
+            standard
+        );
+        return nil;
+    }
+
+    return standard;
 }
 
 #pragma mark - XITFORGE Option Model
@@ -1013,6 +1178,29 @@ heightForRowAtIndexPath:
                     component
                 isDirectory:YES];
 
+        
+        /*
+         * La ruta debe existir YA. No se crean carpetas faltantes.
+         * Así un typo del panel no termina escribiendo en una ruta nueva.
+         * Además rechazamos symlinks en cualquier componente.
+         */
+        struct stat componentInfo = {0};
+
+        if (
+            lstat(
+                destinationFolder.path.fileSystemRepresentation,
+                &componentInfo
+            ) != 0 ||
+            !S_ISDIR(componentInfo.st_mode) ||
+            S_ISLNK(componentInfo.st_mode)
+        ) {
+            NSLog(
+                @"XITFORGE: route inválido/no existente: %@",
+                destinationFolder.path
+            );
+            return nil;
+        }
+
         validIndex++;
     }
 
@@ -1036,26 +1224,7 @@ heightForRowAtIndexPath:
         NSLog(@"XITFORGE: route intento salir del contenedor");
         return nil;
     }
-
-    NSError *directoryError = nil;
-
-    BOOL created =
-        [[NSFileManager defaultManager]
-            createDirectoryAtURL:
-                destinationFolder
-            withIntermediateDirectories:YES
-            attributes:nil
-            error:&directoryError];
-
-    if (!created) {
-        NSLog(
-            @"XITFORGE destination directory error: %@",
-            directoryError
-        );
-        return nil;
-    }
-
-    NSURL *destinationURL =
+NSURL *destinationURL =
         [destinationFolder
             URLByAppendingPathComponent:
                 fileName
@@ -1236,8 +1405,36 @@ downloadTask:
         return;
     }
 
+    NSError *verifyError = nil;
+
+    BOOL verified =
+        XITForgeFilesAreIdentical(
+            location,
+            destinationURL,
+            &verifyError
+        );
+
+    if (!verified) {
+        NSLog(
+            @"XITFORGE verification failed: %@ | destination=%@",
+            verifyError,
+            destinationURL.path
+        );
+
+        [self showResult:
+            @"El archivo se descargó, pero no quedó verificado en la ruta final."
+            success:NO];
+
+        return;
+    }
+
+    NSLog(
+        @"XITFORGE VERIFIED destination=%@",
+        destinationURL.path
+    );
+
     [self showResult:
-        @"La opción se aplicó correctamente."
+        @"Archivo agregado y verificado correctamente."
         success:YES];
 }
 
