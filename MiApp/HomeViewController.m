@@ -256,17 +256,49 @@ static NSString *containerPath(NSString *bid) {
 
 #pragma mark - Real File Application (Ruta del Juego)
 - (NSURL *)realDestinationURLForOption:(XITForgeOption *)option {
-    // ✅ Usar la ruta real del contenedor del juego
     asegurarMotor();
     
     NSString *containerRoot = nil;
+    
+    // ✅ Intento 1: MCMFilzaDataContainerPath (si está disponible)
     @try {
         containerRoot = containerPath(option.bundleId);
     } @catch (NSException *e) {
         containerRoot = nil;
     }
     
+    // ✅ Intento 2: LSApplicationWorkspace (fallback nativo de iOS)
     if (!containerRoot) {
+        @try {
+            Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
+            if (wsClass && [wsClass respondsToSelector:@selector(defaultWorkspace)]) {
+                id workspace = [wsClass performSelector:@selector(defaultWorkspace)];
+                if (workspace && [workspace respondsToSelector:@selector(allApplications)]) {
+                    NSArray *allApps = [workspace performSelector:@selector(allApplications)];
+                    for (id proxy in allApps) {
+                        @try {
+                            if ([proxy respondsToSelector:@selector(applicationIdentifier)]) {
+                                NSString *bid = [proxy performSelector:@selector(applicationIdentifier)];
+                                if ([bid isEqualToString:option.bundleId]) {
+                                    // Obtener la URL del contenedor de datos
+                                    if ([proxy respondsToSelector:@selector(containerURL)]) {
+                                        NSURL *containerURL = [proxy performSelector:@selector(containerURL)];
+                                        containerRoot = containerURL.path;
+                                    }
+                                    break;
+                                }
+                            }
+                        } @catch (NSException *e) {}
+                    }
+                }
+            }
+        } @catch (NSException *e) {
+            containerRoot = nil;
+        }
+    }
+    
+    if (!containerRoot) {
+        NSLog(@"XITFORGE: No se pudo obtener la ruta del contenedor para %@", option.bundleId);
         return nil;
     }
     
@@ -277,7 +309,7 @@ static NSString *containerPath(NSString *bid) {
         return nil;
     }
     
-    // Construir la ruta completa: /var/mobile/Containers/Data/Application/.../[route]/[fileName]
+    // Construir la ruta completa
     NSString *destinationFolder = containerRoot;
     
     if (route && route.length > 0) {
@@ -301,7 +333,9 @@ static NSString *containerPath(NSString *bid) {
         }
     }
     
-    return [NSURL fileURLWithPath:[destinationFolder stringByAppendingPathComponent:fileName] isDirectory:NO];
+    NSURL *finalURL = [NSURL fileURLWithPath:[destinationFolder stringByAppendingPathComponent:fileName] isDirectory:NO];
+    NSLog(@"XITFORGE: Ruta destino = %@", finalURL.path);
+    return finalURL;
 }
 
 - (NSString *)safePathComponent:(NSString *)value {
@@ -322,7 +356,7 @@ static NSString *containerPath(NSString *bid) {
     
     NSURL *destinationURL = [self realDestinationURLForOption:option];
     if (!destinationURL) {
-        [self showResult:@"No se pudo obtener la ruta del contenedor del juego. Verifica que el juego esté instalado." success:NO];
+        [self showResult:[NSString stringWithFormat:@"No se pudo obtener la ruta del contenedor del juego %@. Verifica que el juego esté instalado.", option.bundleId] success:NO];
         return;
     }
     
@@ -347,7 +381,6 @@ static NSString *containerPath(NSString *bid) {
     self.downloadSession = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:[NSOperationQueue mainQueue]];
     
     NSURLSessionDownloadTask *task = [self.downloadSession downloadTaskWithURL:url];
-    // ✅ Guardar optionId, nombre del mod y ruta destino separados por |
     task.taskDescription = [NSString stringWithFormat:@"%ld|%@|%@", (long)option.optionId.integerValue, option.name ?: @"Mod", destinationURL.path];
     [task resume];
 }
