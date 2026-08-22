@@ -1601,7 +1601,38 @@ static NSURL *XITForgeExistingDirectoryChild(
         [NSURL URLWithString:trimmed];
 
     if (direct.scheme.length > 0) {
-        return direct;
+
+        /*
+         * Si el backend construyó una URL absoluta usando localhost
+         * (por ejemplo PUBLIC_BASE_URL=http://localhost:3000), esa URL
+         * no sirve dentro del iPhone. Conservamos la ruta y la apuntamos
+         * al servidor público de XITFORGE.
+         */
+        NSString *host =
+            direct.host.lowercaseString;
+
+        BOOL localHost =
+            [host isEqualToString:@"localhost"] ||
+            [host isEqualToString:@"127.0.0.1"] ||
+            [host isEqualToString:@"0.0.0.0"];
+
+        if (!localHost) {
+            return direct;
+        }
+
+        NSString *relative =
+            direct.path.length > 0
+                ? direct.path
+                : @"/";
+
+        if (direct.query.length > 0) {
+            relative =
+                [relative stringByAppendingFormat:
+                    @"?%@",
+                    direct.query];
+        }
+
+        trimmed = relative;
     }
 
     NSString *base =
@@ -2342,6 +2373,314 @@ heightForRowAtIndexPath:
 }
 
 
+- (void)processOriginalManifestDictionary:
+    (NSDictionary *)dictionary
+    originals:(NSArray *)rawOriginals
+    legacy:(BOOL)legacy {
+
+    if (rawOriginals.count == 0) {
+        dispatch_async(
+            dispatch_get_main_queue(),
+            ^{
+                [self
+                    finishDeactivationUIWithSuccess:YES
+                    noOriginals:YES];
+            });
+        return;
+    }
+
+    /*
+     * Resolver el contenedor/rutas del juego se hace en main,
+     * igual que ACTIVAR, para no invocar el motor MCM desde
+     * una cola de red en segundo plano.
+     */
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+        NSString *responseBundleId =
+            [dictionary[@"bundleId"] isKindOfClass:[NSString class]]
+                ? dictionary[@"bundleId"]
+                : self.bundleId;
+
+        NSMutableArray *items =
+            [NSMutableArray array];
+
+        for (id rawItem in rawOriginals) {
+
+            if (![rawItem isKindOfClass:[NSDictionary class]]) {
+                NSLog(@"XITFORGE original manifest: item inválido");
+                [self
+                    finishDeactivationUIWithSuccess:NO
+                    noOriginals:NO];
+                return;
+            }
+
+            NSDictionary *raw =
+                (NSDictionary *)rawItem;
+
+            XITForgeOption *option =
+                [[XITForgeOption alloc] init];
+
+            option.bundleId =
+                [raw[@"bundleId"] isKindOfClass:[NSString class]]
+                    ? raw[@"bundleId"]
+                    : responseBundleId;
+
+            option.route =
+                [raw[@"route"] isKindOfClass:[NSString class]]
+                    ? raw[@"route"]
+                    : nil;
+
+            option.fileName =
+                [raw[@"fileName"] isKindOfClass:[NSString class]]
+                    ? raw[@"fileName"]
+                    : nil;
+
+            option.originalFileUrl =
+                [raw[@"originalFileUrl"] isKindOfClass:[NSString class]]
+                    ? raw[@"originalFileUrl"]
+                    : nil;
+
+            /*
+             * Compatibilidad extra:
+             * - API nueva: /api/app/originals/:id/file
+             * - API anterior: /api/app/options/:id/original-file
+             *
+             * Si el servidor no envía originalFileUrl pero sí el ID,
+             * la IPA puede construir la dirección correcta por sí sola.
+             */
+            if (option.originalFileUrl.length == 0) {
+                NSNumber *itemId =
+                    [raw[@"id"] isKindOfClass:[NSNumber class]]
+                        ? raw[@"id"]
+                        : nil;
+
+                if (itemId.longLongValue > 0) {
+                    option.originalFileUrl =
+                        legacy
+                            ? [NSString stringWithFormat:
+                                @"/api/app/options/%@/original-file",
+                                itemId]
+                            : [NSString stringWithFormat:
+                                @"/api/app/originals/%@/file",
+                                itemId];
+                }
+            }
+
+            if (
+                option.route.length == 0 ||
+                option.fileName.length == 0 ||
+                option.originalFileUrl.length == 0
+            ) {
+                NSLog(
+                    @"XITFORGE original manifest incompleto: id=%@ route=%@ file=%@ url=%@ legacy=%d",
+                    raw[@"id"],
+                    option.route,
+                    option.fileName,
+                    option.originalFileUrl,
+                    legacy
+                );
+
+                [self
+                    finishDeactivationUIWithSuccess:NO
+                    noOriginals:NO];
+                return;
+            }
+
+            NSString *resolveError =
+                nil;
+
+            NSURL *destinationURL =
+                [self
+                    destinationURLForOption:option
+                    error:&resolveError];
+
+            NSURL *downloadURL =
+                [self absoluteServerURLForString:
+                    option.originalFileUrl];
+
+            if (
+                !destinationURL ||
+                !downloadURL
+            ) {
+
+                NSLog(
+                    @"XITFORGE original resolve error: %@ | route=%@ file=%@ url=%@",
+                    resolveError,
+                    option.route,
+                    option.fileName,
+                    option.originalFileUrl
+                );
+
+                [self
+                    finishDeactivationUIWithSuccess:NO
+                    noOriginals:NO];
+                return;
+            }
+
+            [items addObject:@{
+                @"downloadURL": downloadURL,
+                @"destinationURL": destinationURL
+            }];
+        }
+
+        [self
+            restoreOriginalItems:items
+            index:0];
+
+        });
+}
+
+
+- (void)deactivateUsingLegacyOptionsFallback {
+
+    NSString *encodedGame =
+        [self.game
+            stringByAddingPercentEncodingWithAllowedCharacters:
+                [NSCharacterSet URLQueryAllowedCharacterSet]];
+
+    NSString *urlString =
+        [NSString stringWithFormat:
+            @"%@/api/app/options?game=%@",
+            [self apiBaseURL],
+            encodedGame ?: @""];
+
+    NSURL *url =
+        [NSURL URLWithString:urlString];
+
+    if (!url) {
+        [self
+            finishDeactivationUIWithSuccess:NO
+            noOriginals:NO];
+        return;
+    }
+
+    NSMutableURLRequest *request =
+        [NSMutableURLRequest requestWithURL:url];
+
+    request.HTTPMethod = @"GET";
+    request.timeoutInterval = 20.0;
+
+    NSURLSessionDataTask *task =
+        [[NSURLSession sharedSession]
+            dataTaskWithRequest:request
+              completionHandler:
+        ^(NSData * _Nullable data,
+          NSURLResponse * _Nullable response,
+          NSError * _Nullable error) {
+
+        NSHTTPURLResponse *http =
+            [response isKindOfClass:[NSHTTPURLResponse class]]
+                ? (NSHTTPURLResponse *)response
+                : nil;
+
+        if (
+            error ||
+            !data ||
+            (http && (http.statusCode < 200 || http.statusCode > 299))
+        ) {
+            NSLog(
+                @"XITFORGE legacy originals fallback failed: %@ HTTP=%ld",
+                error,
+                (long)http.statusCode
+            );
+
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                });
+            return;
+        }
+
+        NSError *jsonError = nil;
+        id json =
+            [NSJSONSerialization
+                JSONObjectWithData:data
+                options:0
+                error:&jsonError];
+
+        if (
+            jsonError ||
+            ![json isKindOfClass:[NSDictionary class]]
+        ) {
+            NSLog(@"XITFORGE legacy originals JSON error: %@", jsonError);
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                });
+            return;
+        }
+
+        NSDictionary *dictionary =
+            (NSDictionary *)json;
+
+        NSNumber *ok =
+            dictionary[@"ok"];
+
+        NSArray *rawOptions =
+            dictionary[@"options"];
+
+        if (
+            ![ok isKindOfClass:[NSNumber class]] ||
+            !ok.boolValue ||
+            ![rawOptions isKindOfClass:[NSArray class]]
+        ) {
+            NSLog(
+                @"XITFORGE legacy originals response inválida: %@",
+                dictionary[@"error"]
+            );
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    [self
+                        finishDeactivationUIWithSuccess:NO
+                        noOriginals:NO];
+                });
+            return;
+        }
+
+        NSMutableArray *legacyOriginals =
+            [NSMutableArray array];
+
+        for (id item in rawOptions) {
+            if (![item isKindOfClass:[NSDictionary class]]) continue;
+
+            NSDictionary *raw =
+                (NSDictionary *)item;
+
+            NSString *originalURL =
+                [raw[@"originalFileUrl"] isKindOfClass:[NSString class]]
+                    ? raw[@"originalFileUrl"]
+                    : nil;
+
+            BOOL hasOriginal =
+                [raw[@"hasOriginalFile"] isKindOfClass:[NSNumber class]]
+                    ? [raw[@"hasOriginalFile"] boolValue]
+                    : (originalURL.length > 0);
+
+            if (!hasOriginal && originalURL.length == 0) {
+                continue;
+            }
+
+            [legacyOriginals addObject:raw];
+        }
+
+        [self
+            processOriginalManifestDictionary:dictionary
+            originals:legacyOriginals
+            legacy:YES];
+    }];
+
+    [task resume];
+}
+
+
 - (void)deactivateAllOptions {
 
     if (
@@ -2368,20 +2707,15 @@ heightForRowAtIndexPath:
         [NSURL URLWithString:urlString];
 
     if (!url) {
-        [self
-            finishDeactivationUIWithSuccess:NO
-            noOriginals:NO];
+        [self deactivateUsingLegacyOptionsFallback];
         return;
     }
 
     NSMutableURLRequest *request =
         [NSMutableURLRequest requestWithURL:url];
 
-    request.HTTPMethod =
-        @"GET";
-
-    request.timeoutInterval =
-        20.0;
+    request.HTTPMethod = @"GET";
+    request.timeoutInterval = 20.0;
 
     NSURLSessionDataTask *task =
         [[NSURLSession sharedSession]
@@ -2391,27 +2725,26 @@ heightForRowAtIndexPath:
           NSURLResponse * _Nullable response,
           NSError * _Nullable error) {
 
-        if (error || !data) {
+        NSHTTPURLResponse *http =
+            [response isKindOfClass:[NSHTTPURLResponse class]]
+                ? (NSHTTPURLResponse *)response
+                : nil;
 
+        if (
+            error ||
+            !data ||
+            (http && (http.statusCode < 200 || http.statusCode > 299))
+        ) {
             NSLog(
-                @"XITFORGE originals list error: %@",
-                error
+                @"XITFORGE originals list failed: %@ HTTP=%ld; intentando API anterior",
+                error,
+                (long)http.statusCode
             );
-
-            dispatch_async(
-                dispatch_get_main_queue(),
-                ^{
-                    [self
-                        finishDeactivationUIWithSuccess:NO
-                        noOriginals:NO];
-                });
-
+            [self deactivateUsingLegacyOptionsFallback];
             return;
         }
 
-        NSError *jsonError =
-            nil;
-
+        NSError *jsonError = nil;
         id json =
             [NSJSONSerialization
                 JSONObjectWithData:data
@@ -2422,15 +2755,11 @@ heightForRowAtIndexPath:
             jsonError ||
             ![json isKindOfClass:[NSDictionary class]]
         ) {
-
-            dispatch_async(
-                dispatch_get_main_queue(),
-                ^{
-                    [self
-                        finishDeactivationUIWithSuccess:NO
-                        noOriginals:NO];
-                });
-
+            NSLog(
+                @"XITFORGE originals JSON inválido: %@; intentando API anterior",
+                jsonError
+            );
+            [self deactivateUsingLegacyOptionsFallback];
             return;
         }
 
@@ -2448,137 +2777,18 @@ heightForRowAtIndexPath:
             !ok.boolValue ||
             ![rawOriginals isKindOfClass:[NSArray class]]
         ) {
-
-            dispatch_async(
-                dispatch_get_main_queue(),
-                ^{
-                    [self
-                        finishDeactivationUIWithSuccess:NO
-                        noOriginals:NO];
-                });
-
+            NSLog(
+                @"XITFORGE originals response inválida: %@; intentando API anterior",
+                dictionary[@"error"]
+            );
+            [self deactivateUsingLegacyOptionsFallback];
             return;
         }
 
-        if (rawOriginals.count == 0) {
-
-            dispatch_async(
-                dispatch_get_main_queue(),
-                ^{
-                    [self
-                        finishDeactivationUIWithSuccess:YES
-                        noOriginals:YES];
-                });
-
-            return;
-        }
-
-        /*
-         * Resolver el contenedor/rutas del juego se hace en main,
-         * igual que ACTIVAR, para no invocar el motor MCM desde
-         * una cola de red en segundo plano.
-         */
-        dispatch_async(
-            dispatch_get_main_queue(),
-            ^{
-            NSString *responseBundleId =
-                [dictionary[@"bundleId"] isKindOfClass:[NSString class]]
-                    ? dictionary[@"bundleId"]
-                    : self.bundleId;
-
-            NSMutableArray *items =
-                [NSMutableArray array];
-
-            /*
-             * Primero resolvemos TODAS las rutas. Si alguna es inválida,
-             * no empezamos a reemplazar archivos y evitamos una restauración
-             * parcial por un simple error de configuración.
-             */
-            for (id rawItem in rawOriginals) {
-
-                if (![rawItem isKindOfClass:[NSDictionary class]]) {
-                    [self
-                        finishDeactivationUIWithSuccess:NO
-                        noOriginals:NO];
-                    return;
-                }
-
-                NSDictionary *raw =
-                    (NSDictionary *)rawItem;
-
-                XITForgeOption *option =
-                    [[XITForgeOption alloc] init];
-
-                option.bundleId =
-                    [raw[@"bundleId"] isKindOfClass:[NSString class]]
-                        ? raw[@"bundleId"]
-                        : responseBundleId;
-
-                option.route =
-                    [raw[@"route"] isKindOfClass:[NSString class]]
-                        ? raw[@"route"]
-                        : nil;
-
-                option.fileName =
-                    [raw[@"fileName"] isKindOfClass:[NSString class]]
-                        ? raw[@"fileName"]
-                        : nil;
-
-                option.originalFileUrl =
-                    [raw[@"originalFileUrl"] isKindOfClass:[NSString class]]
-                        ? raw[@"originalFileUrl"]
-                        : nil;
-
-                if (
-                    option.route.length == 0 ||
-                    option.fileName.length == 0 ||
-                    option.originalFileUrl.length == 0
-                ) {
-                    [self
-                        finishDeactivationUIWithSuccess:NO
-                        noOriginals:NO];
-                    return;
-                }
-
-                NSString *resolveError =
-                    nil;
-
-                NSURL *destinationURL =
-                    [self
-                        destinationURLForOption:option
-                        error:&resolveError];
-
-                NSURL *downloadURL =
-                    [self absoluteServerURLForString:
-                        option.originalFileUrl];
-
-                if (
-                    !destinationURL ||
-                    !downloadURL
-                ) {
-
-                    NSLog(
-                        @"XITFORGE original resolve error: %@",
-                        resolveError
-                    );
-
-                    [self
-                        finishDeactivationUIWithSuccess:NO
-                        noOriginals:NO];
-                    return;
-                }
-
-                [items addObject:@{
-                    @"downloadURL": downloadURL,
-                    @"destinationURL": destinationURL
-                }];
-            }
-
-            [self
-                restoreOriginalItems:items
-                index:0];
-
-            });
+        [self
+            processOriginalManifestDictionary:dictionary
+            originals:rawOriginals
+            legacy:NO];
     }];
 
     [task resume];
