@@ -939,8 +939,9 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, assign) BOOL activationInProgress;
 
 @property (nonatomic, strong) UIButton *deactivateButton;
-@property (nonatomic, strong) UIActivityIndicatorView *deactivateSpinner;
 @property (nonatomic, assign) BOOL deactivationInProgress;
+
+@property (nonatomic, strong) UIView *aimbotWarningOverlay;
 
 @property (nonatomic, strong) NSMutableSet<NSString *> *activeOptionKeys;
 @property (nonatomic, strong) AVAudioPlayer *activationAudioPlayer;
@@ -1475,6 +1476,454 @@ static NSURL *XITForgeExistingDirectoryChild(
     }];
 }
 
+- (void)dismissAimbotWarning {
+
+    UIView *overlay =
+        self.aimbotWarningOverlay;
+
+    if (!overlay) {
+        return;
+    }
+
+    UIView *card =
+        [overlay viewWithTag:9917];
+
+    [UIView
+        animateWithDuration:0.20
+        animations:^{
+
+            overlay.alpha = 0.0;
+
+            if (card) {
+                card.transform =
+                    CGAffineTransformMakeScale(
+                        0.97,
+                        0.97
+                    );
+            }
+
+        }
+        completion:^(BOOL finished) {
+
+            [overlay removeFromSuperview];
+
+            if (self.aimbotWarningOverlay == overlay) {
+                self.aimbotWarningOverlay = nil;
+            }
+        }];
+}
+
+
+- (void)showAimbotWarning {
+
+    UIView *host =
+        self.navigationController.view ?: self.view;
+
+    if (!host) {
+        return;
+    }
+
+    if (self.aimbotWarningOverlay) {
+        [self.aimbotWarningOverlay removeFromSuperview];
+        self.aimbotWarningOverlay = nil;
+    }
+
+    UIView *overlay =
+        [[UIView alloc] init];
+
+    overlay.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    overlay.backgroundColor =
+        [UIColor colorWithWhite:0.0
+                          alpha:0.68];
+
+    self.aimbotWarningOverlay =
+        overlay;
+
+
+    UIView *card =
+        [[UIView alloc] init];
+
+    card.tag = 9917;
+
+    card.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    card.backgroundColor =
+        [UIColor colorWithWhite:0.055
+                          alpha:1.0];
+
+    card.layer.cornerRadius =
+        24.0;
+
+    card.layer.borderWidth =
+        1.0;
+
+    card.layer.borderColor =
+        [XITForgeAccentColor()
+            colorWithAlphaComponent:0.52].CGColor;
+
+    card.layer.shadowColor =
+        [UIColor blackColor].CGColor;
+
+    card.layer.shadowOpacity =
+        0.48;
+
+    card.layer.shadowRadius =
+        24.0;
+
+    card.layer.shadowOffset =
+        CGSizeMake(0.0, 12.0);
+
+
+    UIView *iconCircle =
+        [[UIView alloc] init];
+
+    iconCircle.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    iconCircle.backgroundColor =
+        [XITForgeAccentColor()
+            colorWithAlphaComponent:0.16];
+
+    iconCircle.layer.cornerRadius =
+        21.0;
+
+    iconCircle.layer.borderWidth =
+        1.0;
+
+    iconCircle.layer.borderColor =
+        [XITForgeAccentColor()
+            colorWithAlphaComponent:0.58].CGColor;
+
+
+    UILabel *icon =
+        [[UILabel alloc] init];
+
+    icon.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    icon.text =
+        @"!";
+
+    icon.textAlignment =
+        NSTextAlignmentCenter;
+
+    icon.textColor =
+        XITForgeAccentColor();
+
+    icon.font =
+        [UIFont systemFontOfSize:22.0
+                          weight:UIFontWeightBlack];
+
+
+    UILabel *title =
+        [[UILabel alloc] init];
+
+    title.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    title.text =
+        @"ADVERTENCIA PARA EL AIMBOT";
+
+    title.textColor =
+        [UIColor whiteColor];
+
+    title.font =
+        [UIFont systemFontOfSize:16.0
+                          weight:UIFontWeightBold];
+
+    title.numberOfLines =
+        2;
+
+
+    UIView *messageBox =
+        [[UIView alloc] init];
+
+    messageBox.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    messageBox.backgroundColor =
+        [UIColor colorWithWhite:0.085
+                          alpha:1.0];
+
+    messageBox.layer.cornerRadius =
+        14.0;
+
+    messageBox.layer.borderWidth =
+        1.0;
+
+    messageBox.layer.borderColor =
+        [UIColor colorWithWhite:1.0
+                          alpha:0.07].CGColor;
+
+
+    UILabel *message =
+        [[UILabel alloc] init];
+
+    message.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    message.text =
+        @"ANTES DE ENTRAR A LA CUENTA DARLE A DESACTIVAR";
+
+    message.textColor =
+        [UIColor colorWithWhite:0.78
+                          alpha:1.0];
+
+    message.font =
+        [UIFont systemFontOfSize:14.0
+                          weight:UIFontWeightMedium];
+
+    message.numberOfLines =
+        0;
+
+    message.textAlignment =
+        NSTextAlignmentLeft;
+
+
+    UIButton *understoodButton =
+        [UIButton buttonWithType:UIButtonTypeSystem];
+
+    understoodButton.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    [understoodButton
+        setTitle:@"ENTENDIDO"
+        forState:UIControlStateNormal];
+
+    [understoodButton
+        setTitleColor:[UIColor whiteColor]
+        forState:UIControlStateNormal];
+
+    understoodButton.titleLabel.font =
+        [UIFont systemFontOfSize:15.0
+                          weight:UIFontWeightBold];
+
+    understoodButton.backgroundColor =
+        XITForgeAccentColor();
+
+    understoodButton.layer.cornerRadius =
+        14.0;
+
+    understoodButton.layer.shadowColor =
+        XITForgeAccentColor().CGColor;
+
+    understoodButton.layer.shadowOpacity =
+        0.20;
+
+    understoodButton.layer.shadowRadius =
+        10.0;
+
+    understoodButton.layer.shadowOffset =
+        CGSizeMake(0.0, 5.0);
+
+    [understoodButton
+        addTarget:self
+        action:@selector(dismissAimbotWarning)
+        forControlEvents:UIControlEventTouchUpInside];
+
+
+    [host addSubview:overlay];
+    [overlay addSubview:card];
+
+    [card addSubview:iconCircle];
+    [iconCircle addSubview:icon];
+
+    [card addSubview:title];
+    [card addSubview:messageBox];
+
+    [messageBox addSubview:message];
+
+    [card addSubview:understoodButton];
+
+
+    [NSLayoutConstraint activateConstraints:@[
+
+        [overlay.leadingAnchor
+            constraintEqualToAnchor:
+                host.leadingAnchor],
+
+        [overlay.trailingAnchor
+            constraintEqualToAnchor:
+                host.trailingAnchor],
+
+        [overlay.topAnchor
+            constraintEqualToAnchor:
+                host.topAnchor],
+
+        [overlay.bottomAnchor
+            constraintEqualToAnchor:
+                host.bottomAnchor],
+
+
+        [card.centerXAnchor
+            constraintEqualToAnchor:
+                overlay.centerXAnchor],
+
+        [card.centerYAnchor
+            constraintEqualToAnchor:
+                overlay.centerYAnchor
+                constant:-8.0],
+
+        [card.leadingAnchor
+            constraintGreaterThanOrEqualToAnchor:
+                overlay.leadingAnchor
+                constant:24.0],
+
+        [card.trailingAnchor
+            constraintLessThanOrEqualToAnchor:
+                overlay.trailingAnchor
+                constant:-24.0],
+
+        [card.widthAnchor
+            constraintLessThanOrEqualToConstant:
+                360.0],
+
+
+        [iconCircle.leadingAnchor
+            constraintEqualToAnchor:
+                card.leadingAnchor
+                constant:20.0],
+
+        [iconCircle.topAnchor
+            constraintEqualToAnchor:
+                card.topAnchor
+                constant:22.0],
+
+        [iconCircle.widthAnchor
+            constraintEqualToConstant:
+                42.0],
+
+        [iconCircle.heightAnchor
+            constraintEqualToConstant:
+                42.0],
+
+
+        [icon.centerXAnchor
+            constraintEqualToAnchor:
+                iconCircle.centerXAnchor],
+
+        [icon.centerYAnchor
+            constraintEqualToAnchor:
+                iconCircle.centerYAnchor],
+
+
+        [title.leadingAnchor
+            constraintEqualToAnchor:
+                iconCircle.trailingAnchor
+                constant:12.0],
+
+        [title.trailingAnchor
+            constraintEqualToAnchor:
+                card.trailingAnchor
+                constant:-20.0],
+
+        [title.centerYAnchor
+            constraintEqualToAnchor:
+                iconCircle.centerYAnchor],
+
+
+        [messageBox.leadingAnchor
+            constraintEqualToAnchor:
+                card.leadingAnchor
+                constant:20.0],
+
+        [messageBox.trailingAnchor
+            constraintEqualToAnchor:
+                card.trailingAnchor
+                constant:-20.0],
+
+        [messageBox.topAnchor
+            constraintEqualToAnchor:
+                iconCircle.bottomAnchor
+                constant:18.0],
+
+
+        [message.leadingAnchor
+            constraintEqualToAnchor:
+                messageBox.leadingAnchor
+                constant:15.0],
+
+        [message.trailingAnchor
+            constraintEqualToAnchor:
+                messageBox.trailingAnchor
+                constant:-15.0],
+
+        [message.topAnchor
+            constraintEqualToAnchor:
+                messageBox.topAnchor
+                constant:14.0],
+
+        [message.bottomAnchor
+            constraintEqualToAnchor:
+                messageBox.bottomAnchor
+                constant:-14.0],
+
+
+        [understoodButton.leadingAnchor
+            constraintEqualToAnchor:
+                card.leadingAnchor
+                constant:20.0],
+
+        [understoodButton.trailingAnchor
+            constraintEqualToAnchor:
+                card.trailingAnchor
+                constant:-20.0],
+
+        [understoodButton.topAnchor
+            constraintEqualToAnchor:
+                messageBox.bottomAnchor
+                constant:18.0],
+
+        [understoodButton.heightAnchor
+            constraintEqualToConstant:
+                50.0],
+
+        [understoodButton.bottomAnchor
+            constraintEqualToAnchor:
+                card.bottomAnchor
+                constant:-20.0]
+    ]];
+
+
+    [host layoutIfNeeded];
+
+    overlay.alpha =
+        0.0;
+
+    card.transform =
+        CGAffineTransformMakeScale(
+            0.94,
+            0.94
+        );
+
+
+    [UIView
+        animateWithDuration:0.28
+        delay:0.0
+        usingSpringWithDamping:0.86
+        initialSpringVelocity:0.45
+        options:UIViewAnimationOptionCurveEaseOut
+        animations:^{
+
+            overlay.alpha = 1.0;
+            card.transform =
+                CGAffineTransformIdentity;
+        }
+        completion:nil];
+
+
+    UINotificationFeedbackGenerator *feedback =
+        [[UINotificationFeedbackGenerator alloc] init];
+
+    [feedback
+        notificationOccurred:
+            UINotificationFeedbackTypeWarning];
+}
+
+
 #pragma mark - UI
 
 - (void)setupUI {
@@ -1808,24 +2257,6 @@ static NSURL *XITForgeExistingDirectoryChild(
         self.deactivateButton];
 
 
-    self.deactivateSpinner =
-        [[UIActivityIndicatorView alloc]
-            initWithActivityIndicatorStyle:
-                UIActivityIndicatorViewStyleMedium];
-
-    self.deactivateSpinner.translatesAutoresizingMaskIntoConstraints =
-        NO;
-
-    self.deactivateSpinner.color =
-        XITForgeAccentColor();
-
-    self.deactivateSpinner.hidesWhenStopped =
-        YES;
-
-    [self.deactivateButton addSubview:
-        self.deactivateSpinner];
-
-
     self.activityIndicator =
         [[UIActivityIndicatorView alloc]
             initWithActivityIndicatorStyle:
@@ -2002,16 +2433,6 @@ static NSURL *XITForgeExistingDirectoryChild(
 
         [self.deactivateButton.heightAnchor
             constraintEqualToConstant:50.0],
-
-        [self.deactivateSpinner.centerYAnchor
-            constraintEqualToAnchor:
-                self.deactivateButton.centerYAnchor],
-
-        [self.deactivateSpinner.trailingAnchor
-            constraintEqualToAnchor:
-                self.deactivateButton.centerXAnchor
-                constant:-64.0],
-
 
         [self.tableView.topAnchor
             constraintEqualToAnchor:
@@ -2432,9 +2853,6 @@ static NSURL *XITForgeExistingDirectoryChild(
                 self.deactivationInProgress =
                     NO;
 
-                [self.deactivateSpinner
-                    stopAnimating];
-
                 [self.deactivateButton
                     setTitle:@"DESACTIVAR"
                     forState:UIControlStateNormal];
@@ -2583,15 +3001,38 @@ heightForRowAtIndexPath:
     NSIndexPath *previous =
         self.selectedOptionIndexPath;
 
-    self.selectedOptionIndexPath =
-        indexPath;
+    BOOL tappedSelectedOption =
+        previous &&
+        [previous isEqual:indexPath];
 
-    if ([self.selectedCategory isEqualToString:@"aimbot"]) {
-        self.selectedAimbotIndexPath = indexPath;
-    } else if ([self.selectedCategory isEqualToString:@"fps"]) {
-        self.selectedFPSIndexPath = indexPath;
+    if (tappedSelectedOption) {
+
+        /*
+         * Tocar nuevamente la opción ya seleccionada la deselecciona.
+         * La selección de las otras categorías se conserva.
+         */
+        self.selectedOptionIndexPath = nil;
+
+        if ([self.selectedCategory isEqualToString:@"aimbot"]) {
+            self.selectedAimbotIndexPath = nil;
+        } else if ([self.selectedCategory isEqualToString:@"fps"]) {
+            self.selectedFPSIndexPath = nil;
+        } else {
+            self.selectedHologramIndexPath = nil;
+        }
+
     } else {
-        self.selectedHologramIndexPath = indexPath;
+
+        self.selectedOptionIndexPath =
+            indexPath;
+
+        if ([self.selectedCategory isEqualToString:@"aimbot"]) {
+            self.selectedAimbotIndexPath = indexPath;
+        } else if ([self.selectedCategory isEqualToString:@"fps"]) {
+            self.selectedFPSIndexPath = indexPath;
+        } else {
+            self.selectedHologramIndexPath = indexPath;
+        }
     }
 
     if (!self.activationInProgress) {
@@ -2729,26 +3170,7 @@ heightForRowAtIndexPath:
         }
 
         if (activatedAimbot) {
-            UIAlertController *warning =
-                [UIAlertController
-                    alertControllerWithTitle:
-                        @"ADVERTENCIA PARA EL AIMBOT"
-                    message:
-                        @"ANTES DE ENTRAR A LA CUENTA DARLE A DESACTIVAR"
-                    preferredStyle:
-                        UIAlertControllerStyleAlert];
-
-            [warning
-                addAction:
-                    [UIAlertAction
-                        actionWithTitle:@"ENTENDIDO"
-                        style:UIAlertActionStyleDefault
-                        handler:nil]];
-
-            [self
-                presentViewController:warning
-                animated:YES
-                completion:nil];
+            [self showAimbotWarning];
         }
 
         UINotificationFeedbackGenerator *feedback =
@@ -2863,6 +3285,11 @@ heightForRowAtIndexPath:
     self.activateButton.alpha =
         0.45;
 
+    /*
+     * Bloqueamos el botón para evitar toques dobles,
+     * pero visualmente permanece exactamente como "DESACTIVAR".
+     * No mostramos spinner ni texto de carga.
+     */
     self.deactivateButton.enabled =
         NO;
 
@@ -2870,24 +3297,14 @@ heightForRowAtIndexPath:
         1.0;
 
     [self.deactivateButton
-        setTitle:@"DESACTIVANDO..."
+        setTitle:@"DESACTIVAR"
         forState:UIControlStateNormal];
-
-    [self.deactivateSpinner
-        startAnimating];
 
     self.statusLabel.hidden =
         YES;
 
     [self.activityIndicator
         stopAnimating];
-
-    self.selectionHintLabel.text =
-        @"RESTAURANDO ORIGINALES";
-
-    self.selectionHintLabel.textColor =
-        [UIColor colorWithWhite:0.50
-                          alpha:1.0];
 }
 
 
@@ -2900,9 +3317,6 @@ heightForRowAtIndexPath:
 
     self.tableView.userInteractionEnabled =
         YES;
-
-    [self.deactivateSpinner
-        stopAnimating];
 
     [self.deactivateButton
         setTitle:@"DESACTIVAR"
