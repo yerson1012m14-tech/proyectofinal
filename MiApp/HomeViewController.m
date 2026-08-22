@@ -1646,12 +1646,9 @@ static NSURL *XITForgeExistingDirectoryChild(
 
 
     /*
-     * Spinner exclusivo del botón ACTIVAR.
-     * Durante la aplicación del archivo el usuario solo ve:
-     *
-     *   [ spinner  ACTIVANDO... ]
-     *
-     * Sin alertas y sin texto "Descargando...".
+     * Indicador del botón ACTIVAR conservado por compatibilidad,
+     * pero se mantiene detenido y oculto. Durante la aplicación
+     * el usuario solo ve el texto "ACTIVANDO...".
      */
     self.activateSpinner =
         [[UIActivityIndicatorView alloc]
@@ -2535,8 +2532,12 @@ heightForRowAtIndexPath:
         setTitle:@"ACTIVANDO..."
         forState:UIControlStateNormal];
 
+    /*
+     * ACTIVAR muestra únicamente el texto "ACTIVANDO...".
+     * El indicador circular permanece oculto.
+     */
     [self.activateSpinner
-        startAnimating];
+        stopAnimating];
 
     /*
      * Ocultamos cualquier mensaje central anterior.
@@ -3611,7 +3612,7 @@ heightForRowAtIndexPath:
 
     /*
      * No mostramos estado de descarga en pantalla.
-     * El botón ya permanece en ACTIVANDO... con spinner.
+     * El botón ya permanece en ACTIVANDO... sin indicador circular.
      */
     self.statusLabel.hidden =
         YES;
