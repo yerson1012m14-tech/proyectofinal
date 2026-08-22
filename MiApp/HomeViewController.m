@@ -387,59 +387,182 @@ static void XITForgeEnsureEngine(void) {
     });
 }
 
-static NSString *XITForgeDataContainerPath(NSString *bundleId) {
+static NSString *XITForgeDataContainerPath(
+    NSString *bundleId,
+    NSString **errorOut
+) {
+    if (errorOut) *errorOut = nil;
+
     if (bundleId.length == 0) {
+        if (errorOut) *errorOut = @"bundleId vacío";
         return nil;
     }
 
     XITForgeEnsureEngine();
 
-    /*
-     * Firma real:
-     * NSString *MCMFilzaDataContainerPath(NSString *identifier,
-     *                                     NSString **error);
-     */
     NSString *(*dataPath)(NSString *, NSString **) =
         (NSString *(*)(NSString *, NSString **))dlsym(
             RTLD_DEFAULT,
             "MCMFilzaDataContainerPath"
         );
 
+    NSString *directDetail = nil;
+    NSString *directPath = nil;
+
+    if (dataPath) {
+        directPath = dataPath(bundleId, &directDetail);
+    }
+
+    NSFileManager *fm = [NSFileManager defaultManager];
+
+    if ([directPath isKindOfClass:[NSString class]] && directPath.length > 0) {
+        NSString *standard = [directPath stringByStandardizingPath];
+        BOOL isDirectory = NO;
+        if ([fm fileExistsAtPath:standard isDirectory:&isDirectory] && isDirectory) {
+            return standard;
+        }
+    }
+
+    /*
+     * Respaldo seguro: FilzaSlop crea enlaces de los contenedores activados en
+     * Documents/Device Storage/[MHA-C2] App Data/<bundleId>.
+     * Si el lookup directo no devuelve una ruta utilizable, usamos ese enlace
+     * existente. No se crea ni se borra nada aquí.
+     */
+    NSString *(*virtualRoot)(void) =
+        (NSString *(*)(void))dlsym(
+            RTLD_DEFAULT,
+            "MCMFilzaVirtualRoot"
+        );
+
+    if (virtualRoot) {
+        NSString *root = virtualRoot();
+        if ([root isKindOfClass:[NSString class]] && root.length > 0) {
+            NSString *linkPath =
+                [[[root stringByAppendingPathComponent:@"[MHA-C2] App Data"]
+                    stringByAppendingPathComponent:bundleId]
+                    stringByStandardizingPath];
+
+            BOOL isDirectory = NO;
+            if ([fm fileExistsAtPath:linkPath isDirectory:&isDirectory] && isDirectory) {
+                NSLog(
+                    @"XITFORGE: usando enlace MCM para %@ -> %@",
+                    bundleId,
+                    linkPath
+                );
+                return linkPath;
+            }
+        }
+    }
+
+    NSString *reason = nil;
     if (!dataPath) {
-        NSLog(@"XITFORGE: MCMFilzaDataContainerPath no disponible");
+        reason = @"MCMFilzaDataContainerPath no está disponible";
+    } else if (directDetail.length > 0) {
+        reason = directDetail;
+    } else if (directPath.length > 0) {
+        reason = [NSString stringWithFormat:
+            @"el motor devolvió una ruta no accesible: %@",
+            directPath];
+    } else {
+        reason = @"el motor no devolvió una ruta para ese bundleId";
+    }
+
+    NSLog(
+        @"XITFORGE: contenedor no resuelto para %@: %@",
+        bundleId,
+        reason
+    );
+
+    if (errorOut) *errorOut = reason;
+    return nil;
+}
+
+static NSURL *XITForgeExistingDirectoryChild(
+    NSURL *parent,
+    NSString *requestedName,
+    NSString **errorOut
+) {
+    if (errorOut) *errorOut = nil;
+
+    if (!parent || requestedName.length == 0) {
+        if (errorOut) *errorOut = @"componente de ruta vacío";
         return nil;
     }
 
-    NSString *detail = nil;
-    NSString *path = dataPath(bundleId, &detail);
+    NSFileManager *fm = [NSFileManager defaultManager];
 
-    if (![path isKindOfClass:[NSString class]] || path.length == 0) {
-        NSLog(
-            @"XITFORGE: contenedor no resuelto para %@ detail=%@",
-            bundleId,
-            detail ?: @"sin detalle"
-        );
+    /* Primero intentar el nombre exacto. */
+    NSURL *exact =
+        [parent URLByAppendingPathComponent:requestedName
+                               isDirectory:YES];
+
+    struct stat info = {0};
+    if (lstat(exact.path.fileSystemRepresentation, &info) == 0) {
+        if (S_ISDIR(info.st_mode) && !S_ISLNK(info.st_mode)) {
+            return exact;
+        }
+        if (errorOut) {
+            *errorOut = [NSString stringWithFormat:
+                @"%@ existe pero no es una carpeta normal",
+                exact.path];
+        }
         return nil;
     }
 
-    NSString *standard =
-        [path stringByStandardizingPath];
+    /*
+     * Si solo cambia el casing, usar el nombre REAL que existe en el disco.
+     * Esto evita rechazar contentcache/ContentCache, etc.
+     */
+    NSError *listError = nil;
+    NSArray<NSString *> *children =
+        [fm contentsOfDirectoryAtPath:parent.path error:&listError];
 
-    BOOL isDirectory = NO;
-    BOOL exists =
-        [[NSFileManager defaultManager]
-            fileExistsAtPath:standard
-                 isDirectory:&isDirectory];
-
-    if (!exists || !isDirectory) {
-        NSLog(
-            @"XITFORGE: contenedor inválido: %@",
-            standard
-        );
+    if (!children) {
+        if (errorOut) {
+            *errorOut = [NSString stringWithFormat:
+                @"no se pudo leer %@: %@",
+                parent.path,
+                listError.localizedDescription ?: @"error desconocido"];
+        }
         return nil;
     }
 
-    return standard;
+    NSString *actualName = nil;
+    for (NSString *candidate in children) {
+        if ([candidate caseInsensitiveCompare:requestedName] == NSOrderedSame) {
+            actualName = candidate;
+            break;
+        }
+    }
+
+    if (!actualName) {
+        if (errorOut) {
+            *errorOut = [NSString stringWithFormat:
+                @"no existe la carpeta '%@' dentro de %@",
+                requestedName,
+                parent.path];
+        }
+        return nil;
+    }
+
+    NSURL *resolved =
+        [parent URLByAppendingPathComponent:actualName
+                               isDirectory:YES];
+
+    memset(&info, 0, sizeof(info));
+    if (lstat(resolved.path.fileSystemRepresentation, &info) != 0 ||
+        !S_ISDIR(info.st_mode) ||
+        S_ISLNK(info.st_mode)) {
+        if (errorOut) {
+            *errorOut = [NSString stringWithFormat:
+                @"%@ no es una carpeta válida",
+                resolved.path];
+        }
+        return nil;
+    }
+
+    return resolved;
 }
 
 #pragma mark - XITFORGE Option Model
@@ -1093,40 +1216,47 @@ heightForRowAtIndexPath:
 }
 
 - (NSURL *)destinationURLForOption:
-    (XITForgeOption *)option {
+    (XITForgeOption *)option
+    error:(NSString **)errorOut {
+
+    if (errorOut) *errorOut = nil;
 
     NSString *bundleId =
         option.bundleId.length > 0
             ? option.bundleId
             : self.bundleId;
 
+    NSString *containerError = nil;
     NSString *container =
-        XITForgeDataContainerPath(bundleId);
+        XITForgeDataContainerPath(
+            bundleId,
+            &containerError
+        );
 
     if (container.length == 0) {
-        NSLog(
-            @"XITFORGE: no se pudo resolver el contenedor de %@",
-            bundleId
-        );
+        if (errorOut) {
+            *errorOut = [NSString stringWithFormat:
+                @"No se pudo abrir el contenedor de %@. %@",
+                bundleId ?: @"(sin bundleId)",
+                containerError ?: @"Sin detalle del motor."];
+        }
         return nil;
     }
 
     NSString *fileName =
-        [self safePathComponent:
-            option.fileName];
+        [self safePathComponent:option.fileName];
 
     if (fileName.length == 0) {
-        NSLog(@"XITFORGE: fileName invalido");
+        if (errorOut) *errorOut = @"El nombre del archivo no es válido.";
         return nil;
     }
 
     NSString *route =
-        [option.route
-            stringByTrimmingCharactersInSet:
-                [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        [option.route stringByTrimmingCharactersInSet:
+            [NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
     if (route.length == 0) {
-        NSLog(@"XITFORGE: route vacio");
+        if (errorOut) *errorOut = @"La ruta configurada está vacía.";
         return nil;
     }
 
@@ -1135,13 +1265,11 @@ heightForRowAtIndexPath:
                                          withString:@"/"];
 
     while ([route hasPrefix:@"/"]) {
-        route =
-            [route substringFromIndex:1];
+        route = [route substringFromIndex:1];
     }
 
     NSURL *destinationFolder =
-        [NSURL fileURLWithPath:container
-                   isDirectory:YES];
+        [NSURL fileURLWithPath:container isDirectory:YES];
 
     NSArray<NSString *> *components =
         [route componentsSeparatedByString:@"/"];
@@ -1149,86 +1277,53 @@ heightForRowAtIndexPath:
     NSUInteger validIndex = 0;
 
     for (NSString *rawComponent in components) {
-
         NSString *component =
-            [rawComponent
-                stringByTrimmingCharactersInSet:
-                    [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            [rawComponent stringByTrimmingCharactersInSet:
+                [NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
-        if (component.length == 0) {
-            continue;
-        }
+        if (component.length == 0) continue;
 
         component =
-            [self normalizedRouteComponent:
-                component
-                index:validIndex];
+            [self normalizedRouteComponent:component index:validIndex];
 
         if (![self safePathComponent:component]) {
-            NSLog(
-                @"XITFORGE: componente de route invalido: %@",
-                component
-            );
+            if (errorOut) {
+                *errorOut = [NSString stringWithFormat:
+                    @"La ruta contiene un componente inválido: %@",
+                    component];
+            }
             return nil;
         }
 
-        destinationFolder =
-            [destinationFolder
-                URLByAppendingPathComponent:
-                    component
-                isDirectory:YES];
-
-        
-        /*
-         * La ruta debe existir YA. No se crean carpetas faltantes.
-         * Así un typo del panel no termina escribiendo en una ruta nueva.
-         * Además rechazamos symlinks en cualquier componente.
-         */
-        struct stat componentInfo = {0};
-
-        if (
-            lstat(
-                destinationFolder.path.fileSystemRepresentation,
-                &componentInfo
-            ) != 0 ||
-            !S_ISDIR(componentInfo.st_mode) ||
-            S_ISLNK(componentInfo.st_mode)
-        ) {
-            NSLog(
-                @"XITFORGE: route inválido/no existente: %@",
-                destinationFolder.path
+        NSString *componentError = nil;
+        NSURL *next =
+            XITForgeExistingDirectoryChild(
+                destinationFolder,
+                component,
+                &componentError
             );
+
+        if (!next) {
+            if (errorOut) {
+                *errorOut = [NSString stringWithFormat:
+                    @"La ruta del panel no existe en el juego. %@",
+                    componentError ?: @""];
+            }
             return nil;
         }
 
+        destinationFolder = next;
         validIndex++;
     }
 
     if (validIndex == 0) {
+        if (errorOut) *errorOut = @"La ruta no contiene ninguna carpeta válida.";
         return nil;
     }
 
-    NSString *standardContainer =
-        [container stringByStandardizingPath];
-
-    NSString *standardFolder =
-        [destinationFolder.path stringByStandardizingPath];
-
-    NSString *containerPrefix =
-        [standardContainer stringByAppendingString:@"/"];
-
-    if (
-        ![standardFolder isEqualToString:standardContainer] &&
-        ![standardFolder hasPrefix:containerPrefix]
-    ) {
-        NSLog(@"XITFORGE: route intento salir del contenedor");
-        return nil;
-    }
-NSURL *destinationURL =
-        [destinationFolder
-            URLByAppendingPathComponent:
-                fileName
-            isDirectory:NO];
+    NSURL *destinationURL =
+        [destinationFolder URLByAppendingPathComponent:fileName
+                                           isDirectory:NO];
 
     NSLog(
         @"XITFORGE resolved destination: bundleId=%@ route=%@ file=%@ -> %@",
@@ -1265,13 +1360,16 @@ NSURL *destinationURL =
         return;
     }
 
+    NSString *resolveError = nil;
+
     NSURL *destinationURL =
         [self destinationURLForOption:
-            option];
+            option
+            error:&resolveError];
 
     if (!destinationURL) {
         [self showResult:
-            @"No se pudo resolver el contenedor del juego o la ruta configurada."
+            resolveError ?: @"No se pudo resolver el contenedor o la ruta."
             success:NO];
         return;
     }
