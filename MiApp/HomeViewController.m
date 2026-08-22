@@ -280,7 +280,6 @@ static NSString *containerPath(NSString *bid) {
                             if ([proxy respondsToSelector:@selector(applicationIdentifier)]) {
                                 NSString *bid = [proxy performSelector:@selector(applicationIdentifier)];
                                 if ([bid isEqualToString:option.bundleId]) {
-                                    // Obtener la URL del contenedor de datos
                                     if ([proxy respondsToSelector:@selector(containerURL)]) {
                                         NSURL *containerURL = [proxy performSelector:@selector(containerURL)];
                                         containerRoot = containerURL.path;
@@ -309,7 +308,6 @@ static NSString *containerPath(NSString *bid) {
         return nil;
     }
     
-    // Construir la ruta completa
     NSString *destinationFolder = containerRoot;
     
     if (route && route.length > 0) {
@@ -321,7 +319,6 @@ static NSString *containerPath(NSString *bid) {
         }
     }
     
-    // Crear la carpeta si no existe
     NSFileManager *fm = [NSFileManager defaultManager];
     BOOL isDirectory = NO;
     if (![fm fileExistsAtPath:destinationFolder isDirectory:&isDirectory]) {
@@ -400,7 +397,6 @@ static NSString *containerPath(NSString *bid) {
     NSURL *destinationURL = [NSURL fileURLWithPath:destinationPath];
     NSFileManager *fm = [NSFileManager defaultManager];
     
-    // Eliminar archivo anterior si existe
     if ([fm fileExistsAtPath:destinationURL.path]) {
         NSError *removeError = nil;
         BOOL removed = [fm removeItemAtURL:destinationURL error:&removeError];
