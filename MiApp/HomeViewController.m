@@ -924,6 +924,14 @@ static NSURL *XITForgeExistingDirectoryChild(
 @property (nonatomic, copy) NSString *selectedCategory;
 
 @property (nonatomic, strong) NSIndexPath *selectedOptionIndexPath;
+@property (nonatomic, strong) NSIndexPath *selectedAimbotIndexPath;
+@property (nonatomic, strong) NSIndexPath *selectedHologramIndexPath;
+
+@property (nonatomic, strong) NSArray<XITForgeOption *> *pendingActivationOptions;
+@property (nonatomic, strong) NSMutableArray<XITForgeOption *> *activationSucceededOptions;
+@property (nonatomic, assign) NSInteger currentActivationIndex;
+@property (nonatomic, strong) XITForgeOption *currentActivationOption;
+
 @property (nonatomic, strong) UIButton *activateButton;
 @property (nonatomic, strong) UIActivityIndicatorView *activateSpinner;
 @property (nonatomic, assign) BOOL activationInProgress;
@@ -1034,12 +1042,10 @@ static NSURL *XITForgeExistingDirectoryChild(
     self.title = @"";
 }
 
-- (NSArray<XITForgeOption *> *)optionsForSection:(NSInteger)section {
-    (void)section;
-
+- (NSArray<XITForgeOption *> *)optionsForCategory:(NSString *)categoryName {
     NSString *wantedCategory =
-        self.selectedCategory.length > 0
-            ? self.selectedCategory.lowercaseString
+        [categoryName.lowercaseString isEqualToString:@"aimbot"]
+            ? @"aimbot"
             : @"holograma";
 
     NSMutableArray<XITForgeOption *> *items =
@@ -1057,19 +1063,63 @@ static NSURL *XITForgeExistingDirectoryChild(
     return [items copy];
 }
 
-- (XITForgeOption *)optionAtIndexPath:(NSIndexPath *)indexPath {
+- (NSArray<XITForgeOption *> *)optionsForSection:(NSInteger)section {
+    (void)section;
+
+    NSString *wantedCategory =
+        self.selectedCategory.length > 0
+            ? self.selectedCategory.lowercaseString
+            : @"aimbot";
+
+    return [self optionsForCategory:wantedCategory];
+}
+
+- (XITForgeOption *)optionAtIndexPath:(NSIndexPath *)indexPath
+                         forCategory:(NSString *)category {
     if (!indexPath || indexPath.section != 0) {
         return nil;
     }
 
     NSArray<XITForgeOption *> *items =
-        [self optionsForSection:0];
+        [self optionsForCategory:category];
 
     if (indexPath.row < 0 || indexPath.row >= items.count) {
         return nil;
     }
 
     return items[indexPath.row];
+}
+
+- (XITForgeOption *)optionAtIndexPath:(NSIndexPath *)indexPath {
+    return [self optionAtIndexPath:indexPath
+                      forCategory:self.selectedCategory ?: @"aimbot"];
+}
+
+- (NSArray<XITForgeOption *> *)selectedOptions {
+    NSMutableArray<XITForgeOption *> *selected =
+        [NSMutableArray arrayWithCapacity:2];
+
+    XITForgeOption *aimbot =
+        [self optionAtIndexPath:self.selectedAimbotIndexPath
+                   forCategory:@"aimbot"];
+
+    XITForgeOption *hologram =
+        [self optionAtIndexPath:self.selectedHologramIndexPath
+                   forCategory:@"holograma"];
+
+    /*
+     * AIMBOT siempre va primero. Si el usuario también eligió
+     * un holograma, el mismo botón ACTIVAR aplica ambos.
+     */
+    if (aimbot) {
+        [selected addObject:aimbot];
+    }
+
+    if (hologram) {
+        [selected addObject:hologram];
+    }
+
+    return [selected copy];
 }
 
 - (void)updateCategoryTabAppearance {
@@ -1114,10 +1164,21 @@ static NSURL *XITForgeExistingDirectoryChild(
     }
 
     self.selectedCategory = normalized;
-    self.selectedOptionIndexPath = nil;
+
+    /*
+     * No borramos la selección de la otra pestaña.
+     * Así se puede elegir 1 AIMBOT + 1 HOLOGRAMA y luego
+     * activarlos juntos desde el mismo botón.
+     */
+    self.selectedOptionIndexPath =
+        [normalized isEqualToString:@"aimbot"]
+            ? self.selectedAimbotIndexPath
+            : self.selectedHologramIndexPath;
 
     self.selectionHintLabel.text =
-        @"SELECCIONA UNA OPCIÓN";
+        [self selectedOptions].count > 1
+            ? @"2 OPCIONES SELECCIONADAS"
+            : @"SELECCIONA UNA OPCIÓN";
 
     self.selectionHintLabel.textColor =
         [UIColor colorWithWhite:0.48 alpha:1.0];
@@ -1156,14 +1217,22 @@ static NSURL *XITForgeExistingDirectoryChild(
         return;
     }
 
-    XITForgeOption *option =
-        [self optionAtIndexPath:self.selectedOptionIndexPath];
+    NSArray<XITForgeOption *> *selected =
+        [self selectedOptions];
 
     BOOL hasSelection =
-        option != nil;
+        selected.count > 0;
 
-    BOOL alreadyActive =
-        option != nil && [self isOptionActivated:option];
+    NSInteger pendingCount = 0;
+
+    for (XITForgeOption *option in selected) {
+        if (![self isOptionActivated:option]) {
+            pendingCount++;
+        }
+    }
+
+    BOOL allSelectedAlreadyActive =
+        hasSelection && pendingCount == 0;
 
     UIColor *accent = XITForgeAccentColor();
 
@@ -1179,7 +1248,7 @@ static NSURL *XITForgeExistingDirectoryChild(
         return;
     }
 
-    if (alreadyActive) {
+    if (allSelectedAlreadyActive) {
         [self.activateButton setTitle:@"ACTIVADO" forState:UIControlStateNormal];
         self.activateButton.enabled = NO;
         self.activateButton.alpha = 0.78;
@@ -1241,7 +1310,7 @@ static NSURL *XITForgeExistingDirectoryChild(
     [self.activationAudioPlayer play];
 }
 
-- (void)showActivationBannerForOption:(XITForgeOption *)option {
+- (void)showActivationBannerForOptions:(NSArray<XITForgeOption *> *)options {
     UIView *host = self.navigationController.view ?: self.view;
     if (!host) {
         return;
@@ -1267,7 +1336,10 @@ static NSURL *XITForgeExistingDirectoryChild(
 
     UILabel *title = [[UILabel alloc] init];
     title.translatesAutoresizingMaskIntoConstraints = NO;
-    title.text = @"OPCIÓN ACTIVADA";
+    title.text =
+        options.count > 1
+            ? @"OPCIONES ACTIVADAS"
+            : @"OPCIÓN ACTIVADA";
     title.textColor = [UIColor whiteColor];
     title.font =
         [UIFont systemFontOfSize:13.0
@@ -1275,7 +1347,16 @@ static NSURL *XITForgeExistingDirectoryChild(
 
     UILabel *detail = [[UILabel alloc] init];
     detail.translatesAutoresizingMaskIntoConstraints = NO;
-    detail.text = option.name.length > 0 ? option.name : @"XITFORGE";
+    NSMutableArray<NSString *> *names = [NSMutableArray array];
+    for (XITForgeOption *option in options) {
+        if (option.name.length > 0) {
+            [names addObject:option.name];
+        }
+    }
+    detail.text =
+        names.count > 0
+            ? [names componentsJoinedByString:@" + "]
+            : @"XITFORGE";
     detail.textColor =
         [UIColor colorWithWhite:0.70 alpha:1.0];
     detail.font =
@@ -1351,8 +1432,14 @@ static NSURL *XITForgeExistingDirectoryChild(
     self.selectedOptionIndexPath =
         nil;
 
+    self.selectedAimbotIndexPath =
+        nil;
+
+    self.selectedHologramIndexPath =
+        nil;
+
     self.selectedCategory =
-        @"holograma";
+        @"aimbot";
 
 
     self.categoryTabsView =
@@ -1702,25 +1789,10 @@ static NSURL *XITForgeExistingDirectoryChild(
         [self.categoryTabsView.heightAnchor
             constraintEqualToConstant:52.0],
 
-        [self.hologramTabButton.leadingAnchor
+        [self.aimbotTabButton.leadingAnchor
             constraintEqualToAnchor:
                 self.categoryTabsView.leadingAnchor
                 constant:4.0],
-
-        [self.hologramTabButton.topAnchor
-            constraintEqualToAnchor:
-                self.categoryTabsView.topAnchor
-                constant:4.0],
-
-        [self.hologramTabButton.bottomAnchor
-            constraintEqualToAnchor:
-                self.categoryTabsView.bottomAnchor
-                constant:-4.0],
-
-        [self.aimbotTabButton.trailingAnchor
-            constraintEqualToAnchor:
-                self.categoryTabsView.trailingAnchor
-                constant:-4.0],
 
         [self.aimbotTabButton.topAnchor
             constraintEqualToAnchor:
@@ -1732,14 +1804,29 @@ static NSURL *XITForgeExistingDirectoryChild(
                 self.categoryTabsView.bottomAnchor
                 constant:-4.0],
 
-        [self.aimbotTabButton.leadingAnchor
+        [self.hologramTabButton.trailingAnchor
             constraintEqualToAnchor:
-                self.hologramTabButton.trailingAnchor
+                self.categoryTabsView.trailingAnchor
+                constant:-4.0],
+
+        [self.hologramTabButton.topAnchor
+            constraintEqualToAnchor:
+                self.categoryTabsView.topAnchor
                 constant:4.0],
 
-        [self.hologramTabButton.widthAnchor
+        [self.hologramTabButton.bottomAnchor
             constraintEqualToAnchor:
-                self.aimbotTabButton.widthAnchor],
+                self.categoryTabsView.bottomAnchor
+                constant:-4.0],
+
+        [self.hologramTabButton.leadingAnchor
+            constraintEqualToAnchor:
+                self.aimbotTabButton.trailingAnchor
+                constant:4.0],
+
+        [self.aimbotTabButton.widthAnchor
+            constraintEqualToAnchor:
+                self.hologramTabButton.widthAnchor],
 
 
         [self.selectionHintLabel.topAnchor
@@ -2202,6 +2289,12 @@ static NSURL *XITForgeExistingDirectoryChild(
                 self.selectedOptionIndexPath =
                     nil;
 
+                self.selectedAimbotIndexPath =
+                    nil;
+
+                self.selectedHologramIndexPath =
+                    nil;
+
                 self.activationInProgress =
                     NO;
 
@@ -2375,10 +2468,18 @@ heightForRowAtIndexPath:
     self.selectedOptionIndexPath =
         indexPath;
 
+    if ([self.selectedCategory isEqualToString:@"aimbot"]) {
+        self.selectedAimbotIndexPath = indexPath;
+    } else {
+        self.selectedHologramIndexPath = indexPath;
+    }
+
     if (!self.activationInProgress) {
 
         self.selectionHintLabel.text =
-            @"SELECCIONA UNA OPCIÓN";
+            [self selectedOptions].count > 1
+                ? @"2 OPCIONES SELECCIONADAS"
+                : @"SELECCIONA UNA OPCIÓN";
 
         self.selectionHintLabel.textColor =
             [UIColor colorWithWhite:0.48
@@ -2478,21 +2579,21 @@ heightForRowAtIndexPath:
             1.0;
     }
 
-    XITForgeOption *selectedOption =
-        [self optionAtIndexPath:self.selectedOptionIndexPath];
+    NSArray<XITForgeOption *> *activatedOptions =
+        [self.activationSucceededOptions copy] ?: @[];
 
     if (success) {
 
-        [self markOptionActivated:selectedOption];
-
         self.selectionHintLabel.text =
-            @"SELECCIONA UNA OPCIÓN";
+            [self selectedOptions].count > 1
+                ? @"2 OPCIONES SELECCIONADAS"
+                : @"SELECCIONA UNA OPCIÓN";
 
         self.selectionHintLabel.textColor =
             [UIColor colorWithWhite:0.48
                               alpha:1.0];
 
-        [self showActivationBannerForOption:selectedOption];
+        [self showActivationBannerForOptions:activatedOptions];
         [self playActivationAudio];
 
         UINotificationFeedbackGenerator *feedback =
@@ -2520,9 +2621,28 @@ heightForRowAtIndexPath:
                 UINotificationFeedbackTypeError];
     }
 
+    [self.tableView reloadData];
     [self updateActivateButtonForCurrentSelection];
 }
 
+
+- (void)activateNextPendingOption {
+    if (self.currentActivationIndex >= self.pendingActivationOptions.count) {
+        [self finishActivationUIWithSuccess:YES
+                                     message:@"Opciones activadas correctamente."];
+
+        self.pendingActivationOptions = nil;
+        self.currentActivationOption = nil;
+        self.currentActivationIndex = 0;
+        self.activationSucceededOptions = nil;
+        return;
+    }
+
+    self.currentActivationOption =
+        self.pendingActivationOptions[self.currentActivationIndex];
+
+    [self applyOption:self.currentActivationOption];
+}
 
 - (void)activateSelectedOption {
 
@@ -2533,25 +2653,37 @@ heightForRowAtIndexPath:
         return;
     }
 
-    NSIndexPath *indexPath =
-        self.selectedOptionIndexPath;
+    NSArray<XITForgeOption *> *selected =
+        [self selectedOptions];
 
-    XITForgeOption *option =
-        [self optionAtIndexPath:indexPath];
+    NSMutableArray<XITForgeOption *> *pending =
+        [NSMutableArray arrayWithCapacity:selected.count];
 
-    if (!option) {
-        return;
+    for (XITForgeOption *option in selected) {
+        if (![self isOptionActivated:option]) {
+            [pending addObject:option];
+        }
     }
 
-    if ([self isOptionActivated:option]) {
+    if (pending.count == 0) {
         [self updateActivateButtonForCurrentSelection];
         return;
     }
 
     [self beginActivationUI];
 
-    [self applyOption:option];
+    self.pendingActivationOptions =
+        [pending copy];
+
+    self.activationSucceededOptions =
+        [NSMutableArray arrayWithCapacity:pending.count];
+
+    self.currentActivationIndex = 0;
+    self.currentActivationOption = nil;
+
+    [self activateNextPendingOption];
 }
+
 
 #pragma mark - Deactivate From Server
 
@@ -3635,8 +3767,9 @@ didCompleteWithError:
 
     [session finishTasksAndInvalidate];
 
-    self.downloadSession =
-        nil;
+    if (self.downloadSession == session) {
+        self.downloadSession = nil;
+    }
 }
 
 #pragma mark - Result
@@ -3649,18 +3782,48 @@ didCompleteWithError:
         stopAnimating];
 
     /*
-     * Nada de UIAlertController.
-     *
-     * Éxito:
-     *   banner superior temporal + audio de confirmación.
-     *   La opción queda marcada para impedir activarla dos veces.
-     *
-     * Error:
-     *   se muestra NO SE PUDO ACTIVAR en el color de acento.
+     * Una pulsación de ACTIVAR puede aplicar hasta dos opciones:
+     * primero AIMBOT y después HOLOGRAMA. El audio/banner se
+     * muestran una sola vez al terminar todo el lote.
      */
-    [self
-        finishActivationUIWithSuccess:success
-        message:message];
+    if (self.activationInProgress &&
+        self.pendingActivationOptions.count > 0) {
+
+        if (!success) {
+            [self finishActivationUIWithSuccess:NO
+                                         message:message];
+
+            self.pendingActivationOptions = nil;
+            self.currentActivationOption = nil;
+            self.currentActivationIndex = 0;
+            self.activationSucceededOptions = nil;
+            return;
+        }
+
+        if (self.currentActivationOption) {
+            [self markOptionActivated:self.currentActivationOption];
+            [self.activationSucceededOptions addObject:self.currentActivationOption];
+        }
+
+        self.currentActivationIndex += 1;
+
+        if (self.currentActivationIndex < self.pendingActivationOptions.count) {
+            [self activateNextPendingOption];
+            return;
+        }
+
+        [self finishActivationUIWithSuccess:YES
+                                     message:message];
+
+        self.pendingActivationOptions = nil;
+        self.currentActivationOption = nil;
+        self.currentActivationIndex = 0;
+        self.activationSucceededOptions = nil;
+        return;
+    }
+
+    [self finishActivationUIWithSuccess:success
+                                 message:message];
 }
 
 @end
