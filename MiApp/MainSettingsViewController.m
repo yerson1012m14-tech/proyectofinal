@@ -278,6 +278,58 @@
             UITableViewRowAnimationNone];
 }
 
+#pragma mark - Activation Voice
+
+- (BOOL)activationVoiceEnabled {
+
+    NSUserDefaults *defaults =
+        [NSUserDefaults standardUserDefaults];
+
+    /*
+     * Si el usuario nunca cambió este ajuste, la voz queda
+     * activada por defecto para conservar el comportamiento actual.
+     */
+    if ([defaults objectForKey:@"xitforgeActivationVoiceEnabled"] == nil) {
+        return YES;
+    }
+
+    return [defaults boolForKey:@"xitforgeActivationVoiceEnabled"];
+}
+
+- (void)activationVoiceChanged:(UISwitch *)sender {
+
+    [[NSUserDefaults standardUserDefaults]
+        setBool:sender.isOn
+        forKey:@"xitforgeActivationVoiceEnabled"];
+
+    [[NSUserDefaults standardUserDefaults]
+        synchronize];
+}
+
+- (NSString *)activationVoiceTitle {
+
+    switch ([Translations currentLanguage]) {
+        case 1:
+            return @"Activation voice";
+        case 2:
+            return @"Voz de ativação";
+        default:
+            return @"Voz de activación";
+    }
+}
+
+- (NSString *)activationVoiceDescription {
+
+    switch ([Translations currentLanguage]) {
+        case 1:
+            return @"Play the confirmation voice after a successful activation.";
+        case 2:
+            return @"Reproduz a voz de confirmação após uma ativação bem-sucedida.";
+        default:
+            return @"Reproduce la voz de confirmación después de activar correctamente.";
+    }
+}
+
 #pragma mark - License
 
 - (NSDate *)licenseExpirationDate {
@@ -950,10 +1002,10 @@ numberOfRowsInSection:
 
     /*
      * PREFERENCIAS:
-     * idioma + protección
+     * idioma + protección + voz de activación
      */
     if (section == 1) {
-        return self.languageExpanded ? 5 : 2;
+        return self.languageExpanded ? 6 : 3;
     }
 
     /*
@@ -1269,6 +1321,52 @@ numberOfRowsInSection:
     }
 
     /*
+     * Voz de activación
+     */
+    BOOL activationVoiceRow =
+        (!self.languageExpanded &&
+         indexPath.row == 2) ||
+        (self.languageExpanded &&
+         indexPath.row == 5);
+
+    if (indexPath.section == 1 &&
+        activationVoiceRow) {
+
+        cell.imageView.image =
+            [UIImage
+                systemImageNamed:@"speaker.wave.2.fill"];
+
+        cell.textLabel.text =
+            [self activationVoiceTitle];
+
+        cell.detailTextLabel.text =
+            [self activationVoiceDescription];
+
+        cell.detailTextLabel.numberOfLines =
+            2;
+
+        UISwitch *toggle =
+            [[UISwitch alloc] init];
+
+        toggle.on =
+            [self activationVoiceEnabled];
+
+        toggle.onTintColor =
+            [self accentColor];
+
+        [toggle addTarget:self
+                   action:@selector(
+                       activationVoiceChanged:)
+         forControlEvents:
+             UIControlEventValueChanged];
+
+        cell.accessoryView =
+            toggle;
+
+        return cell;
+    }
+
+    /*
      * =========================================================
      * INFORMACIÓN
      * =========================================================
@@ -1338,11 +1436,19 @@ heightForRowAtIndexPath:
         return 58.0;
     }
 
-    if (indexPath.section == 1 &&
-        self.languageExpanded &&
-        indexPath.row == 4) {
+    if (indexPath.section == 1) {
 
-        return 86.0;
+        BOOL protectionRow =
+            (!self.languageExpanded && indexPath.row == 1) ||
+            (self.languageExpanded && indexPath.row == 4);
+
+        BOOL activationVoiceRow =
+            (!self.languageExpanded && indexPath.row == 2) ||
+            (self.languageExpanded && indexPath.row == 5);
+
+        if (protectionRow || activationVoiceRow) {
+            return 86.0;
+        }
     }
 
     return 64.0;
