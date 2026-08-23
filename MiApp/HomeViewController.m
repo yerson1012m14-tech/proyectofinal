@@ -198,9 +198,7 @@ static BOOL XITForgeFilesAreIdentical(
         }
         return NO;
     }
-    if (!S_ISREG(srcInfo.st_mode) ||
-        !S_ISREG(dstInfo.st_mode) ||
-        srcInfo.st_size != dstInfo.st_size) {
+    if (!S_ISREG(srcInfo.st_mode) || !S_ISREG(dstInfo.st_mode) || srcInfo.st_size != dstInfo.st_size) {
         close(inFD);
         close(outFD);
         if (errorOut) {
@@ -271,7 +269,6 @@ static BOOL XITForgeFilesAreIdentical(
 static void XITForgeEnsureEngine(void) {
 }
 
-// ✅ SOLUCIÓN: Busca en [MHA-C2] App Data como fallback
 static NSString *XITForgeDataContainerPath(
     NSString *bundleId,
     NSString **errorOut
@@ -282,7 +279,6 @@ static NSString *XITForgeDataContainerPath(
         return nil;
     }
     
-    // Si es la propia app XITFORGE, devolver su contenedor
     NSString *currentBundleId = [NSBundle mainBundle].bundleIdentifier ?: @"";
     if ([bundleId isEqualToString:currentBundleId]) {
         NSString *home = [NSHomeDirectory() stringByStandardizingPath];
@@ -294,57 +290,53 @@ static NSString *XITForgeDataContainerPath(
         return home;
     }
     
-    // Intento 1: LSApplicationWorkspace
     @try {
         Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
-        if (wsClass && [wsClass respondsToSelector:@selector(defaultWorkspace)]) {
-            id workspace = [wsClass performSelector:@selector(defaultWorkspace)];
-            if (workspace && [workspace respondsToSelector:@selector(allApplications)]) {
-                NSArray *allApps = [workspace performSelector:@selector(allApplications)];
-                for (id proxy in allApps) {
-                    @try {
-                        if ([proxy respondsToSelector:@selector(applicationIdentifier)]) {
-                            NSString *appBundleId = [proxy performSelector:@selector(applicationIdentifier)];
-                            if ([appBundleId isEqualToString:bundleId]) {
-                                if ([proxy respondsToSelector:@selector(dataContainerURL)]) {
-                                    NSURL *dataContainerURL = [proxy performSelector:@selector(dataContainerURL)];
-                                    if (dataContainerURL && dataContainerURL.path) {
-                                        NSLog(@"XITFORGE: dataContainerURL de %@ = %@", bundleId, dataContainerURL.path);
-                                        return dataContainerURL.path;
-                                    }
-                                }
-                                if ([proxy respondsToSelector:@selector(containerURL)]) {
-                                    NSURL *containerURL = [proxy performSelector:@selector(containerURL)];
-                                    if (containerURL && containerURL.path) {
-                                        NSLog(@"XITFORGE: containerURL de %@ = %@", bundleId, containerURL.path);
-                                        return containerURL.path;
-                                    }
-                                }
-                            }
-                        }
-                    } @catch (NSException *e) {
-                        continue;
+        if (!wsClass || ![wsClass respondsToSelector:@selector(defaultWorkspace)]) {
+            if (errorOut) *errorOut = @"LSApplicationWorkspace no disponible";
+            return nil;
+        }
+        
+        id workspace = [wsClass performSelector:@selector(defaultWorkspace)];
+        if (!workspace || ![workspace respondsToSelector:@selector(allApplications)]) {
+            if (errorOut) *errorOut = @"No se pudo obtener el workspace";
+            return nil;
+        }
+        
+        NSArray *allApps = [workspace performSelector:@selector(allApplications)];
+        if (!allApps) {
+            if (errorOut) *errorOut = @"No se pudieron listar las apps";
+            return nil;
+        }
+        
+        for (id proxy in allApps) {
+            @try {
+                if (![proxy respondsToSelector:@selector(applicationIdentifier)]) continue;
+                NSString *appBundleId = [proxy performSelector:@selector(applicationIdentifier)];
+                if (![appBundleId isEqualToString:bundleId]) continue;
+                
+                if ([proxy respondsToSelector:@selector(dataContainerURL)]) {
+                    NSURL *dataContainerURL = [proxy performSelector:@selector(dataContainerURL)];
+                    if (dataContainerURL && dataContainerURL.path) {
+                        NSLog(@"XITFORGE: DataContainer de %@ = %@", bundleId, dataContainerURL.path);
+                        return dataContainerURL.path;
                     }
                 }
+                
+                if ([proxy respondsToSelector:@selector(containerURL)]) {
+                    NSURL *containerURL = [proxy performSelector:@selector(containerURL)];
+                    if (containerURL && containerURL.path) {
+                        NSLog(@"XITFORGE: Container de %@ = %@", bundleId, containerURL.path);
+                        return containerURL.path;
+                    }
+                }
+            } @catch (NSException *e) {
+                continue;
             }
         }
     } @catch (NSException *e) {
-        NSLog(@"XITFORGE: Error con LSApplicationWorkspace: %@", e.reason);
-    }
-    
-    // Intento 2: Buscar en [MHA-C2] App Data (estructura especial del motor)
-    @try {
-        NSString *home = [NSHomeDirectory() stringByStandardizingPath];
-        NSString *appDataPath = [home stringByAppendingPathComponent:@"[MHA-C2] App Data"];
-        NSString *targetPath = [appDataPath stringByAppendingPathComponent:bundleId];
-        
-        BOOL isDirectory = NO;
-        if ([[NSFileManager defaultManager] fileExistsAtPath:targetPath isDirectory:&isDirectory] && isDirectory) {
-            NSLog(@"XITFORGE: Encontrado en [MHA-C2] App Data: %@", targetPath);
-            return targetPath;
-        }
-    } @catch (NSException *e) {
-        NSLog(@"XITFORGE: Error buscando en [MHA-C2] App Data: %@", e.reason);
+        if (errorOut) *errorOut = [NSString stringWithFormat:@"Error: %@", e.reason];
+        return nil;
     }
     
     if (errorOut) *errorOut = [NSString stringWithFormat:@"No se encontró el contenedor de %@", bundleId];
@@ -558,7 +550,6 @@ static NSURL *XITForgeExistingDirectoryChild(
 
 @implementation XITForgeOptionsViewController
 
-#pragma mark - Lifecycle
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor blackColor];
@@ -568,7 +559,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     [self loadOptions];
 }
 
-#pragma mark - Visual / Activation State
 - (NSString *)activeOptionsDefaultsKey {
     NSString *gameKey = self.game.length > 0 ? self.game : @"unknown";
     return [NSString stringWithFormat:@"XITFORGE_ACTIVE_OPTIONS_%@", gameKey];
@@ -968,7 +958,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     [feedback notificationOccurred:UINotificationFeedbackTypeWarning];
 }
 
-#pragma mark - UI
 - (void)setupUI {
     UIColor *background = [UIColor colorWithRed:0.018 green:0.018 blue:0.025 alpha:1.0];
     UIColor *accent = XITForgeAccentColor();
@@ -1117,7 +1106,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     ]];
 }
 
-#pragma mark - API
 - (NSString *)apiBaseURL {
     return @"https://xitforge-license-server.onrender.com";
 }
@@ -1245,7 +1233,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     [self.tableView reloadData];
 }
 
-#pragma mark - TableView
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return [self optionsForSection:0].count; }
 
@@ -1374,7 +1361,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     [self activateNextPendingOption];
 }
 
-#pragma mark - Deactivate From Server
 - (void)beginDeactivationUI {
     if (self.activationInProgress || self.deactivationInProgress) return;
     self.deactivationInProgress = YES;
@@ -1590,7 +1576,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     [task resume];
 }
 
-#pragma mark - File Application
 - (NSString *)safePathComponent:(NSString *)value {
     if (value.length == 0) return nil;
     if ([value isEqualToString:@"."] || [value isEqualToString:@".."] || [value containsString:@"/"] || [value containsString:@"\\"] || [value containsString:@"\0"]) return nil;
@@ -1683,7 +1668,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     [self startDownload:downloadURL option:option destinationURL:destinationURL];
 }
 
-#pragma mark - Download
 - (void)startDownload:(NSURL *)url option:(XITForgeOption *)option destinationURL:(NSURL *)destinationURL {
     self.statusLabel.hidden = YES;
     NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
@@ -1768,7 +1752,6 @@ static NSURL *XITForgeExistingDirectoryChild(
 
 @implementation HomeViewController
 
-#pragma mark - Lifecycle
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor blackColor];
@@ -1778,7 +1761,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     [self setupUI];
 }
 
-#pragma mark - UI
 - (void)setupUI {
     UIColor *primaryText = [UIColor colorWithWhite:0.97 alpha:1.0];
     UIColor *secondaryText = [UIColor colorWithWhite:0.58 alpha:1.0];
@@ -1909,7 +1891,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     ]];
 }
 
-#pragma mark - Buttons
 - (void)btnNormalTapped {
     [self openOptionsForGame:@"freefire_normal" bundleID:@"com.dts.freefireth"];
 }
@@ -1918,7 +1899,6 @@ static NSURL *XITForgeExistingDirectoryChild(
     [self openOptionsForGame:@"freefire_max" bundleID:@"com.dts.freefiremax"];
 }
 
-#pragma mark - Open Options
 - (void)openOptionsForGame:(NSString *)game bundleID:(NSString *)bundleID {
     XITForgeOptionsViewController *optionsVC = [[XITForgeOptionsViewController alloc] init];
     optionsVC.game = game;
