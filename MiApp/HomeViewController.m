@@ -704,7 +704,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     card.layer.shadowOffset = CGSizeMake(0.0, 12.0);
     UILabel *warningIcon = [[UILabel alloc] init];
     warningIcon.translatesAutoresizingMaskIntoConstraints = NO;
-    warningIcon.text = @"⚠️";
+    warningIcon.text = @"️";
     warningIcon.textAlignment = NSTextAlignmentCenter;
     warningIcon.font = [UIFont systemFontOfSize:38.0 weight:UIFontWeightRegular];
     UILabel *title = [[UILabel alloc] init];
