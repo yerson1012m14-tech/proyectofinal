@@ -1536,7 +1536,7 @@ static NSURL *XITForgeExistingDirectoryChild(
 
     overlay.backgroundColor =
         [UIColor colorWithWhite:0.0
-                          alpha:0.68];
+                          alpha:0.72];
 
     self.aimbotWarningOverlay =
         overlay;
@@ -1561,14 +1561,14 @@ static NSURL *XITForgeExistingDirectoryChild(
         1.0;
 
     card.layer.borderColor =
-        [XITForgeAccentColor()
-            colorWithAlphaComponent:0.52].CGColor;
+        [UIColor colorWithWhite:1.0
+                          alpha:0.10].CGColor;
 
     card.layer.shadowColor =
         [UIColor blackColor].CGColor;
 
     card.layer.shadowOpacity =
-        0.48;
+        0.50;
 
     card.layer.shadowRadius =
         24.0;
@@ -1577,45 +1577,21 @@ static NSURL *XITForgeExistingDirectoryChild(
         CGSizeMake(0.0, 12.0);
 
 
-    UIView *iconCircle =
-        [[UIView alloc] init];
-
-    iconCircle.translatesAutoresizingMaskIntoConstraints =
-        NO;
-
-    iconCircle.backgroundColor =
-        [XITForgeAccentColor()
-            colorWithAlphaComponent:0.16];
-
-    iconCircle.layer.cornerRadius =
-        21.0;
-
-    iconCircle.layer.borderWidth =
-        1.0;
-
-    iconCircle.layer.borderColor =
-        [XITForgeAccentColor()
-            colorWithAlphaComponent:0.58].CGColor;
-
-
-    UILabel *icon =
+    UILabel *warningIcon =
         [[UILabel alloc] init];
 
-    icon.translatesAutoresizingMaskIntoConstraints =
+    warningIcon.translatesAutoresizingMaskIntoConstraints =
         NO;
 
-    icon.text =
-        @"!";
+    warningIcon.text =
+        @"⚠️";
 
-    icon.textAlignment =
+    warningIcon.textAlignment =
         NSTextAlignmentCenter;
 
-    icon.textColor =
-        XITForgeAccentColor();
-
-    icon.font =
-        [UIFont systemFontOfSize:22.0
-                          weight:UIFontWeightBlack];
+    warningIcon.font =
+        [UIFont systemFontOfSize:38.0
+                          weight:UIFontWeightRegular];
 
 
     UILabel *title =
@@ -1627,15 +1603,18 @@ static NSURL *XITForgeExistingDirectoryChild(
     title.text =
         @"ADVERTENCIA PARA EL AIMBOT";
 
+    title.textAlignment =
+        NSTextAlignmentCenter;
+
     title.textColor =
         [UIColor whiteColor];
 
     title.font =
-        [UIFont systemFontOfSize:16.0
+        [UIFont systemFontOfSize:17.0
                           weight:UIFontWeightBold];
 
     title.numberOfLines =
-        2;
+        0;
 
 
     UIView *messageBox =
@@ -1668,8 +1647,11 @@ static NSURL *XITForgeExistingDirectoryChild(
     message.text =
         @"ANTES DE ENTRAR A LA CUENTA DARLE A DESACTIVAR";
 
+    message.textAlignment =
+        NSTextAlignmentCenter;
+
     message.textColor =
-        [UIColor colorWithWhite:0.78
+        [UIColor colorWithWhite:0.80
                           alpha:1.0];
 
     message.font =
@@ -1678,9 +1660,6 @@ static NSURL *XITForgeExistingDirectoryChild(
 
     message.numberOfLines =
         0;
-
-    message.textAlignment =
-        NSTextAlignmentLeft;
 
 
     UIButton *understoodButton =
@@ -1728,14 +1707,10 @@ static NSURL *XITForgeExistingDirectoryChild(
     [host addSubview:overlay];
     [overlay addSubview:card];
 
-    [card addSubview:iconCircle];
-    [iconCircle addSubview:icon];
-
+    [card addSubview:warningIcon];
     [card addSubview:title];
     [card addSubview:messageBox];
-
     [messageBox addSubview:message];
-
     [card addSubview:understoodButton];
 
 
@@ -1782,47 +1757,30 @@ static NSURL *XITForgeExistingDirectoryChild(
                 360.0],
 
 
-        [iconCircle.leadingAnchor
-            constraintEqualToAnchor:
-                card.leadingAnchor
-                constant:20.0],
-
-        [iconCircle.topAnchor
+        [warningIcon.topAnchor
             constraintEqualToAnchor:
                 card.topAnchor
-                constant:22.0],
+                constant:24.0],
 
-        [iconCircle.widthAnchor
-            constraintEqualToConstant:
-                42.0],
-
-        [iconCircle.heightAnchor
-            constraintEqualToConstant:
-                42.0],
-
-
-        [icon.centerXAnchor
+        [warningIcon.centerXAnchor
             constraintEqualToAnchor:
-                iconCircle.centerXAnchor],
+                card.centerXAnchor],
 
-        [icon.centerYAnchor
+
+        [title.topAnchor
             constraintEqualToAnchor:
-                iconCircle.centerYAnchor],
-
+                warningIcon.bottomAnchor
+                constant:12.0],
 
         [title.leadingAnchor
             constraintEqualToAnchor:
-                iconCircle.trailingAnchor
-                constant:12.0],
+                card.leadingAnchor
+                constant:22.0],
 
         [title.trailingAnchor
             constraintEqualToAnchor:
                 card.trailingAnchor
-                constant:-20.0],
-
-        [title.centerYAnchor
-            constraintEqualToAnchor:
-                iconCircle.centerYAnchor],
+                constant:-22.0],
 
 
         [messageBox.leadingAnchor
@@ -1837,29 +1795,29 @@ static NSURL *XITForgeExistingDirectoryChild(
 
         [messageBox.topAnchor
             constraintEqualToAnchor:
-                iconCircle.bottomAnchor
+                title.bottomAnchor
                 constant:18.0],
 
 
         [message.leadingAnchor
             constraintEqualToAnchor:
                 messageBox.leadingAnchor
-                constant:15.0],
+                constant:18.0],
 
         [message.trailingAnchor
             constraintEqualToAnchor:
                 messageBox.trailingAnchor
-                constant:-15.0],
+                constant:-18.0],
 
         [message.topAnchor
             constraintEqualToAnchor:
                 messageBox.topAnchor
-                constant:14.0],
+                constant:16.0],
 
         [message.bottomAnchor
             constraintEqualToAnchor:
                 messageBox.bottomAnchor
-                constant:-14.0],
+                constant:-16.0],
 
 
         [understoodButton.leadingAnchor
