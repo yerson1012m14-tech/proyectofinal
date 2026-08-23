@@ -1221,7 +1221,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
             NSURL *destinationURL = [self destinationURLForOption:option error:&resolveError];
             NSURL *downloadURL = [self absoluteServerURLForString:option.originalFileUrl];
             if (!destinationURL || !downloadURL) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
-            [items addObject:@{"downloadURL": downloadURL, "destinationURL": destinationURL}];
+            [items addObject:@{@"downloadURL": downloadURL, @"destinationURL": destinationURL}];
         }
         [self restoreOriginalItems:items index:0];
     });
