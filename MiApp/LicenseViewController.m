@@ -3,15 +3,94 @@
 #import "SettingsViewController.h"
 #import "Translations.h"
 #import <QuartzCore/QuartzCore.h>
+#import <dlfcn.h>
 
 @interface LicenseViewController () <UITextFieldDelegate>
 @property (nonatomic, strong) UITextField *licenseField;
 @property (nonatomic, strong) UIButton *continueButton;
 @property (nonatomic, strong) CAGradientLayer *buttonGradient;
 @property (nonatomic, strong) UIButton *settingsButton;
+@property (nonatomic, strong) UIView *engineStatusBadge;
+@property (nonatomic, strong) UILabel *engineStatusLabel;
 @property (nonatomic, assign) NSInteger selectedLanguage;
 @property (nonatomic, assign) BOOL screenProtection;
 @end
+
+/*
+ * Comprobación no destructiva de compatibilidad del motor.
+ *
+ * Solo se marca COMPATIBLE cuando:
+ *  - están disponibles las funciones esenciales del motor;
+ *  - MCMFilzaStart puede inicializarse;
+ *  - el motor devuelve un VirtualRoot real, existente, directorio y legible.
+ *
+ * No se llama TweakInit.
+ * No se habilita MCMFilzaSetUnrestrictedFilesystem.
+ * No se crea, modifica ni elimina ningún archivo.
+ */
+static BOOL XITForgeEngineIsCompatible(void) {
+
+    void (*start)(void) =
+        (void (*)(void))dlsym(
+            RTLD_DEFAULT,
+            "MCMFilzaStart"
+        );
+
+    NSString *(*dataPath)(NSString *, NSString **) =
+        (NSString *(*)(NSString *, NSString **))dlsym(
+            RTLD_DEFAULT,
+            "MCMFilzaDataContainerPath"
+        );
+
+    NSString *(*virtualRoot)(void) =
+        (NSString *(*)(void))dlsym(
+            RTLD_DEFAULT,
+            "MCMFilzaVirtualRoot"
+        );
+
+    if (!start || !dataPath || !virtualRoot) {
+        return NO;
+    }
+
+    static dispatch_once_t onceToken;
+
+    dispatch_once(&onceToken, ^{
+        start();
+    });
+
+    NSString *root =
+        virtualRoot();
+
+    if (
+        ![root isKindOfClass:[NSString class]] ||
+        root.length == 0
+    ) {
+        return NO;
+    }
+
+    NSString *standardRoot =
+        [root stringByStandardizingPath];
+
+    NSFileManager *fm =
+        [NSFileManager defaultManager];
+
+    BOOL isDirectory =
+        NO;
+
+    if (
+        ![fm fileExistsAtPath:standardRoot
+                  isDirectory:&isDirectory] ||
+        !isDirectory
+    ) {
+        return NO;
+    }
+
+    if (![fm isReadableFileAtPath:standardRoot]) {
+        return NO;
+    }
+
+    return YES;
+}
 
 @implementation LicenseViewController
 
@@ -178,6 +257,60 @@
 
     [self.view addSubview:self.settingsButton];
 
+    /*
+     * Estado del motor: esquina inferior izquierda de la pantalla de key.
+     * Empieza como "VERIFICANDO..." y después solo muestra COMPATIBLE
+     * cuando la comprobación real del motor pasa.
+     */
+    self.engineStatusBadge =
+        [[UIView alloc] init];
+
+    self.engineStatusBadge.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.engineStatusBadge.backgroundColor =
+        [UIColor colorWithWhite:0.055 alpha:0.96];
+
+    self.engineStatusBadge.layer.cornerRadius =
+        12.0;
+
+    self.engineStatusBadge.layer.borderWidth =
+        1.0;
+
+    self.engineStatusBadge.layer.borderColor =
+        [UIColor colorWithWhite:0.18 alpha:1.0].CGColor;
+
+    [self.view addSubview:self.engineStatusBadge];
+
+
+    self.engineStatusLabel =
+        [[UILabel alloc] init];
+
+    self.engineStatusLabel.translatesAutoresizingMaskIntoConstraints =
+        NO;
+
+    self.engineStatusLabel.text =
+        @"MOTOR · VERIFICANDO...";
+
+    self.engineStatusLabel.textAlignment =
+        NSTextAlignmentCenter;
+
+    self.engineStatusLabel.textColor =
+        [UIColor colorWithWhite:0.52 alpha:1.0];
+
+    self.engineStatusLabel.font =
+        [UIFont systemFontOfSize:10.5
+                          weight:UIFontWeightBold];
+
+    self.engineStatusLabel.adjustsFontSizeToFitWidth =
+        YES;
+
+    self.engineStatusLabel.minimumScaleFactor =
+        0.75;
+
+    [self.engineStatusBadge
+        addSubview:self.engineStatusLabel];
+
     [NSLayoutConstraint activateConstraints:@[
         [topGlow.centerXAnchor
             constraintEqualToAnchor:self.view.centerXAnchor],
@@ -299,10 +432,43 @@
             constraintEqualToConstant:28],
 
         [self.settingsButton.heightAnchor
-            constraintEqualToConstant:28]
+            constraintEqualToConstant:28],
+
+
+        [self.engineStatusBadge.leadingAnchor
+            constraintEqualToAnchor:
+                self.view.safeAreaLayoutGuide.leadingAnchor
+                constant:16],
+
+        [self.engineStatusBadge.bottomAnchor
+            constraintEqualToAnchor:
+                self.view.safeAreaLayoutGuide.bottomAnchor
+                constant:-14],
+
+        [self.engineStatusBadge.heightAnchor
+            constraintEqualToConstant:30],
+
+        [self.engineStatusBadge.widthAnchor
+            constraintEqualToConstant:164],
+
+
+        [self.engineStatusLabel.leadingAnchor
+            constraintEqualToAnchor:
+                self.engineStatusBadge.leadingAnchor
+                constant:10],
+
+        [self.engineStatusLabel.trailingAnchor
+            constraintEqualToAnchor:
+                self.engineStatusBadge.trailingAnchor
+                constant:-10],
+
+        [self.engineStatusLabel.centerYAnchor
+            constraintEqualToAnchor:
+                self.engineStatusBadge.centerYAnchor]
     ]];
 
     [self updateButtonGradientFrame];
+    [self updateEngineCompatibilityStatus];
 }
 
 - (void)viewDidLayoutSubviews {
@@ -315,6 +481,54 @@
     self.buttonGradient.cornerRadius =
         self.continueButton.layer.cornerRadius;
 }
+
+- (void)updateEngineCompatibilityStatus {
+
+    BOOL compatible =
+        XITForgeEngineIsCompatible();
+
+    UIColor *green =
+        [UIColor colorWithRed:0.20
+                        green:0.86
+                         blue:0.42
+                        alpha:1.0];
+
+    UIColor *red =
+        [UIColor colorWithRed:0.96
+                        green:0.16
+                         blue:0.18
+                        alpha:1.0];
+
+    if (compatible) {
+
+        self.engineStatusLabel.text =
+            @"MOTOR · COMPATIBLE";
+
+        self.engineStatusLabel.textColor =
+            green;
+
+        self.engineStatusBadge.layer.borderColor =
+            [green colorWithAlphaComponent:0.34].CGColor;
+
+        self.engineStatusBadge.backgroundColor =
+            [green colorWithAlphaComponent:0.065];
+
+    } else {
+
+        self.engineStatusLabel.text =
+            @"MOTOR · NO COMPATIBLE";
+
+        self.engineStatusLabel.textColor =
+            red;
+
+        self.engineStatusBadge.layer.borderColor =
+            [red colorWithAlphaComponent:0.30].CGColor;
+
+        self.engineStatusBadge.backgroundColor =
+            [red colorWithAlphaComponent:0.055];
+    }
+}
+
 
 - (void)updateContinueButtonText {
     [self.continueButton
