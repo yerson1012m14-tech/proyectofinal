@@ -4,6 +4,9 @@
 static NSString * const kLicenseAPIURL =
     @"https://xitforge-license-server.onrender.com/api/license/validate";
 
+static NSString * const kLicenseAccessLevelDefaultsKey =
+    @"XITForgeLicenseAccessLevel";
+
 @implementation LicenseValidator
 
 + (BOOL)isValidFormat:(NSString *)key {
@@ -208,6 +211,34 @@ static NSString * const kLicenseAPIURL =
                     [NSString class]]
                     ? json[@"expiresAt"]
                     : nil;
+
+            NSString *accessLevel =
+                [json[@"accessLevel"] isKindOfClass:
+                    [NSString class]]
+                    ? [json[@"accessLevel"] lowercaseString]
+                    : nil;
+
+            NSUserDefaults *defaults =
+                [NSUserDefaults standardUserDefaults];
+
+            if (valid) {
+                /*
+                 * El servidor es la autoridad sobre el tipo de licencia.
+                 * Solo aceptamos los dos niveles conocidos. Si por alguna
+                 * razón el campo falta o llega alterado, se usa el nivel
+                 * más limitado para no desbloquear funciones premium.
+                 */
+                if (![accessLevel isEqualToString:@"premium"] &&
+                    ![accessLevel isEqualToString:@"aimbot_only"]) {
+                    accessLevel = @"aimbot_only";
+                }
+
+                [defaults setObject:accessLevel
+                             forKey:kLicenseAccessLevelDefaultsKey];
+            } else {
+                [defaults removeObjectForKey:
+                    kLicenseAccessLevelDefaultsKey];
+            }
 
             if (completion) {
                 completion(valid,

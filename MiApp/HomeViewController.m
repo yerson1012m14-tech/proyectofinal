@@ -410,6 +410,28 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     [self loadOptions];
 }
 
+- (BOOL)isAimbotOnlyLicense {
+    NSString *accessLevel = [[[NSUserDefaults standardUserDefaults]
+        stringForKey:@"XITForgeLicenseAccessLevel"] lowercaseString];
+    return [accessLevel isEqualToString:@"aimbot_only"];
+}
+
+- (void)showPremiumRequiredAlert {
+    if (self.presentedViewController) return;
+
+    UIAlertController *alert =
+        [UIAlertController alertControllerWithTitle:@"FUNCIÓN PREMIUM"
+                                            message:@"Tu key gratis permite usar únicamente las opciones de AIMBOT. HOLOGRAMAS y FPS requieren una key premium."
+                                     preferredStyle:UIAlertControllerStyleAlert];
+
+    [alert addAction:
+        [UIAlertAction actionWithTitle:@"ENTENDIDO"
+                                 style:UIAlertActionStyleDefault
+                               handler:nil]];
+
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 - (NSString *)activeOptionsDefaultsKey {
     NSString *gameKey = self.game.length > 0 ? self.game : @"unknown";
     return [NSString stringWithFormat:@"XITFORGE_ACTIVE_OPTIONS_%@", gameKey];
@@ -626,6 +648,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     BOOL aimbotSelected = [self.selectedCategory isEqualToString:@"aimbot"];
     BOOL hologramSelected = [self.selectedCategory isEqualToString:@"holograma"];
     BOOL fpsSelected = [self.selectedCategory isEqualToString:@"fps"];
+    BOOL aimbotOnly = [self isAimbotOnlyLicense];
     UIColor *accent = XITForgeAccentColor();
     UIColor *inactive = [UIColor colorWithWhite:0.085 alpha:1.0];
     UIColor *inactiveBorder = [UIColor colorWithWhite:1.0 alpha:0.08];
@@ -636,8 +659,10 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     self.hologramTabButton.layer.borderColor = (hologramSelected ? [accent colorWithAlphaComponent:0.95] : inactiveBorder).CGColor;
     self.fpsTabButton.layer.borderColor = (fpsSelected ? [accent colorWithAlphaComponent:0.95] : inactiveBorder).CGColor;
     self.aimbotTabButton.alpha = aimbotSelected ? 1.0 : 0.72;
-    self.hologramTabButton.alpha = hologramSelected ? 1.0 : 0.72;
-    self.fpsTabButton.alpha = fpsSelected ? 1.0 : 0.72;
+    self.hologramTabButton.alpha = aimbotOnly ? 0.38 : (hologramSelected ? 1.0 : 0.72);
+    self.fpsTabButton.alpha = aimbotOnly ? 0.38 : (fpsSelected ? 1.0 : 0.72);
+    [self.hologramTabButton setTitle:(aimbotOnly ? @"HOLOGRAMAS 🔒" : @"HOLOGRAMAS") forState:UIControlStateNormal];
+    [self.fpsTabButton setTitle:(aimbotOnly ? @"FPS 🔒" : @"FPS") forState:UIControlStateNormal];
 }
 
 - (void)switchToCategory:(NSString *)category {
@@ -645,6 +670,12 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     NSString *normalized = @"holograma";
     if ([lower isEqualToString:@"aimbot"]) normalized = @"aimbot";
     else if ([lower isEqualToString:@"fps"]) normalized = @"fps";
+
+    if ([self isAimbotOnlyLicense] && ![normalized isEqualToString:@"aimbot"]) {
+        [self showPremiumRequiredAlert];
+        return;
+    }
+
     if ([self.selectedCategory isEqualToString:normalized]) return;
     self.selectedCategory = normalized;
     if ([normalized isEqualToString:@"aimbot"]) self.selectedOptionIndexPath = self.selectedAimbotIndexPath;
@@ -1261,6 +1292,17 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 - (void)activateSelectedOption {
     if (self.activationInProgress || self.deactivationInProgress) return;
     NSArray<XITForgeOption *> *selected = [self selectedOptions];
+
+    if ([self isAimbotOnlyLicense]) {
+        for (XITForgeOption *option in selected) {
+            NSString *category = option.category.lowercaseString ?: @"holograma";
+            if (![category isEqualToString:@"aimbot"]) {
+                [self showPremiumRequiredAlert];
+                return;
+            }
+        }
+    }
+
     NSMutableArray<XITForgeOption *> *pending = [NSMutableArray arrayWithCapacity:selected.count];
     for (XITForgeOption *option in selected) {
         if (![self isOptionActivated:option]) [pending addObject:option];
