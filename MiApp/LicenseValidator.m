@@ -8,6 +8,8 @@ static NSString * const kLicenseAccessLevelDefaultsKey =
     @"XITForgeLicenseAccessLevel";
 
 static NSString *xfSessionToken = nil;
+// Retained only in memory to retrieve restore-only originals after an expiry.
+static NSString *xfOriginalsCleanupToken = nil;
 static NSDate *xfSessionExpiresAt = nil;
 static NSString * const kXFHost = @"xitforge-license-server.onrender.com";
 static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
@@ -155,7 +157,8 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
             }
 
             NSHTTPURLResponse *httpResponse =
-                (NSHTTPURLResponse *)response;
+                [response isKindOfClass:[NSHTTPURLResponse class]]
+                    ? (NSHTTPURLResponse *)response : nil;
 
             if (httpResponse.statusCode < 200 ||
                 httpResponse.statusCode >= 300) {
@@ -264,6 +267,7 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
                 } else {
                     @synchronized(self) {
                         xfSessionToken = [newToken copy];
+                        xfOriginalsCleanupToken = [newToken copy];
                         xfSessionExpiresAt = newExpiry;
                     }
                     [defaults setObject:accessLevel
@@ -289,6 +293,52 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
     [task resume];
 }
 
+
+// La decisión sobre una opción es siempre del servidor; una preferencia local
+// o una respuesta previa de /validate no son autorización suficiente.
++ (void)authorizeActivationForOptionId:(NSNumber *)optionId
+                          completion:(void (^)(BOOL, BOOL))completion {
+    if (![optionId isKindOfClass:[NSNumber class]] || optionId.longLongValue < 1) {
+        dispatch_async(dispatch_get_main_queue(), ^{ if (completion) completion(NO, NO); });
+        return;
+    }
+    NSString *urlString = [NSString stringWithFormat:
+        @"https://xitforge-license-server.onrender.com/api/app/options/%@/authorize", optionId];
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url) { dispatch_async(dispatch_get_main_queue(), ^{ if (completion) completion(NO, NO); }); return; }
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.HTTPMethod = @"POST";
+    request.timeoutInterval = 20.0;
+    request.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
+    [self authorizeRequest:request completion:^(BOOL permitted) {
+        if (!permitted) { dispatch_async(dispatch_get_main_queue(), ^{ if (completion) completion(NO, NO); }); return; }
+        NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request
+            completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            [self handleProtectedHTTPResponse:response];
+            BOOL accepted = NO;
+            BOOL warn = NO;
+            NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]]
+                ? (NSHTTPURLResponse *)response : nil;
+            if (!error && data && http.statusCode == 200) {
+                id object = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+                if ([object isKindOfClass:[NSDictionary class]]) {
+                    NSDictionary *json = (NSDictionary *)object;
+                    NSNumber *returnedId = [json[@"optionId"] isKindOfClass:[NSNumber class]]
+                        ? json[@"optionId"] : nil;
+                    accepted = [json[@"ok"] isKindOfClass:[NSNumber class]] &&
+                        [json[@"ok"] boolValue] &&
+                        [json[@"authorized"] isKindOfClass:[NSNumber class]] &&
+                        [json[@"authorized"] boolValue] &&
+                        [returnedId isEqualToNumber:optionId];
+                    warn = accepted && [json[@"warnOnActivate"] isKindOfClass:[NSNumber class]] &&
+                        [json[@"warnOnActivate"] boolValue];
+                }
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{ if (completion) completion(accepted, warn); });
+        }];
+        [task resume];
+    }];
+}
 
 + (void)clearSession {
     @synchronized(self) {
@@ -325,6 +375,16 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
         if (xfSessionToken.length > 0 &&
             [xfSessionExpiresAt timeIntervalSinceNow] > 30.0) {
             token = [xfSessionToken copy];
+        }
+    }
+    // The backend grants a previously authenticated device restore-only access
+    // to /api/app/originals for a limited time after an expired/revoked key.
+    if ([url.path isEqualToString:@"/api/app/originals"] ||
+        [url.path hasPrefix:@"/api/app/originals/"]) {
+        @synchronized(self) {
+            if (!token.length && xfOriginalsCleanupToken.length > 0) {
+                token = [xfOriginalsCleanupToken copy];
+            }
         }
     }
     if (token.length > 0) {

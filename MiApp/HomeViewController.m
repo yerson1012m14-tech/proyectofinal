@@ -390,6 +390,9 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 @property (nonatomic, strong) UIButton *activateButton;
 @property (nonatomic, strong) UIActivityIndicatorView *activateSpinner;
 @property (nonatomic, assign) BOOL activationInProgress;
+@property (nonatomic, assign) BOOL activationAuthorizationInProgress;
+@property (nonatomic, assign) BOOL warnOnCurrentActivation;
+@property (nonatomic, assign) BOOL xfCleanupPending;
 @property (nonatomic, strong) UIButton *deactivateButton;
 @property (nonatomic, assign) BOOL deactivationInProgress;
 @property (nonatomic, strong) UIView *aimbotWarningOverlay;
@@ -400,12 +403,25 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 @property (nonatomic, strong) NSURLSession *downloadSession;
 @end
 
+// Keep the most recent options screen for each game alive while it has active
+// changes, so background license rechecks can call the existing DESACTIVAR path.
+static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiveScreens(void) {
+    static NSMutableDictionary *screens;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ screens = [NSMutableDictionary dictionary]; });
+    return screens;
+}
+
 @implementation XITForgeOptionsViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor blackColor];
     [self loadPersistedActiveOptions];
+    if (self.activeOptionKeys.count && self.game.length) XFActiveScreens()[self.game] = self;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(xfLicenseNoLongerAuthorized:)
+        name:@"XITForgeAutoDeactivate" object:nil];
     [self configureNavigationTitle];
     [self setupUI];
     [self loadOptions];
@@ -467,11 +483,13 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     if (key.length == 0) return;
     [self.activeOptionKeys addObject:key];
     [self persistActiveOptions];
+    if (self.game.length) XFActiveScreens()[self.game] = self;
 }
 
 - (void)clearActivatedOptions {
     [self.activeOptionKeys removeAllObjects];
     [self persistActiveOptions];
+    if (self.game.length && XFActiveScreens()[self.game] == self) [XFActiveScreens() removeObjectForKey:self.game];
 }
 
 - (NSArray<XITForgeOption *> *)activeOptionsForDeactivation {
@@ -550,7 +568,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 }
 
 - (void)showDeactivationChooser {
-    if (self.activationInProgress || self.deactivationInProgress) return;
+    if (self.activationInProgress || self.deactivationInProgress || self.activationAuthorizationInProgress) return;
     NSArray<XITForgeOption *> *active = [self activeOptionsForDeactivation];
     if (active.count == 0) {
         self.selectionHintLabel.text = @"NO HAY OPCIONES ACTIVAS";
@@ -1111,7 +1129,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     request.HTTPMethod = @"GET";
     request.timeoutInterval = 20.0;
     [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
-    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; }); return; }
+    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self showError:@"Sin key válida. Inicia sesión y vuelve a intentarlo."]; }); return; }
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [self.activityIndicator stopAnimating];
@@ -1128,7 +1146,8 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
             NSNumber *ok = dictionary[@"ok"];
             if (![ok isKindOfClass:[NSNumber class]] || !ok.boolValue) {
                 NSString *serverError = [dictionary[@"error"] isKindOfClass:[NSString class]] ? dictionary[@"error"] : @"No se pudieron cargar las opciones.";
-                [self showError:serverError];
+                (void)serverError;
+                [self showError:@"No se pudieron cargar las opciones. Comprueba tu licencia y conexión."];
                 return;
             }
             NSArray *rawOptions = dictionary[@"options"];
@@ -1186,6 +1205,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 
 - (void)showError:(NSString *)message {
     [self.activityIndicator stopAnimating];
+    self.statusLabel.textAlignment = NSTextAlignmentCenter;
     self.statusLabel.text = message;
     self.statusLabel.hidden = NO;
     [self.tableView reloadData];
@@ -1255,6 +1275,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 - (void)finishActivationUIWithSuccess:(BOOL)success message:(NSString *)message {
     self.activationInProgress = NO;
     self.tableView.userInteractionEnabled = YES;
+    if (!success) self.warnOnCurrentActivation = NO;
     [self.activateSpinner stopAnimating];
     if (!self.deactivationInProgress) { self.deactivateButton.enabled = YES; self.deactivateButton.alpha = 1.0; }
     NSArray<XITForgeOption *> *activatedOptions = [self.activationSucceededOptions copy] ?: @[];
@@ -1268,7 +1289,8 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
             NSString *category = option.category.lowercaseString ?: @"";
             if ([category isEqualToString:@"aimbot"]) { activatedAimbot = YES; break; }
         }
-        if (activatedAimbot) [self showAimbotWarning];
+        if (activatedAimbot && self.warnOnCurrentActivation) [self showAimbotWarning];
+        self.warnOnCurrentActivation = NO;
         UINotificationFeedbackGenerator *feedback = [[UINotificationFeedbackGenerator alloc] init];
         [feedback notificationOccurred:UINotificationFeedbackTypeSuccess];
     } else {
@@ -1279,6 +1301,12 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     }
     [self.tableView reloadData];
     [self updateActivateButtonForCurrentSelection];
+    if (self.xfCleanupPending) {
+        self.xfCleanupPending = NO;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self xfLicenseNoLongerAuthorized:nil];
+        });
+    }
 }
 
 - (void)activateNextPendingOption {
@@ -1294,31 +1322,55 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     [self applyOption:self.currentActivationOption];
 }
 
+- (void)showCenteredActivationError:(NSString *)message {
+    if (self.presentedViewController) return;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"NO SE PUDO ACTIVAR"
+        message:message ?: @"Comprueba tu key y conexión con el servidor."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"ENTENDIDO"
+        style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 - (void)activateSelectedOption {
-    if (self.activationInProgress || self.deactivationInProgress) return;
+    if (self.activationInProgress || self.deactivationInProgress ||
+        self.activationAuthorizationInProgress) return;
     NSArray<XITForgeOption *> *selected = [self selectedOptions];
-
-    if ([self isAimbotOnlyLicense]) {
-        for (XITForgeOption *option in selected) {
-            NSString *category = option.category.lowercaseString ?: @"holograma";
-            if (![category isEqualToString:@"aimbot"]) {
-                [self showPremiumRequiredAlert];
-                return;
-            }
+    if (selected.count != 1) return;
+    XITForgeOption *option = selected.firstObject;
+    if ([self isOptionActivated:option]) { [self updateActivateButtonForCurrentSelection]; return; }
+    if (!option.optionId || option.optionId.longLongValue < 1) {
+        [self showCenteredActivationError:@"La opción seleccionada no es válida."];
+        return;
+    }
+    self.activationAuthorizationInProgress = YES;
+    self.activateButton.enabled = NO;
+    self.tableView.userInteractionEnabled = NO;
+    __weak typeof(self) weakSelf = self;
+    [LicenseValidator authorizeActivationForOptionId:option.optionId
+        completion:^(BOOL authorized, BOOL showWarning) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.activationAuthorizationInProgress = NO;
+        strongSelf.tableView.userInteractionEnabled = YES;
+        if (!authorized) {
+            [strongSelf updateActivateButtonForCurrentSelection];
+            [strongSelf showCenteredActivationError:@"Sin key válida o sin autorización para esta opción. Comprueba tu licencia y conexión."];
+            return;
         }
-    }
-
-    NSMutableArray<XITForgeOption *> *pending = [NSMutableArray arrayWithCapacity:selected.count];
-    for (XITForgeOption *option in selected) {
-        if (![self isOptionActivated:option]) [pending addObject:option];
-    }
-    if (pending.count == 0) { [self updateActivateButtonForCurrentSelection]; return; }
-    [self beginActivationUI];
-    self.pendingActivationOptions = [pending copy];
-    self.activationSucceededOptions = [NSMutableArray arrayWithCapacity:pending.count];
-    self.currentActivationIndex = 0;
-    self.currentActivationOption = nil;
-    [self activateNextPendingOption];
+        // No aplicar otra opción si cambió la selección mientras se verificaba.
+        if (![strongSelf.selectedOptions.firstObject.optionId isEqualToNumber:option.optionId]) {
+            [strongSelf updateActivateButtonForCurrentSelection];
+            return;
+        }
+        strongSelf.warnOnCurrentActivation = showWarning;
+        [strongSelf beginActivationUI];
+        strongSelf.pendingActivationOptions = @[option];
+        strongSelf.activationSucceededOptions = [NSMutableArray arrayWithCapacity:1];
+        strongSelf.currentActivationIndex = 0;
+        strongSelf.currentActivationOption = nil;
+        [strongSelf activateNextPendingOption];
+    }];
 }
 
 - (void)beginDeactivationUI {
@@ -1371,7 +1423,21 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
         UINotificationFeedbackGenerator *feedback = [[UINotificationFeedbackGenerator alloc] init];
         [feedback notificationOccurred:UINotificationFeedbackTypeError];
     }
+    if (success && self.activeOptionKeys.count == 0 && self.game.length &&
+        XFActiveScreens()[self.game] == self) [XFActiveScreens() removeObjectForKey:self.game];
     [self updateActivateButtonForCurrentSelection];
+}
+
+- (void)xfLicenseNoLongerAuthorized:(NSNotification *)notification {
+    (void)notification;
+    if (!self.game.length || XFActiveScreens()[self.game] != self ||
+        self.activeOptionKeys.count == 0) return;
+    if (self.activationInProgress || self.deactivationInProgress) {
+        self.xfCleanupPending = YES;
+        return;
+    }
+    self.xfCleanupPending = NO;
+    [self prepareDeactivationForAllActiveOptions];
 }
 
 - (void)processOriginalManifestDictionary:(NSDictionary *)dictionary originals:(NSArray *)rawOriginals legacy:(BOOL)legacy {

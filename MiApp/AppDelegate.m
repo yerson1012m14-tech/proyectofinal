@@ -17,6 +17,7 @@
 @property (nonatomic, assign) BOOL initialVersionGateCompleted;
 @property (nonatomic, strong) NSTimer *licenseRecheckTimer;
 @property (nonatomic, assign) BOOL licenseRecheckInProgress;
+@property (nonatomic, copy) NSString *lastExpiryWarningDate;
 
 @end
 
@@ -580,6 +581,7 @@
 
                     self.window.rootViewController = self.mainTabBar;
                     [self xfStartLicenseRecheckTimer];
+                    [self xfWarnIfKeyApproachingExpiry:expiresAt];
                     [self applySavedScreenProtection];
 
                     return;
@@ -762,13 +764,42 @@
         strongSelf.licenseRecheckInProgress = NO;
         if (!valid) { [strongSelf xfRequireNewLogin:nil]; return; }
         if (expiresAt.length > 0) {
+            [strongSelf xfWarnIfKeyApproachingExpiry:expiresAt];
             [[NSUserDefaults standardUserDefaults] setObject:expiresAt forKey:@"MiFilzaLicenseExpiresAt"];
         }
     }];
 }
 
+// Only a friendly warning. Actual expiry/revocation is enforced by the server.
+- (void)xfWarnIfKeyApproachingExpiry:(NSString *)expiresAt {
+    if (![expiresAt isKindOfClass:[NSString class]] || expiresAt.length == 0 ||
+        self.lockWindow || self.versionWindow) return;
+    NSISO8601DateFormatter *iso = [[NSISO8601DateFormatter alloc] init];
+    iso.formatOptions = NSISO8601DateFormatWithInternetDateTime |
+        NSISO8601DateFormatWithFractionalSeconds;
+    NSDate *expiry = [iso dateFromString:expiresAt];
+    if (!expiry) {
+        iso.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+        expiry = [iso dateFromString:expiresAt];
+    }
+    NSTimeInterval remaining = [expiry timeIntervalSinceNow];
+    if (remaining <= 0 || remaining > 300 ||
+        [self.lastExpiryWarningDate isEqualToString:expiresAt] ||
+        !self.mainTabBar || self.mainTabBar.presentedViewController) return;
+    self.lastExpiryWarningDate = [expiresAt copy];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"TU KEY ESTÁ POR VENCER"
+        message:@"Faltan menos de 5 minutos. Las opciones se bloquearán al vencer la licencia."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"ENTENDIDO"
+        style:UIAlertActionStyleDefault handler:nil]];
+    [self.mainTabBar presentViewController:alert animated:YES completion:nil];
+}
+
 - (void)xfRequireNewLogin:(NSNotification *)notification {
     (void)notification;
+    // Attempt restoration through the existing DESACTIVAR route before locking UI.
+    // It requires a previously issued server session and network availability.
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"XITForgeAutoDeactivate" object:nil];
     [self.licenseRecheckTimer invalidate];
     self.licenseRecheckTimer = nil;
     [LicenseValidator clearSession];
@@ -799,6 +830,7 @@
             @"MiFilzaLicenseExpiresAt"];
 
     [defaults synchronize];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"XITForgeAutoDeactivate" object:nil];
     [self.licenseRecheckTimer invalidate];
     self.licenseRecheckTimer = nil;
     [LicenseValidator clearSession];

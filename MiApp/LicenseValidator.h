@@ -16,6 +16,10 @@ typedef void (^LicenseValidationCompletion)(BOOL valid,
 + (void)authorizeRequest:(NSMutableURLRequest *)request
               completion:(void (^)(BOOL authorized))completion;
 
+// El servidor verifica esta opción exacta antes de permitir su aplicación.
++ (void)authorizeActivationForOptionId:(NSNumber *)optionId
+                          completion:(void (^)(BOOL authorized, BOOL showWarning))completion;
+
 + (void)clearSession;
 + (void)handleProtectedHTTPResponse:(NSURLResponse * _Nullable)response;
 
