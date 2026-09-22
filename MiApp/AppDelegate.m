@@ -760,28 +760,9 @@
 }
 
 - (void)xfShowCleanupNotice {
-    // El aviso es un cuadro normal y centrado SOBRE la pantalla habitual
-    // para introducir una key; no se crea otra pantalla de bloqueo.
+    // Keep the usual license screen visible without displaying a cleanup alert.
+    // Pending restorations remain saved; a new login or launch will retry them.
     [self mostrarVentanaDeLicencia];
-    UIViewController *presenter = self.lockWindow.rootViewController;
-    while (presenter.presentedViewController) {
-        presenter = presenter.presentedViewController;
-    }
-    if (!presenter || [presenter isKindOfClass:[UIAlertController class]]) return;
-
-    UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"DESACTIVACIÓN PENDIENTE"
-        message:@"No se pudieron desactivar todas las opciones. Comprueba Internet y que los archivos de DESACTIVAR estén configurados en el panel. Puedes reintentarlo o introducir una key válida."
-        preferredStyle:UIAlertControllerStyleAlert];
-    __weak typeof(self) weakSelf = self;
-    [alert addAction:[UIAlertAction actionWithTitle:@"REINTENTAR"
-        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (strongSelf) [strongSelf xfRequireNewLogin:nil];
-    }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"ENTENDIDO"
-        style:UIAlertActionStyleCancel handler:nil]];
-    [presenter presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)xfFinishValidatedLogin {
