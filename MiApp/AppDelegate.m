@@ -19,7 +19,8 @@
 @property (nonatomic, assign) BOOL licenseRecheckInProgress;
 @property (nonatomic, copy) NSString *lastExpiryWarningDate;
 @property (nonatomic, assign) BOOL xfCleanupInProgress;
-@property (nonatomic, weak) UITextField *xfRecoveryKeyInput;
+// Si se introduce una key nueva durante una restauración, no descartarla.
+@property (nonatomic, assign) BOOL xfLoginValidatedDuringCleanup;
 
 @end
 
@@ -637,47 +638,17 @@
     __weak typeof(self) weakSelf = self;
 
     licenseVC.onLicenseValidated = ^{
-
-        __strong typeof(weakSelf) strongSelf =
-            weakSelf;
-
-        if (!strongSelf) {
-            return;
-        }
-
-        dispatch_async(
-            dispatch_get_main_queue(),
-            ^{
-
-                /*
-                 * Aplicar protección guardada.
-                 */
-
-                strongSelf.window.rootViewController = strongSelf.mainTabBar;
-                [strongSelf xfStartLicenseRecheckTimer];
-                [strongSelf applySavedScreenProtection];
-
-                /*
-                 * Cerrar ventana de licencia.
-                 */
-
-                [strongSelf.lockWindow
-                    resignKeyWindow];
-
-                strongSelf.lockWindow.hidden =
-                    YES;
-
-                strongSelf.lockWindow =
-                    nil;
-
-                /*
-                 * Devolver foco a la ventana principal.
-                 */
-
-                [strongSelf.window
-                    makeKeyAndVisible];
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Nunca abrir las funciones premium mientras queden cambios
+            // pendientes de restaurar de la licencia anterior.
+            if (strongSelf.xfCleanupInProgress) {
+                strongSelf.xfLoginValidatedDuringCleanup = YES;
+                return;
             }
-        );
+            [strongSelf xfFinishValidatedLogin];
+        });
     };
 
     /*
@@ -762,111 +733,149 @@
     [self.mainTabBar presentViewController:alert animated:YES completion:nil];
 }
 
-- (void)xfRequireNewLogin:(NSNotification *)notification {
-    (void)notification;
-    if (![NSThread isMainThread]) {
-        dispatch_async(dispatch_get_main_queue(), ^{ [self xfRequireNewLogin:nil]; });
+// El registro persistente permite detectar opciones que quedaron aplicadas
+// mientras XITFORGE estuvo cerrada. No se borra hasta restaurarlas de verdad.
+- (BOOL)xfHasOptionsPendingRestoration {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    for (NSString *game in @[@"freefire_normal", @"freefire_max"]) {
+        NSString *key = [NSString stringWithFormat:@"XITFORGE_ACTIVE_OPTIONS_%@", game];
+        NSArray *saved = [defaults arrayForKey:key];
+        if (saved.count > 0) return YES;
+    }
+    return NO;
+}
+
+- (void)xfUnlockValidatedLicense {
+    if ([self xfHasOptionsPendingRestoration]) return;
+    self.window.rootViewController = self.mainTabBar;
+    [self xfStartLicenseRecheckTimer];
+    [self applySavedScreenProtection];
+    if (self.lockWindow) {
+        [self.lockWindow resignKeyWindow];
+        self.lockWindow.hidden = YES;
+        self.lockWindow.rootViewController = nil;
+        self.lockWindow = nil;
+    }
+    [self.window makeKeyAndVisible];
+}
+
+- (void)xfShowCleanupNotice {
+    // El aviso es un cuadro normal y centrado SOBRE la pantalla habitual
+    // para introducir una key; no se crea otra pantalla de bloqueo.
+    [self mostrarVentanaDeLicencia];
+    UIViewController *presenter = self.lockWindow.rootViewController;
+    while (presenter.presentedViewController) {
+        presenter = presenter.presentedViewController;
+    }
+    if (!presenter || [presenter isKindOfClass:[UIAlertController class]]) return;
+
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:@"DESACTIVACIÓN PENDIENTE"
+        message:@"No se pudieron desactivar todas las opciones. Comprueba Internet y que los archivos de DESACTIVAR estén configurados en el panel. Puedes reintentarlo o introducir una key válida."
+        preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"REINTENTAR"
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (strongSelf) [strongSelf xfRequireNewLogin:nil];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"ENTENDIDO"
+        style:UIAlertActionStyleCancel handler:nil]];
+    [presenter presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)xfFinishValidatedLogin {
+    if (self.xfCleanupInProgress) {
+        self.xfLoginValidatedDuringCleanup = YES;
         return;
     }
-    if (self.xfCleanupInProgress || self.lockWindow) return;
+    if (![self xfHasOptionsPendingRestoration]) {
+        [self xfUnlockValidatedLicense];
+        return;
+    }
+
+    // La nueva key ya fue validada por LicenseViewController. Si quedaron
+    // opciones previas, intentar DESACTIVAR antes de desbloquear la app.
     self.xfCleanupInProgress = YES;
-    [self.licenseRecheckTimer invalidate];
-    self.licenseRecheckTimer = nil;
-    self.licenseRecheckInProgress = NO;
-    UIViewController *waiting = [[UIViewController alloc] init];
-    waiting.view.backgroundColor = [UIColor blackColor];
-    UILabel *label = [[UILabel alloc] init];
-    label.text = @"DESACTIVANDO OPCIONES…";
-    label.textAlignment = NSTextAlignmentCenter;
-    label.textColor = [UIColor whiteColor];
-    label.font = [UIFont boldSystemFontOfSize:16];
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-    [waiting.view addSubview:label];
-    [NSLayoutConstraint activateConstraints:@[
-        [label.centerXAnchor constraintEqualToAnchor:waiting.view.centerXAnchor],
-        [label.centerYAnchor constraintEqualToAnchor:waiting.view.centerYAnchor],
-        [label.leadingAnchor constraintGreaterThanOrEqualToAnchor:waiting.view.leadingAnchor constant:18],
-        [label.trailingAnchor constraintLessThanOrEqualToAnchor:waiting.view.trailingAnchor constant:-18]
-    ]];
-    self.window.rootViewController = waiting;
     __weak typeof(self) weakSelf = self;
     [HomeViewController xfDeactivatePersistedOptionsWithCompletion:^(BOOL success) {
         dispatch_async(dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (!strongSelf) return;
             strongSelf.xfCleanupInProgress = NO;
-            if (!success) {
-                [strongSelf xfShowCleanupPending];
-                return;
+            if (success && ![strongSelf xfHasOptionsPendingRestoration]) {
+                [strongSelf xfUnlockValidatedLicense];
+            } else {
+                [strongSelf xfShowCleanupNotice];
             }
-            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-            [defaults removeObjectForKey:@"MiFilzaLicenseKey"];
-            [defaults removeObjectForKey:@"MiFilzaLicenseExpiresAt"];
-            [defaults synchronize];
-            [LicenseValidator clearSession];
-            [[ScreenProtectionManager shared] disableProtection];
-            [strongSelf mostrarVentanaDeLicencia];
         });
     }];
 }
 
-- (void)xfShowCleanupPending {
-    UIViewController *pending = [[UIViewController alloc] init];
-    pending.view.backgroundColor = [UIColor blackColor];
-    UILabel *message = [[UILabel alloc] init];
-    message.text = @"DESACTIVACIÓN PENDIENTE\nNo se pudieron restaurar todos los archivos. Conéctate a Internet y vuelve a intentarlo. Si esta IPA ya había borrado tu key anterior, necesitarás volver a introducirla para restaurar.";
-    message.textAlignment = NSTextAlignmentCenter;
-    message.numberOfLines = 0;
-    message.textColor = [UIColor whiteColor];
-    message.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-    message.translatesAutoresizingMaskIntoConstraints = NO;
-    UIButton *retry = [UIButton buttonWithType:UIButtonTypeSystem];
-    [retry setTitle:@"REINTENTAR DESACTIVACIÓN" forState:UIControlStateNormal];
-    [retry setTitleColor:[UIColor colorWithRed:0.95 green:0.1 blue:0.14 alpha:1] forState:UIControlStateNormal];
-    retry.titleLabel.font = [UIFont boldSystemFontOfSize:14];
-    retry.translatesAutoresizingMaskIntoConstraints = NO;
-    [retry addTarget:self action:@selector(xfRetryCleanup:) forControlEvents:UIControlEventTouchUpInside];
-    UITextField *recoveryInput = [[UITextField alloc] init];
-    recoveryInput.placeholder = @"Key anterior (si fue borrada)";
-    recoveryInput.textAlignment = NSTextAlignmentCenter;
-    recoveryInput.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
-    recoveryInput.autocorrectionType = UITextAutocorrectionTypeNo;
-    recoveryInput.textColor = [UIColor whiteColor];
-    recoveryInput.backgroundColor = [UIColor colorWithWhite:0.14 alpha:1.0];
-    recoveryInput.layer.cornerRadius = 9;
-    recoveryInput.translatesAutoresizingMaskIntoConstraints = NO;
-    self.xfRecoveryKeyInput = recoveryInput;
-    [pending.view addSubview:message];
-    [pending.view addSubview:recoveryInput];
-    [pending.view addSubview:retry];
-    [NSLayoutConstraint activateConstraints:@[
-        [message.centerXAnchor constraintEqualToAnchor:pending.view.centerXAnchor],
-        [message.centerYAnchor constraintEqualToAnchor:pending.view.centerYAnchor constant:-60],
-        [message.leadingAnchor constraintEqualToAnchor:pending.view.leadingAnchor constant:28],
-        [message.trailingAnchor constraintEqualToAnchor:pending.view.trailingAnchor constant:-28],
-        [recoveryInput.topAnchor constraintEqualToAnchor:message.bottomAnchor constant:22],
-        [recoveryInput.leadingAnchor constraintEqualToAnchor:pending.view.leadingAnchor constant:28],
-        [recoveryInput.trailingAnchor constraintEqualToAnchor:pending.view.trailingAnchor constant:-28],
-        [recoveryInput.heightAnchor constraintEqualToConstant:48],
-        [retry.topAnchor constraintEqualToAnchor:recoveryInput.bottomAnchor constant:22],
-        [retry.centerXAnchor constraintEqualToAnchor:pending.view.centerXAnchor]
-    ]];
-    self.window.rootViewController = pending;
-}
-
-- (void)xfRetryCleanup:(UIButton *)sender {
-    (void)sender;
-    NSString *typed = [[self.xfRecoveryKeyInput.text stringByTrimmingCharactersInSet:
-        [NSCharacterSet whitespaceAndNewlineCharacterSet]] uppercaseString];
-    if (typed.length > 0) {
-        if (![self validarFormatoLicencia:typed]) {
-            self.xfRecoveryKeyInput.text = @"";
-            self.xfRecoveryKeyInput.placeholder = @"Formato incorrecto: XXXX-XXXX-XXXX-XXXX";
-            return;
-        }
-        [[NSUserDefaults standardUserDefaults] setObject:typed forKey:@"MiFilzaLicenseKey"];
+- (void)xfRequireNewLogin:(NSNotification *)notification {
+    (void)notification;
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self xfRequireNewLogin:nil]; });
+        return;
     }
-    [self xfRequireNewLogin:nil];
+    if (self.xfCleanupInProgress) return;
+
+    [self.licenseRecheckTimer invalidate];
+    self.licenseRecheckTimer = nil;
+    self.licenseRecheckInProgress = NO;
+
+    // Mostrar SIEMPRE el login habitual, no una pantalla negra independiente.
+    [self mostrarVentanaDeLicencia];
+
+    if (![self xfHasOptionsPendingRestoration]) {
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        [defaults removeObjectForKey:@"MiFilzaLicenseKey"];
+        [defaults removeObjectForKey:@"MiFilzaLicenseExpiresAt"];
+        [LicenseValidator clearSession];
+        return;
+    }
+
+    // Conservar temporalmente la key antigua: el servidor la utiliza
+    // exclusivamente para obtener la autorización de restauración.
+    NSString *oldKey = [[[NSUserDefaults standardUserDefaults]
+        stringForKey:@"MiFilzaLicenseKey"] copy];
+    self.xfCleanupInProgress = YES;
+    __weak typeof(self) weakSelf = self;
+    [HomeViewController xfDeactivatePersistedOptionsWithCompletion:^(BOOL success) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            strongSelf.xfCleanupInProgress = NO;
+
+            BOOL newLicenseWasValidated = strongSelf.xfLoginValidatedDuringCleanup;
+            strongSelf.xfLoginValidatedDuringCleanup = NO;
+
+            if (success && ![strongSelf xfHasOptionsPendingRestoration]) {
+                if (newLicenseWasValidated) {
+                    [strongSelf xfUnlockValidatedLicense];
+                } else {
+                    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+                    NSString *currentKey = [defaults stringForKey:@"MiFilzaLicenseKey"];
+                    if (!oldKey || [currentKey isEqualToString:oldKey]) {
+                        [defaults removeObjectForKey:@"MiFilzaLicenseKey"];
+                        [defaults removeObjectForKey:@"MiFilzaLicenseExpiresAt"];
+                        [LicenseValidator clearSession];
+                    }
+                }
+                return;
+            }
+
+            if (newLicenseWasValidated) {
+                // El usuario ya validó otra key durante el intento anterior:
+                // probar con su nueva sesión antes de mostrar un error.
+                [strongSelf xfFinishValidatedLogin];
+                return;
+            }
+            // Si falla, el login queda operativo para reintentar. No se
+            // eliminan los registros activos ni se afirma que se restauraron.
+            [strongSelf xfShowCleanupNotice];
+        });
+    }];
 }
 
 #pragma mark - License Logout Support
