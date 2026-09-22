@@ -393,6 +393,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 @property (nonatomic, assign) BOOL activationAuthorizationInProgress;
 @property (nonatomic, assign) BOOL warnOnCurrentActivation;
 @property (nonatomic, assign) BOOL xfCleanupPending;
+@property (nonatomic, copy) void (^xfCleanupCompletion)(BOOL success);
 @property (nonatomic, strong) UIButton *deactivateButton;
 @property (nonatomic, assign) BOOL deactivationInProgress;
 @property (nonatomic, strong) UIView *aimbotWarningOverlay;
@@ -419,9 +420,6 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     self.view.backgroundColor = [UIColor blackColor];
     [self loadPersistedActiveOptions];
     if (self.activeOptionKeys.count && self.game.length) XFActiveScreens()[self.game] = self;
-    [[NSNotificationCenter defaultCenter] addObserver:self
-        selector:@selector(xfLicenseNoLongerAuthorized:)
-        name:@"XITForgeAutoDeactivate" object:nil];
     [self configureNavigationTitle];
     [self setupUI];
     [self loadOptions];
@@ -1304,7 +1302,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     if (self.xfCleanupPending) {
         self.xfCleanupPending = NO;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self xfLicenseNoLongerAuthorized:nil];
+            [self xfBeginAutoCleanupWithCompletion:self.xfCleanupCompletion];
         });
     }
 }
@@ -1398,6 +1396,11 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
         [self updateActivateButtonForCurrentSelection];
         self.selectionHintLabel.text = @"SIN ORIGINALES CONFIGURADOS";
         self.selectionHintLabel.textColor = [UIColor colorWithWhite:0.52 alpha:1.0];
+        if (self.xfCleanupCompletion) {
+            void (^done)(BOOL) = [self.xfCleanupCompletion copy];
+            self.xfCleanupCompletion = nil;
+            done(NO);  // No originals: do not claim that any active modification was removed.
+        }
         return;
     }
     if (success) {
@@ -1426,6 +1429,43 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     if (success && self.activeOptionKeys.count == 0 && self.game.length &&
         XFActiveScreens()[self.game] == self) [XFActiveScreens() removeObjectForKey:self.game];
     [self updateActivateButtonForCurrentSelection];
+    if (self.xfCleanupPending) {
+        self.xfCleanupPending = NO;
+        if (self.activeOptionKeys.count > 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self xfBeginAutoCleanupWithCompletion:self.xfCleanupCompletion];
+            });
+            return;
+        }
+    }
+    if (self.xfCleanupCompletion) {
+        void (^done)(BOOL) = [self.xfCleanupCompletion copy];
+        self.xfCleanupCompletion = nil;
+        done(success && self.activeOptionKeys.count == 0);
+    }
+}
+
+- (void)xfBeginAutoCleanupWithCompletion:(void (^)(BOOL))completion {
+    if (completion) self.xfCleanupCompletion = [completion copy];
+    if (!self.activeOptionKeys) [self loadPersistedActiveOptions];
+    if (self.activeOptionKeys.count == 0) {
+        if (self.xfCleanupCompletion) {
+            void (^done)(BOOL) = [self.xfCleanupCompletion copy];
+            self.xfCleanupCompletion = nil;
+            done(YES);
+        }
+        return;
+    }
+    if (self.activationInProgress || self.deactivationInProgress || self.activationAuthorizationInProgress) {
+        self.xfCleanupPending = YES;
+        return;
+    }
+    self.xfCleanupPending = NO;
+    // Same DESACTIVAR mechanism as the existing "DESACTIVAR TODOS" button.
+    // Restores the original files configured in the panel for this game.
+    self.deactivationTargetsAll = YES;
+    self.deactivationTargetKeys = [self.activeOptionKeys copy];
+    [self deactivateAllOptions];
 }
 
 - (void)xfLicenseNoLongerAuthorized:(NSNotification *)notification {
@@ -1437,7 +1477,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
         return;
     }
     self.xfCleanupPending = NO;
-    [self prepareDeactivationForAllActiveOptions];
+    [self xfBeginAutoCleanupWithCompletion:self.xfCleanupCompletion];
 }
 
 - (void)processOriginalManifestDictionary:(NSDictionary *)dictionary originals:(NSArray *)rawOriginals legacy:(BOOL)legacy {
@@ -1532,7 +1572,9 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     request.HTTPMethod = @"GET";
     request.timeoutInterval = 20.0;
     [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
-    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self showError:@"Licencia no autorizada. Inicia sesión nuevamente."]; }); return; }
+    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{
+        [self finishDeactivationUIWithSuccess:NO noOriginals:NO];
+    }); return; }
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
         [LicenseValidator handleProtectedHTTPResponse:response];
@@ -1733,6 +1775,41 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 @end
 
 @implementation HomeViewController
+
++ (void)xfDeactivatePersistedOptionsWithCompletion:(void (^)(BOOL))completion {
+    NSArray<NSString *> *games = @[@"freefire_normal", @"freefire_max"];
+    // Run sequentially: one restore flow per game, never report success early.
+    __block void (^next)(NSUInteger, BOOL) = nil;
+    next = ^(NSUInteger index, BOOL previousSuccess) {
+        if (index >= games.count) {
+            void (^finish)(BOOL) = [completion copy];
+            next = nil;
+            if (finish) finish(previousSuccess);
+            return;
+        }
+        NSString *game = games[index];
+        NSArray *saved = [[NSUserDefaults standardUserDefaults]
+            arrayForKey:[NSString stringWithFormat:@"XITFORGE_ACTIVE_OPTIONS_%@", game]];
+        if (saved.count == 0) {
+            next(index + 1, previousSuccess);
+            return;
+        }
+        XITForgeOptionsViewController *controller = XFActiveScreens()[game];
+        if (!controller) {
+            controller = [[XITForgeOptionsViewController alloc] init];
+            controller.game = game;
+            controller.bundleId = [game isEqualToString:@"freefire_max"]
+                ? @"com.dts.freefiremax" : @"com.dts.freefireth";
+            // Do not load the UI or request premium options with an expired key.
+            [controller loadPersistedActiveOptions];
+            XFActiveScreens()[game] = controller;
+        }
+        [controller xfBeginAutoCleanupWithCompletion:^(BOOL succeeded) {
+            next(index + 1, previousSuccess && succeeded);
+        }];
+    };
+    next(0, YES);
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];

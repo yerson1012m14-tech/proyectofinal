@@ -10,6 +10,7 @@ static NSString * const kLicenseAccessLevelDefaultsKey =
 static NSString *xfSessionToken = nil;
 // Retained only in memory to retrieve restore-only originals after an expiry.
 static NSString *xfOriginalsCleanupToken = nil;
+static NSDate *xfCleanupTokenCachedUntil = nil;
 static NSDate *xfSessionExpiresAt = nil;
 static NSString * const kXFHost = @"xitforge-license-server.onrender.com";
 static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
@@ -349,47 +350,99 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
 
 + (void)handleProtectedHTTPResponse:(NSURLResponse *)response {
     if (![response isKindOfClass:[NSHTTPURLResponse class]]) return;
-    NSInteger status = [(NSHTTPURLResponse *)response statusCode];
-    if (status == 401 || status == 403) {
-        [self clearSession];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [[NSNotificationCenter defaultCenter] postNotificationName:kXFLockNotification
-                                                                object:nil];
-        });
+    NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
+    NSInteger status = http.statusCode;
+    if (status != 401 && status != 403) return;
+    // A failed restore request must NOT erase the credentials needed to retry.
+    if ([http.URL.path isEqualToString:@"/api/app/originals"] ||
+        [http.URL.path hasPrefix:@"/api/app/originals/"]) {
+        @synchronized(self) {
+            xfOriginalsCleanupToken = nil;
+            xfCleanupTokenCachedUntil = nil;
+        }
+        return;
     }
+    [self clearSession];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSNotificationCenter defaultCenter] postNotificationName:kXFLockNotification object:nil];
+    });
+}
+
++ (void)authorizeRestoreRequest:(NSMutableURLRequest *)request
+                       completion:(void (^)(BOOL authorized))completion {
+    NSString *cached = nil;
+    @synchronized(self) {
+        if (xfOriginalsCleanupToken.length > 0 &&
+            [xfCleanupTokenCachedUntil timeIntervalSinceNow] > 30.0) {
+            cached = [xfOriginalsCleanupToken copy];
+        }
+    }
+    if (cached) {
+        [request setValue:[@"Bearer " stringByAppendingString:cached] forHTTPHeaderField:@"Authorization"];
+        if (completion) completion(YES);
+        return;
+    }
+    NSString *key = [[NSUserDefaults standardUserDefaults] stringForKey:@"MiFilzaLicenseKey"];
+    NSString *deviceId = [self deviceIdentifier];
+    if (key.length == 0 || deviceId.length == 0) {
+        if (completion) completion(NO);
+        return;
+    }
+    NSURL *url = [NSURL URLWithString:@"https://xitforge-license-server.onrender.com/api/license/cleanup-token"];
+    NSMutableURLRequest *tokenRequest = [NSMutableURLRequest requestWithURL:url];
+    tokenRequest.HTTPMethod = @"POST";
+    tokenRequest.timeoutInterval = 20.0;
+    tokenRequest.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
+    [tokenRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    tokenRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{@"key": key, @"deviceId": deviceId}
+                                                         options:0 error:nil];
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:tokenRequest
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]]
+            ? (NSHTTPURLResponse *)response : nil;
+        if (error || http.statusCode != 200 || data.length == 0) {
+            if (completion) completion(NO);
+            return;
+        }
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        NSString *token = [json isKindOfClass:[NSDictionary class]] &&
+            [json[@"cleanupToken"] isKindOfClass:[NSString class]] ? json[@"cleanupToken"] : nil;
+        NSPredicate *pattern = [NSPredicate predicateWithFormat:@"SELF MATCHES %@", @"^xf2_[0-9a-f]{64}$"];
+        if (!token || ![pattern evaluateWithObject:token]) {
+            if (completion) completion(NO);
+            return;
+        }
+        @synchronized(self) {
+            xfOriginalsCleanupToken = [token copy];
+            xfCleanupTokenCachedUntil = [NSDate dateWithTimeIntervalSinceNow:600];
+        }
+        [request setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+        if (completion) completion(YES);
+    }];
+    [task resume];
 }
 
 + (void)authorizeRequest:(NSMutableURLRequest *)request
               completion:(void (^)(BOOL authorized))completion {
     NSURL *url = request.URL;
-    // Never leak the bearer token to arbitrary hosts / external file URLs.
     BOOL isBackend = [url.scheme.lowercaseString isEqualToString:@"https"] &&
         [url.host.lowercaseString isEqualToString:kXFHost] &&
         [url.path hasPrefix:@"/api/app/"];
-    if (!isBackend) {
-        if (completion) completion(NO);
+    if (!isBackend) { if (completion) completion(NO); return; }
+    BOOL isRestore = [url.path isEqualToString:@"/api/app/originals"] ||
+        [url.path hasPrefix:@"/api/app/originals/"];
+    if (isRestore) {
+        [self authorizeRestoreRequest:request completion:completion];
         return;
     }
     NSString *token = nil;
     @synchronized(self) {
-        if (xfSessionToken.length > 0 &&
-            [xfSessionExpiresAt timeIntervalSinceNow] > 30.0) {
+        if (xfSessionToken.length > 0 && [xfSessionExpiresAt timeIntervalSinceNow] > 30.0) {
             token = [xfSessionToken copy];
         }
     }
-    // The backend grants a previously authenticated device restore-only access
-    // to /api/app/originals for a limited time after an expired/revoked key.
-    if ([url.path isEqualToString:@"/api/app/originals"] ||
-        [url.path hasPrefix:@"/api/app/originals/"]) {
-        @synchronized(self) {
-            if (!token.length && xfOriginalsCleanupToken.length > 0) {
-                token = [xfOriginalsCleanupToken copy];
-            }
-        }
-    }
     if (token.length > 0) {
-        [request setValue:[@"Bearer " stringByAppendingString:token]
-      forHTTPHeaderField:@"Authorization"];
+        [request setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
         if (completion) completion(YES);
         return;
     }
@@ -404,14 +457,12 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
         (void)reason; (void)expiresAt;
         NSString *fresh = nil;
         @synchronized(self) {
-            if (valid && xfSessionToken.length > 0 &&
-                [xfSessionExpiresAt timeIntervalSinceNow] > 0) {
+            if (valid && xfSessionToken.length > 0 && [xfSessionExpiresAt timeIntervalSinceNow] > 0) {
                 fresh = [xfSessionToken copy];
             }
         }
         if (fresh.length > 0) {
-            [request setValue:[@"Bearer " stringByAppendingString:fresh]
-          forHTTPHeaderField:@"Authorization"];
+            [request setValue:[@"Bearer " stringByAppendingString:fresh] forHTTPHeaderField:@"Authorization"];
             if (completion) completion(YES);
         } else {
             if (completion) completion(NO);

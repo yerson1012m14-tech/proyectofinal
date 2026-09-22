@@ -18,6 +18,8 @@
 @property (nonatomic, strong) NSTimer *licenseRecheckTimer;
 @property (nonatomic, assign) BOOL licenseRecheckInProgress;
 @property (nonatomic, copy) NSString *lastExpiryWarningDate;
+@property (nonatomic, assign) BOOL xfCleanupInProgress;
+@property (nonatomic, weak) UITextField *xfRecoveryKeyInput;
 
 @end
 
@@ -523,9 +525,7 @@
      */
 
     if (savedKey.length == 0) {
-
-        [self mostrarVentanaDeLicencia];
-
+        [self xfRequireNewLogin:nil];
         return;
     }
 
@@ -605,41 +605,8 @@
                     reason
                 );
 
-                NSUserDefaults *defaults =
-                    [NSUserDefaults standardUserDefaults];
-
-                /*
-                 * Eliminar sesión local.
-                 */
-
-                [defaults
-                    removeObjectForKey:
-                        @"MiFilzaLicenseKey"];
-
-                [defaults
-                    removeObjectForKey:
-                        @"MiFilzaLicenseExpiresAt"];
-
-                [defaults synchronize];
-                [self.licenseRecheckTimer invalidate];
-                self.licenseRecheckTimer = nil;
-                [LicenseValidator clearSession];
-                UIViewController *waiting = [[UIViewController alloc] init];
-                waiting.view.backgroundColor = [UIColor blackColor];
-                self.window.rootViewController = waiting;
-
-                /*
-                 * Desactivar protección.
-                 */
-
-                [[ScreenProtectionManager shared]
-                    disableProtection];
-
-                /*
-                 * Volver a pedir la licencia.
-                 */
-
-                [self mostrarVentanaDeLicencia];
+                // Do not erase the old key or show a new-key screen before restoration.
+                [self xfRequireNewLogin:nil];
             }
         );
     }];
@@ -797,51 +764,116 @@
 
 - (void)xfRequireNewLogin:(NSNotification *)notification {
     (void)notification;
-    // Attempt restoration through the existing DESACTIVAR route before locking UI.
-    // It requires a previously issued server session and network availability.
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"XITForgeAutoDeactivate" object:nil];
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self xfRequireNewLogin:nil]; });
+        return;
+    }
+    if (self.xfCleanupInProgress || self.lockWindow) return;
+    self.xfCleanupInProgress = YES;
     [self.licenseRecheckTimer invalidate];
     self.licenseRecheckTimer = nil;
-    [LicenseValidator clearSession];
+    self.licenseRecheckInProgress = NO;
     UIViewController *waiting = [[UIViewController alloc] init];
     waiting.view.backgroundColor = [UIColor blackColor];
+    UILabel *label = [[UILabel alloc] init];
+    label.text = @"DESACTIVANDO OPCIONES…";
+    label.textAlignment = NSTextAlignmentCenter;
+    label.textColor = [UIColor whiteColor];
+    label.font = [UIFont boldSystemFontOfSize:16];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    [waiting.view addSubview:label];
+    [NSLayoutConstraint activateConstraints:@[
+        [label.centerXAnchor constraintEqualToAnchor:waiting.view.centerXAnchor],
+        [label.centerYAnchor constraintEqualToAnchor:waiting.view.centerYAnchor],
+        [label.leadingAnchor constraintGreaterThanOrEqualToAnchor:waiting.view.leadingAnchor constant:18],
+        [label.trailingAnchor constraintLessThanOrEqualToAnchor:waiting.view.trailingAnchor constant:-18]
+    ]];
     self.window.rootViewController = waiting;
-    [self mostrarVentanaDeLicencia];
+    __weak typeof(self) weakSelf = self;
+    [HomeViewController xfDeactivatePersistedOptionsWithCompletion:^(BOOL success) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            strongSelf.xfCleanupInProgress = NO;
+            if (!success) {
+                [strongSelf xfShowCleanupPending];
+                return;
+            }
+            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+            [defaults removeObjectForKey:@"MiFilzaLicenseKey"];
+            [defaults removeObjectForKey:@"MiFilzaLicenseExpiresAt"];
+            [defaults synchronize];
+            [LicenseValidator clearSession];
+            [[ScreenProtectionManager shared] disableProtection];
+            [strongSelf mostrarVentanaDeLicencia];
+        });
+    }];
+}
+
+- (void)xfShowCleanupPending {
+    UIViewController *pending = [[UIViewController alloc] init];
+    pending.view.backgroundColor = [UIColor blackColor];
+    UILabel *message = [[UILabel alloc] init];
+    message.text = @"DESACTIVACIÓN PENDIENTE\nNo se pudieron restaurar todos los archivos. Conéctate a Internet y vuelve a intentarlo. Si esta IPA ya había borrado tu key anterior, necesitarás volver a introducirla para restaurar.";
+    message.textAlignment = NSTextAlignmentCenter;
+    message.numberOfLines = 0;
+    message.textColor = [UIColor whiteColor];
+    message.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    message.translatesAutoresizingMaskIntoConstraints = NO;
+    UIButton *retry = [UIButton buttonWithType:UIButtonTypeSystem];
+    [retry setTitle:@"REINTENTAR DESACTIVACIÓN" forState:UIControlStateNormal];
+    [retry setTitleColor:[UIColor colorWithRed:0.95 green:0.1 blue:0.14 alpha:1] forState:UIControlStateNormal];
+    retry.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    retry.translatesAutoresizingMaskIntoConstraints = NO;
+    [retry addTarget:self action:@selector(xfRetryCleanup:) forControlEvents:UIControlEventTouchUpInside];
+    UITextField *recoveryInput = [[UITextField alloc] init];
+    recoveryInput.placeholder = @"Key anterior (si fue borrada)";
+    recoveryInput.textAlignment = NSTextAlignmentCenter;
+    recoveryInput.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
+    recoveryInput.autocorrectionType = UITextAutocorrectionTypeNo;
+    recoveryInput.textColor = [UIColor whiteColor];
+    recoveryInput.backgroundColor = [UIColor colorWithWhite:0.14 alpha:1.0];
+    recoveryInput.layer.cornerRadius = 9;
+    recoveryInput.translatesAutoresizingMaskIntoConstraints = NO;
+    self.xfRecoveryKeyInput = recoveryInput;
+    [pending.view addSubview:message];
+    [pending.view addSubview:recoveryInput];
+    [pending.view addSubview:retry];
+    [NSLayoutConstraint activateConstraints:@[
+        [message.centerXAnchor constraintEqualToAnchor:pending.view.centerXAnchor],
+        [message.centerYAnchor constraintEqualToAnchor:pending.view.centerYAnchor constant:-60],
+        [message.leadingAnchor constraintEqualToAnchor:pending.view.leadingAnchor constant:28],
+        [message.trailingAnchor constraintEqualToAnchor:pending.view.trailingAnchor constant:-28],
+        [recoveryInput.topAnchor constraintEqualToAnchor:message.bottomAnchor constant:22],
+        [recoveryInput.leadingAnchor constraintEqualToAnchor:pending.view.leadingAnchor constant:28],
+        [recoveryInput.trailingAnchor constraintEqualToAnchor:pending.view.trailingAnchor constant:-28],
+        [recoveryInput.heightAnchor constraintEqualToConstant:48],
+        [retry.topAnchor constraintEqualToAnchor:recoveryInput.bottomAnchor constant:22],
+        [retry.centerXAnchor constraintEqualToAnchor:pending.view.centerXAnchor]
+    ]];
+    self.window.rootViewController = pending;
+}
+
+- (void)xfRetryCleanup:(UIButton *)sender {
+    (void)sender;
+    NSString *typed = [[self.xfRecoveryKeyInput.text stringByTrimmingCharactersInSet:
+        [NSCharacterSet whitespaceAndNewlineCharacterSet]] uppercaseString];
+    if (typed.length > 0) {
+        if (![self validarFormatoLicencia:typed]) {
+            self.xfRecoveryKeyInput.text = @"";
+            self.xfRecoveryKeyInput.placeholder = @"Formato incorrecto: XXXX-XXXX-XXXX-XXXX";
+            return;
+        }
+        [[NSUserDefaults standardUserDefaults] setObject:typed forKey:@"MiFilzaLicenseKey"];
+    }
+    [self xfRequireNewLogin:nil];
 }
 
 #pragma mark - License Logout Support
 
 - (void)logoutCurrentLicense {
-
-    NSUserDefaults *defaults =
-        [NSUserDefaults standardUserDefaults];
-
-    /*
-     * Cerrar sesión SOLO en este dispositivo.
-     * No revoca la licencia del servidor.
-     */
-
-    [defaults
-        removeObjectForKey:
-            @"MiFilzaLicenseKey"];
-
-    [defaults
-        removeObjectForKey:
-            @"MiFilzaLicenseExpiresAt"];
-
-    [defaults synchronize];
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"XITForgeAutoDeactivate" object:nil];
-    [self.licenseRecheckTimer invalidate];
-    self.licenseRecheckTimer = nil;
-    [LicenseValidator clearSession];
-    UIViewController *waiting = [[UIViewController alloc] init];
-    waiting.view.backgroundColor = [UIColor blackColor];
-    self.window.rootViewController = waiting;
-
-    [[ScreenProtectionManager shared]
-        disableProtection];
-
-    [self mostrarVentanaDeLicencia];
+    // Do not erase the old key before the server supplies DESACTIVAR files.
+    [self xfRequireNewLogin:nil];
 }
 
 #pragma mark - License Format
