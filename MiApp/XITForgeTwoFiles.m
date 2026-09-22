@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
+#import "LicenseValidator.h"
 #import <objc/runtime.h>
 #import <fcntl.h>
 #import <unistd.h>
@@ -1144,6 +1145,8 @@ static BOOL XF2FilesAreIdentical(
         self;
 
 
+    [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
+    if (!authorized) { [self xf2_fail:@"Licencia no autorizada. Inicia sesión nuevamente."]; return; }
     NSURLSessionDownloadTask *task =
         [[NSURLSession sharedSession]
             downloadTaskWithRequest:
@@ -1174,8 +1177,9 @@ static BOOL XF2FilesAreIdentical(
                             : nil;
 
 
+                    [LicenseValidator handleProtectedHTTPResponse:response];
                     BOOL httpOK =
-                        !http ||
+                        http &&
                         (
                             http.statusCode >= 200 &&
                             http.statusCode <= 299
@@ -1298,6 +1302,7 @@ static BOOL XF2FilesAreIdentical(
 
 
     [task resume];
+    }];
 }
 
 
@@ -1384,6 +1389,8 @@ static BOOL XF2FilesAreIdentical(
         self;
 
 
+    [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
+    if (!authorized) { [self xf2_fail:@"Licencia no autorizada. Inicia sesión nuevamente."]; return; }
     NSURLSessionDataTask *task =
         [[NSURLSession sharedSession]
             dataTaskWithRequest:
@@ -1414,8 +1421,9 @@ static BOOL XF2FilesAreIdentical(
                             : nil;
 
 
+                    [LicenseValidator handleProtectedHTTPResponse:response];
                     BOOL httpOK =
-                        !http ||
+                        http &&
                         (
                             http.statusCode >= 200 &&
                             http.statusCode <= 299
@@ -1583,6 +1591,7 @@ static BOOL XF2FilesAreIdentical(
 
 
     [task resume];
+    }];
 }
 
 @end

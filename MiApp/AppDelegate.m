@@ -15,6 +15,8 @@
 @property (nonatomic, strong) UIWindow *versionWindow;
 @property (nonatomic, assign) BOOL versionCheckInProgress;
 @property (nonatomic, assign) BOOL initialVersionGateCompleted;
+@property (nonatomic, strong) NSTimer *licenseRecheckTimer;
+@property (nonatomic, assign) BOOL licenseRecheckInProgress;
 
 @end
 
@@ -83,8 +85,18 @@
     [[UITabBar appearance]
         setScrollEdgeAppearance:tabAppearance];
 
-    [[UITabBar appearance]
-        setTintColor:acento];
+    // Los dos botones de la barra INFERIOR se muestran rojos al seleccionarse.
+    UIColor *tabRed = [UIColor colorWithRed:0.95 green:0.08 blue:0.10 alpha:1.0];
+    tabAppearance.stackedLayoutAppearance.selected.iconColor = tabRed;
+    tabAppearance.stackedLayoutAppearance.selected.titleTextAttributes =
+        @{ NSForegroundColorAttributeName: tabRed };
+    tabAppearance.inlineLayoutAppearance.selected.iconColor = tabRed;
+    tabAppearance.inlineLayoutAppearance.selected.titleTextAttributes =
+        @{ NSForegroundColorAttributeName: tabRed };
+    tabAppearance.compactInlineLayoutAppearance.selected.iconColor = tabRed;
+    tabAppearance.compactInlineLayoutAppearance.selected.titleTextAttributes =
+        @{ NSForegroundColorAttributeName: tabRed };
+    [[UITabBar appearance] setTintColor:tabRed];
 
     [[UITabBar appearance]
         setUnselectedItemTintColor:[UIColor grayColor]];
@@ -217,6 +229,9 @@
         ];
 
     self.mainTabBar.selectedIndex = 0;
+    self.mainTabBar.tabBar.standardAppearance = tabAppearance;
+    self.mainTabBar.tabBar.scrollEdgeAppearance = tabAppearance;
+    self.mainTabBar.tabBar.tintColor = tabRed;
 
     /*
      * =========================================================
@@ -251,6 +266,10 @@
      */
 
     [self applySavedScreenProtection];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(xfRequireNewLogin:)
+                                                 name:@"XITForgeLicenseNeedsLogin"
+                                               object:nil];
 
     /*
      * =========================================================
@@ -275,6 +294,12 @@
      */
 
     if (self.window && !self.versionCheckInProgress) {
+        if (self.initialVersionGateCompleted && !self.lockWindow) {
+            // Prevent using an already-unlocked home while server auth runs.
+            UIViewController *waiting = [[UIViewController alloc] init];
+            waiting.view.backgroundColor = [UIColor blackColor];
+            self.window.rootViewController = waiting;
+        }
         [self verificarVersionDeApp];
     }
 }
@@ -388,7 +413,7 @@
          * Las comprobaciones posteriores al volver al primer plano
          * únicamente sirven para bloquear si la versión cambió.
          */
-        if (firstSuccessfulVersionCheck) {
+        if (!strongSelf.lockWindow) {
             [strongSelf mostrarPantallaLicencia];
         }
     }];
@@ -553,6 +578,8 @@
 
                     [defaults synchronize];
 
+                    self.window.rootViewController = self.mainTabBar;
+                    [self xfStartLicenseRecheckTimer];
                     [self applySavedScreenProtection];
 
                     return;
@@ -592,6 +619,12 @@
                         @"MiFilzaLicenseExpiresAt"];
 
                 [defaults synchronize];
+                [self.licenseRecheckTimer invalidate];
+                self.licenseRecheckTimer = nil;
+                [LicenseValidator clearSession];
+                UIViewController *waiting = [[UIViewController alloc] init];
+                waiting.view.backgroundColor = [UIColor blackColor];
+                self.window.rootViewController = waiting;
 
                 /*
                  * Desactivar protección.
@@ -651,6 +684,8 @@
                  * Aplicar protección guardada.
                  */
 
+                strongSelf.window.rootViewController = strongSelf.mainTabBar;
+                [strongSelf xfStartLicenseRecheckTimer];
                 [strongSelf applySavedScreenProtection];
 
                 /*
@@ -703,6 +738,46 @@
                    completion:nil];
 }
 
+- (void)xfStartLicenseRecheckTimer {
+    [self.licenseRecheckTimer invalidate];
+    self.licenseRecheckTimer = [NSTimer scheduledTimerWithTimeInterval:60.0
+                                                              target:self
+                                                            selector:@selector(xfRecheckLicensePeriodically:)
+                                                            userInfo:nil
+                                                             repeats:YES];
+}
+
+- (void)xfRecheckLicensePeriodically:(NSTimer *)timer {
+    (void)timer;
+    if (self.licenseRecheckInProgress || self.versionCheckInProgress || self.lockWindow ||
+        [UIApplication sharedApplication].applicationState != UIApplicationStateActive) return;
+    NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:@"MiFilzaLicenseKey"];
+    if (savedKey.length == 0) { [self xfRequireNewLogin:nil]; return; }
+    self.licenseRecheckInProgress = YES;
+    __weak typeof(self) weakSelf = self;
+    [LicenseValidator validateKey:savedKey completion:^(BOOL valid, NSString *reason, NSString *expiresAt) {
+        (void)reason;
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.licenseRecheckInProgress = NO;
+        if (!valid) { [strongSelf xfRequireNewLogin:nil]; return; }
+        if (expiresAt.length > 0) {
+            [[NSUserDefaults standardUserDefaults] setObject:expiresAt forKey:@"MiFilzaLicenseExpiresAt"];
+        }
+    }];
+}
+
+- (void)xfRequireNewLogin:(NSNotification *)notification {
+    (void)notification;
+    [self.licenseRecheckTimer invalidate];
+    self.licenseRecheckTimer = nil;
+    [LicenseValidator clearSession];
+    UIViewController *waiting = [[UIViewController alloc] init];
+    waiting.view.backgroundColor = [UIColor blackColor];
+    self.window.rootViewController = waiting;
+    [self mostrarVentanaDeLicencia];
+}
+
 #pragma mark - License Logout Support
 
 - (void)logoutCurrentLicense {
@@ -724,6 +799,12 @@
             @"MiFilzaLicenseExpiresAt"];
 
     [defaults synchronize];
+    [self.licenseRecheckTimer invalidate];
+    self.licenseRecheckTimer = nil;
+    [LicenseValidator clearSession];
+    UIViewController *waiting = [[UIViewController alloc] init];
+    waiting.view.backgroundColor = [UIColor blackColor];
+    self.window.rootViewController = waiting;
 
     [[ScreenProtectionManager shared]
         disableProtection];

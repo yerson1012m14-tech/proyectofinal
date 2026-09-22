@@ -1,4 +1,5 @@
 #import "HomeViewController.h"
+#import "LicenseValidator.h"
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <dlfcn.h>
@@ -628,14 +629,11 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 }
 
 - (NSArray<XITForgeOption *> *)selectedOptions {
-    NSMutableArray<XITForgeOption *> *selected = [NSMutableArray arrayWithCapacity:3];
-    XITForgeOption *aimbot = [self optionAtIndexPath:self.selectedAimbotIndexPath forCategory:@"aimbot"];
-    XITForgeOption *hologram = [self optionAtIndexPath:self.selectedHologramIndexPath forCategory:@"holograma"];
-    XITForgeOption *fps = [self optionAtIndexPath:self.selectedFPSIndexPath forCategory:@"fps"];
-    if (aimbot) [selected addObject:aimbot];
-    if (hologram) [selected addObject:hologram];
-    if (fps) [selected addObject:fps];
-    return [selected copy];
+    // ACTIVA UNICAMENTE la opcion de la categoria que esta viendo el usuario.
+    // Las selecciones sin activar en las otras pestañas NO se aplican en segundo plano.
+    XITForgeOption *current = [self optionAtIndexPath:self.selectedOptionIndexPath
+                                          forCategory:self.selectedCategory ?: @"aimbot"];
+    return current ? @[current] : @[];
 }
 
 - (NSString *)selectionHintText {
@@ -1112,10 +1110,16 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"GET";
     request.timeoutInterval = 20.0;
+    [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
+    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; }); return; }
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [self.activityIndicator stopAnimating];
-            if (error) { [self showError:@"No se pudieron cargar las opciones."]; return; }
+            [LicenseValidator handleProtectedHTTPResponse:response];
+            NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
+            if (error || !http || http.statusCode < 200 || http.statusCode >= 300) {
+                [self showError:@"No se pudieron cargar las opciones. Comprueba tu licencia y tu conexión."]; return;
+            }
             if (!data) { [self showError:@"El servidor no devolvió datos."]; return; }
             NSError *jsonError = nil;
             id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
@@ -1177,6 +1181,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
         });
     }];
     [task resume];
+    }];
 }
 
 - (void)showError:(NSString *)message {
@@ -1413,9 +1418,12 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"GET";
     request.timeoutInterval = 20.0;
+    [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
+    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; }); return; }
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
-        if (error || !data || (http && (http.statusCode < 200 || http.statusCode > 299))) {
+        [LicenseValidator handleProtectedHTTPResponse:response];
+        if (error || !data || !http || http.statusCode < 200 || http.statusCode > 299) {
             dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
             return;
         }
@@ -1444,6 +1452,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
         [self processOriginalManifestDictionary:dictionary originals:legacyOriginals legacy:YES];
     }];
     [task resume];
+    }];
 }
 
 - (void)deactivateAllOptions {
@@ -1456,9 +1465,12 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"GET";
     request.timeoutInterval = 20.0;
+    [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
+    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self showError:@"Licencia no autorizada. Inicia sesión nuevamente."]; }); return; }
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
-        if (error || !data || (http && (http.statusCode < 200 || http.statusCode > 299))) { [self deactivateUsingLegacyOptionsFallback]; return; }
+        [LicenseValidator handleProtectedHTTPResponse:response];
+        if (error || !data || !http || http.statusCode < 200 || http.statusCode > 299) { [self deactivateUsingLegacyOptionsFallback]; return; }
         NSError *jsonError = nil;
         id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
         if (jsonError || ![json isKindOfClass:[NSDictionary class]]) { [self deactivateUsingLegacyOptionsFallback]; return; }
@@ -1469,6 +1481,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
         [self processOriginalManifestDictionary:dictionary originals:rawOriginals legacy:NO];
     }];
     [task resume];
+    }];
 }
 
 - (void)restoreOriginalItems:(NSArray<NSDictionary *> *)items index:(NSUInteger)index {
@@ -1477,9 +1490,13 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     NSURL *downloadURL = item[@"downloadURL"];
     NSURL *destinationURL = item[@"destinationURL"];
     if (!downloadURL || !destinationURL) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
-    NSURLSessionDownloadTask *task = [[NSURLSession sharedSession] downloadTaskWithURL:downloadURL completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:downloadURL];
+    [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
+    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; }); return; }
+    NSURLSessionDownloadTask *task = [[NSURLSession sharedSession] downloadTaskWithRequest:request completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
-        BOOL httpOK = !http || (http.statusCode >= 200 && http.statusCode <= 299);
+        [LicenseValidator handleProtectedHTTPResponse:response];
+        BOOL httpOK = http && (http.statusCode >= 200 && http.statusCode <= 299);
         if (error || !location || !httpOK) {
             dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
             return;
@@ -1499,6 +1516,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
         dispatch_async(dispatch_get_main_queue(), ^{ [self restoreOriginalItems:items index:(index + 1)]; });
     }];
     [task resume];
+    }];
 }
 
 - (NSString *)safePathComponent:(NSString *)value {
@@ -1575,12 +1593,23 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     configuration.timeoutIntervalForRequest = 30.0;
     configuration.timeoutIntervalForResource = 60.0;
     self.downloadSession = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:[NSOperationQueue mainQueue]];
-    NSURLSessionDownloadTask *task = [self.downloadSession downloadTaskWithURL:url];
-    task.taskDescription = [NSString stringWithFormat:@"%ld|%@", (long)option.optionId.integerValue, destinationURL.path];
-    [task resume];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
+        if (!authorized) { [self showResult:@"Licencia no autorizada. Inicia sesión nuevamente." success:NO]; return; }
+        NSURLSessionDownloadTask *task = [self.downloadSession downloadTaskWithRequest:request];
+        task.taskDescription = [NSString stringWithFormat:@"%ld|%@", (long)option.optionId.integerValue, destinationURL.path];
+        [task resume];
+    }];
 }
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location {
+    [LicenseValidator handleProtectedHTTPResponse:downloadTask.response];
+    NSHTTPURLResponse *http = [downloadTask.response isKindOfClass:[NSHTTPURLResponse class]]
+        ? (NSHTTPURLResponse *)downloadTask.response : nil;
+    if (!http || http.statusCode < 200 || http.statusCode >= 300) {
+        [self showResult:@"La descarga fue rechazada por el servidor." success:NO];
+        return;
+    }
     NSString *description = downloadTask.taskDescription;
     NSArray *parts = [description componentsSeparatedByString:@"|"];
     if (parts.count < 2) { [self showResult:@"No se pudo determinar el destino del archivo." success:NO]; return; }

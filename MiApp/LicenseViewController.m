@@ -281,6 +281,8 @@ static BOOL XITForgeEngineIsCompatible(void) {
         [UIColor colorWithWhite:0.18 alpha:1.0].CGColor;
 
     [self.view addSubview:self.engineStatusBadge];
+    // El estado de compatibilidad del motor no se muestra en la pantalla.
+    self.engineStatusBadge.hidden = YES;
 
 
     self.engineStatusLabel =
@@ -468,7 +470,7 @@ static BOOL XITForgeEngineIsCompatible(void) {
     ]];
 
     [self updateButtonGradientFrame];
-    [self updateEngineCompatibilityStatus];
+    // Se oculta el indicador; las funciones reales del motor siguen intactas.
 }
 
 - (void)viewDidLayoutSubviews {

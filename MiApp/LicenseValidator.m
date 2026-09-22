@@ -7,6 +7,11 @@ static NSString * const kLicenseAPIURL =
 static NSString * const kLicenseAccessLevelDefaultsKey =
     @"XITForgeLicenseAccessLevel";
 
+static NSString *xfSessionToken = nil;
+static NSDate *xfSessionExpiresAt = nil;
+static NSString * const kXFHost = @"xitforge-license-server.onrender.com";
+static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
+
 @implementation LicenseValidator
 
 + (BOOL)isValidFormat:(NSString *)key {
@@ -41,6 +46,8 @@ static NSString * const kLicenseAccessLevelDefaultsKey =
 + (void)validateKey:(NSString *)key
          completion:(LicenseValidationCompletion)completion {
 
+    // Do not keep the previous in-memory token if a fresh validation fails.
+    [self clearSession];
     NSString *normalizedKey =
         [[key stringByTrimmingCharactersInSet:
             [NSCharacterSet whitespaceAndNewlineCharacterSet]]
@@ -200,6 +207,25 @@ static NSString * const kLicenseAccessLevelDefaultsKey =
             BOOL valid =
                 [json[@"valid"] boolValue];
 
+            NSString *newToken = [json[@"sessionToken"] isKindOfClass:[NSString class]]
+                ? json[@"sessionToken"] : nil;
+            NSString *sessionExpiry = [json[@"sessionExpiresAt"] isKindOfClass:[NSString class]]
+                ? json[@"sessionExpiresAt"] : nil;
+            NSISO8601DateFormatter *iso = [[NSISO8601DateFormatter alloc] init];
+            iso.formatOptions = NSISO8601DateFormatWithInternetDateTime |
+                NSISO8601DateFormatWithFractionalSeconds;
+            NSDate *newExpiry = sessionExpiry ? [iso dateFromString:sessionExpiry] : nil;
+            if (!newExpiry) {
+                iso.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+                newExpiry = sessionExpiry ? [iso dateFromString:sessionExpiry] : nil;
+            }
+            NSPredicate *tokenFormat = [NSPredicate predicateWithFormat:
+                @"SELF MATCHES %@", @"^xf2_[0-9a-f]{64}$"];
+            BOOL completeSession = [newToken isKindOfClass:[NSString class]] &&
+                [tokenFormat evaluateWithObject:newToken] &&
+                newExpiry && [newExpiry timeIntervalSinceNow] > 0;
+            valid = valid && completeSession;
+
             NSString *reason =
                 [json[@"reason"] isKindOfClass:
                     [NSString class]]
@@ -233,11 +259,23 @@ static NSString * const kLicenseAccessLevelDefaultsKey =
                     accessLevel = @"aimbot_only";
                 }
 
-                [defaults setObject:accessLevel
-                             forKey:kLicenseAccessLevelDefaultsKey];
-            } else {
-                [defaults removeObjectForKey:
-                    kLicenseAccessLevelDefaultsKey];
+                if (![accessLevel isEqualToString:@"premium"]) {
+                    valid = NO; // El servidor V2 ya no admite keys gratuitas.
+                } else {
+                    @synchronized(self) {
+                        xfSessionToken = [newToken copy];
+                        xfSessionExpiresAt = newExpiry;
+                    }
+                    [defaults setObject:accessLevel
+                                 forKey:kLicenseAccessLevelDefaultsKey];
+                }
+            }
+            if (!valid) {
+                [self clearSession];
+                [defaults removeObjectForKey:kLicenseAccessLevelDefaultsKey];
+                if ([json[@"valid"] boolValue] && !completeSession) {
+                    reason = @"authorization_unavailable";
+                }
             }
 
             if (completion) {
@@ -249,6 +287,77 @@ static NSString * const kLicenseAccessLevelDefaultsKey =
     }];
 
     [task resume];
+}
+
+
++ (void)clearSession {
+    @synchronized(self) {
+        xfSessionToken = nil;
+        xfSessionExpiresAt = nil;
+    }
+}
+
++ (void)handleProtectedHTTPResponse:(NSURLResponse *)response {
+    if (![response isKindOfClass:[NSHTTPURLResponse class]]) return;
+    NSInteger status = [(NSHTTPURLResponse *)response statusCode];
+    if (status == 401 || status == 403) {
+        [self clearSession];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[NSNotificationCenter defaultCenter] postNotificationName:kXFLockNotification
+                                                                object:nil];
+        });
+    }
+}
+
++ (void)authorizeRequest:(NSMutableURLRequest *)request
+              completion:(void (^)(BOOL authorized))completion {
+    NSURL *url = request.URL;
+    // Never leak the bearer token to arbitrary hosts / external file URLs.
+    BOOL isBackend = [url.scheme.lowercaseString isEqualToString:@"https"] &&
+        [url.host.lowercaseString isEqualToString:kXFHost] &&
+        [url.path hasPrefix:@"/api/app/"];
+    if (!isBackend) {
+        if (completion) completion(NO);
+        return;
+    }
+    NSString *token = nil;
+    @synchronized(self) {
+        if (xfSessionToken.length > 0 &&
+            [xfSessionExpiresAt timeIntervalSinceNow] > 30.0) {
+            token = [xfSessionToken copy];
+        }
+    }
+    if (token.length > 0) {
+        [request setValue:[@"Bearer " stringByAppendingString:token]
+      forHTTPHeaderField:@"Authorization"];
+        if (completion) completion(YES);
+        return;
+    }
+    NSString *key = [[NSUserDefaults standardUserDefaults] stringForKey:@"MiFilzaLicenseKey"];
+    if (key.length == 0) {
+        [self clearSession];
+        if (completion) completion(NO);
+        [[NSNotificationCenter defaultCenter] postNotificationName:kXFLockNotification object:nil];
+        return;
+    }
+    [self validateKey:key completion:^(BOOL valid, NSString *reason, NSString *expiresAt) {
+        (void)reason; (void)expiresAt;
+        NSString *fresh = nil;
+        @synchronized(self) {
+            if (valid && xfSessionToken.length > 0 &&
+                [xfSessionExpiresAt timeIntervalSinceNow] > 0) {
+                fresh = [xfSessionToken copy];
+            }
+        }
+        if (fresh.length > 0) {
+            [request setValue:[@"Bearer " stringByAppendingString:fresh]
+          forHTTPHeaderField:@"Authorization"];
+            if (completion) completion(YES);
+        } else {
+            if (completion) completion(NO);
+            [[NSNotificationCenter defaultCenter] postNotificationName:kXFLockNotification object:nil];
+        }
+    }];
 }
 
 @end
