@@ -353,9 +353,10 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
     NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
     NSInteger status = http.statusCode;
     if (status != 401 && status != 403) return;
-    // A failed restore request must NOT erase the credentials needed to retry.
+    // A failed cleanup request must NOT erase the credentials needed to retry.
     if ([http.URL.path isEqualToString:@"/api/app/originals"] ||
-        [http.URL.path hasPrefix:@"/api/app/originals/"]) {
+        [http.URL.path hasPrefix:@"/api/app/originals/"] ||
+        [http.URL.path isEqualToString:@"/api/app/delete-files"]) {
         @synchronized(self) {
             xfOriginalsCleanupToken = nil;
             xfCleanupTokenCachedUntil = nil;
@@ -430,7 +431,8 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
         [url.path hasPrefix:@"/api/app/"];
     if (!isBackend) { if (completion) completion(NO); return; }
     BOOL isRestore = [url.path isEqualToString:@"/api/app/originals"] ||
-        [url.path hasPrefix:@"/api/app/originals/"];
+        [url.path hasPrefix:@"/api/app/originals/"] ||
+        [url.path isEqualToString:@"/api/app/delete-files"];
     if (isRestore) {
         [self authorizeRestoreRequest:request completion:completion];
         return;
