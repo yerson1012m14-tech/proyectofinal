@@ -436,7 +436,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 
     UIAlertController *alert =
         [UIAlertController alertControllerWithTitle:@"FUNCIÓN PREMIUM"
-                                            message:@"Tu key gratis permite usar únicamente las opciones de AIMBOT. HOLOGRAMAS y FPS requieren una key premium."
+                                            message:@"Tu key gratis permite usar únicamente las opciones de AIMBOT. HOLOGRAMAS y EXTRAS requieren una key premium."
                                      preferredStyle:UIAlertControllerStyleAlert];
 
     [alert addAction:
@@ -676,7 +676,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     self.hologramTabButton.alpha = aimbotOnly ? 0.38 : (hologramSelected ? 1.0 : 0.72);
     self.fpsTabButton.alpha = aimbotOnly ? 0.38 : (fpsSelected ? 1.0 : 0.72);
     [self.hologramTabButton setTitle:(aimbotOnly ? @"HOLOGRAMAS 🔒" : @"HOLOGRAMAS") forState:UIControlStateNormal];
-    [self.fpsTabButton setTitle:(aimbotOnly ? @"FPS 🔒" : @"FPS") forState:UIControlStateNormal];
+    [self.fpsTabButton setTitle:(aimbotOnly ? @"EXTRAS 🔒" : @"EXTRAS") forState:UIControlStateNormal];
 }
 
 - (void)switchToCategory:(NSString *)category {
@@ -984,7 +984,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     [self.categoryTabsView addSubview:self.aimbotTabButton];
     self.fpsTabButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.fpsTabButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.fpsTabButton setTitle:@"FPS" forState:UIControlStateNormal];
+    [self.fpsTabButton setTitle:@"EXTRAS" forState:UIControlStateNormal];
     [self.fpsTabButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     self.fpsTabButton.titleLabel.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightBold];
     self.fpsTabButton.layer.cornerRadius = 15.0;
