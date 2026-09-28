@@ -872,7 +872,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     warningIcon.font = [UIFont systemFontOfSize:38.0 weight:UIFontWeightRegular];
     UILabel *title = [[UILabel alloc] init];
     title.translatesAutoresizingMaskIntoConstraints = NO;
-    title.text = @"ADVERTENCIA PARA EL AIMBOT";
+    title.text = @"ADVERTENCIA DE ACTIVACIÓN";
     title.textAlignment = NSTextAlignmentCenter;
     title.textColor = [UIColor whiteColor];
     title.font = [UIFont systemFontOfSize:17.0 weight:UIFontWeightBold];
@@ -1282,12 +1282,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
         self.selectionHintLabel.textColor = [UIColor colorWithWhite:0.48 alpha:1.0];
         [self showActivationBannerForOptions:activatedOptions];
         [self playActivationAudio];
-        BOOL activatedAimbot = NO;
-        for (XITForgeOption *option in activatedOptions) {
-            NSString *category = option.category.lowercaseString ?: @"";
-            if ([category isEqualToString:@"aimbot"]) { activatedAimbot = YES; break; }
-        }
-        if (activatedAimbot && self.warnOnCurrentActivation) [self showAimbotWarning];
+        if (self.warnOnCurrentActivation) [self showAimbotWarning];
         self.warnOnCurrentActivation = NO;
         UINotificationFeedbackGenerator *feedback = [[UINotificationFeedbackGenerator alloc] init];
         [feedback notificationOccurred:UINotificationFeedbackTypeSuccess];
