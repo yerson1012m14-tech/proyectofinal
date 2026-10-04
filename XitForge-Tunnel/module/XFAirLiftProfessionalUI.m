@@ -89,6 +89,104 @@ static void XFSwizzle(Class cls, SEL original, SEL replacement) {
     method_exchangeImplementations(originalMethod, replacementMethod);
 }
 
+
+static NSString * const XFPINDeliveredInternalNotification =
+    @"XITFORGE.PairingPINDelivered";
+
+static BOOL XFNotificationsAllowed(UNNotificationSettings *settings) {
+    return settings.authorizationStatus == UNAuthorizationStatusAuthorized ||
+           settings.authorizationStatus == UNAuthorizationStatusProvisional ||
+           settings.authorizationStatus == UNAuthorizationStatusEphemeral;
+}
+
+static void XFSendPairingPINNotification(NSString *PIN) {
+    if (![PIN isKindOfClass:NSString.class] || PIN.length != 6) return;
+
+    UNUserNotificationCenter *center =
+        UNUserNotificationCenter.currentNotificationCenter;
+
+    [center getNotificationSettingsWithCompletionHandler:
+        ^(UNNotificationSettings *settings) {
+        if (!XFNotificationsAllowed(settings)) return;
+
+        UNMutableNotificationContent *content =
+            [[UNMutableNotificationContent alloc] init];
+
+        content.title = @"XITFORGE";
+        content.subtitle = @"CÓDIGO DE EMPAREJAMIENTO";
+        content.body =
+            [NSString stringWithFormat:@"Código: %@", PIN];
+        content.sound = UNNotificationSound.defaultSound;
+        content.threadIdentifier = @"com.xitforge.pairing";
+
+        UNTimeIntervalNotificationTrigger *trigger =
+            [UNTimeIntervalNotificationTrigger
+                triggerWithTimeInterval:0.10
+                                repeats:NO];
+
+        NSString *identifier =
+            [NSString stringWithFormat:@"xitforge-pair-%@",
+                                       NSUUID.UUID.UUIDString];
+
+        UNNotificationRequest *request =
+            [UNNotificationRequest requestWithIdentifier:identifier
+                                                 content:content
+                                                 trigger:trigger];
+
+        [center addNotificationRequest:request
+                 withCompletionHandler:^(NSError *error) {
+            if (error) {
+                NSLog(@"XITFORGE pairing notification error: %@", error);
+            }
+        }];
+    }];
+}
+
+#pragma mark - Pairing PIN notification delivery
+
+@implementation XFOnDevicePairing (XFSystemPINNotification)
+
++ (void)load {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        XFSwizzle(self, @selector(start), @selector(xfn_start));
+    });
+}
+
+- (void)xfn_start {
+    static const void *XFPINHandlerWrappedKey = &XFPINHandlerWrappedKey;
+
+    if (![objc_getAssociatedObject(self, XFPINHandlerWrappedKey) boolValue]) {
+        void (^originalHandler)(NSString *) = [self.pinHandler copy];
+
+        self.pinHandler = ^(NSString *PIN) {
+            // Preserve the original pairing state machine first.
+            if (originalHandler) originalHandler(PIN);
+
+            // Deliver the PIN through iOS, not through the XITFORGE screen.
+            XFSendPairingPINNotification(PIN);
+
+            // Tell the UI only that delivery happened; never pass/display the PIN there.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [NSNotificationCenter.defaultCenter
+                    postNotificationName:XFPINDeliveredInternalNotification
+                                  object:nil];
+            });
+        };
+
+        objc_setAssociatedObject(self,
+                                 XFPINHandlerWrappedKey,
+                                 @YES,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    // Calls the original XFOnDevicePairing -start after swizzling.
+    // At this point its pinHandler is already wrapped, so _activePIN captures it.
+    [self xfn_start];
+}
+
+@end
+
 #pragma mark - Tab order
 
 static UIViewController *XFRootController(UIViewController *controller) {
@@ -533,6 +631,12 @@ static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
 - (void)xfv2_viewDidLoad {
     [self xfv2_viewDidLoad];
 
+    [NSNotificationCenter.defaultCenter
+        addObserver:self
+           selector:@selector(xfv2_pinDeliveredBySystem:)
+               name:XFPINDeliveredInternalNotification
+             object:nil];
+
     self.view.backgroundColor = XFBackground();
     self.tableView.backgroundColor = XFBackground();
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
@@ -698,21 +802,15 @@ static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
     self.pairingGuideLabel.font =
         [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
 
-    self.pairingPINLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    self.pairingPINLabel.textColor = UIColor.whiteColor;
-    self.pairingPINLabel.font =
-        [UIFont monospacedDigitSystemFontOfSize:32.0 weight:UIFontWeightBold];
-
-    UIView *pinBox = XFMakeCard(16.0);
-    pinBox.backgroundColor = [UIColor colorWithWhite:0.085 alpha:1.0];
-    pinBox.layer.shadowOpacity = 0.0;
-
-    [pinBox addSubview:self.pairingPINLabel];
+    // El PIN nunca se muestra dentro de XITFORGE.
+    self.pairingPINLabel.hidden = YES;
+    self.pinCopyButton.hidden = YES;
+    [self.pairingPINLabel removeFromSuperview];
+    [self.pinCopyButton removeFromSuperview];
 
     [self xfv2_stylePrimaryButton:self.pairButton title:@"EMPAREJAR ESTE IPHONE"];
     [self xfv2_styleSecondaryButton:self.cancelPairButton title:@"CANCELAR EMPAREJAMIENTO"];
     [self xfv2_styleSecondaryButton:self.importButton title:@"IMPORTAR EMPAREJAMIENTO"];
-    [self xfv2_styleSecondaryButton:self.pinCopyButton title:@"COPIAR CÓDIGO"];
 
     UIStackView *pairActions =
         [[UIStackView alloc] initWithArrangedSubviews:@[
@@ -728,8 +826,6 @@ static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
     [pairCard addSubview:pairHeading];
     [pairCard addSubview:self.statusLabel];
     [pairCard addSubview:self.pairingGuideLabel];
-    [pairCard addSubview:pinBox];
-    [pairCard addSubview:self.pinCopyButton];
     [pairCard addSubview:pairActions];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -749,23 +845,9 @@ static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
         [self.pairingGuideLabel.trailingAnchor constraintEqualToAnchor:pairTitle.trailingAnchor],
         [self.pairingGuideLabel.topAnchor constraintEqualToAnchor:self.statusLabel.bottomAnchor constant:10.0],
 
-        [pinBox.leadingAnchor constraintEqualToAnchor:pairTitle.leadingAnchor],
-        [pinBox.trailingAnchor constraintEqualToAnchor:pairTitle.trailingAnchor],
-        [pinBox.topAnchor constraintEqualToAnchor:self.pairingGuideLabel.bottomAnchor constant:12.0],
-        [pinBox.heightAnchor constraintGreaterThanOrEqualToConstant:68.0],
-
-        [self.pairingPINLabel.centerXAnchor constraintEqualToAnchor:pinBox.centerXAnchor],
-        [self.pairingPINLabel.centerYAnchor constraintEqualToAnchor:pinBox.centerYAnchor],
-        [self.pairingPINLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:pinBox.leadingAnchor constant:12.0],
-        [self.pairingPINLabel.trailingAnchor constraintLessThanOrEqualToAnchor:pinBox.trailingAnchor constant:-12.0],
-
-        [self.pinCopyButton.leadingAnchor constraintEqualToAnchor:pairTitle.leadingAnchor],
-        [self.pinCopyButton.trailingAnchor constraintEqualToAnchor:pairTitle.trailingAnchor],
-        [self.pinCopyButton.topAnchor constraintEqualToAnchor:pinBox.bottomAnchor constant:9.0],
-
         [pairActions.leadingAnchor constraintEqualToAnchor:pairTitle.leadingAnchor],
         [pairActions.trailingAnchor constraintEqualToAnchor:pairTitle.trailingAnchor],
-        [pairActions.topAnchor constraintEqualToAnchor:self.pinCopyButton.bottomAnchor constant:12.0],
+        [pairActions.topAnchor constraintEqualToAnchor:self.pairingGuideLabel.bottomAnchor constant:14.0],
         [pairActions.bottomAnchor constraintEqualToAnchor:pairCard.bottomAnchor constant:-18.0],
     ]];
 
@@ -865,6 +947,19 @@ static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
 - (void)xfv2_updateButtons {
     [self xfv2_updateButtons];
 
+    // El PIN es exclusivamente una notificación del sistema.
+    self.pairingPINLabel.text = @"";
+    self.pairingPINLabel.hidden = YES;
+    self.pinCopyButton.hidden = YES;
+
+    NSString *guide = self.pairingGuideLabel.text ?: @"";
+    if ([guide containsString:@"PIN aparecerá aquí"] ||
+        [guide containsString:@"Vuelve a XitForge para verlo"] ||
+        [guide containsString:@"Introduce este PIN"]) {
+        self.pairingGuideLabel.text =
+            @"Mantente en Ajustes. El código aparecerá como una notificación de XITFORGE.";
+    }
+
     // La barra superior queda limpia: solo Consola.
     self.navigationItem.leftBarButtonItem = nil;
     self.navigationItem.rightBarButtonItem =
@@ -931,87 +1026,100 @@ static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
 
 #pragma mark Pairing notification
 
-- (void)xfv2_requestNotificationPermission {
-    UNUserNotificationCenter *center =
-        UNUserNotificationCenter.currentNotificationCenter;
+- (void)xfv2_showNotificationSettingsRequired {
+    UIAlertController *alert =
+        [UIAlertController
+            alertControllerWithTitle:@"ACTIVA LAS NOTIFICACIONES"
+                             message:@"XITFORGE enviará el código de emparejamiento como una notificación. No se mostrará dentro de la app."
+                      preferredStyle:UIAlertControllerStyleAlert];
 
-    [center getNotificationSettingsWithCompletionHandler:
-        ^(UNNotificationSettings *settings) {
-        if (settings.authorizationStatus != UNAuthorizationStatusNotDetermined) return;
+    [alert addAction:
+        [UIAlertAction actionWithTitle:@"Abrir Ajustes"
+                                 style:UIAlertActionStyleDefault
+                               handler:^(UIAlertAction *action) {
+        (void)action;
+        NSURL *URL = [NSURL URLWithString:UIApplicationOpenNotificationSettingsURLString];
+        if (URL) {
+            [UIApplication.sharedApplication openURL:URL
+                                             options:@{}
+                                   completionHandler:nil];
+        }
+    }]];
 
-        [center requestAuthorizationWithOptions:
-            (UNAuthorizationOptionAlert |
-             UNAuthorizationOptionSound |
-             UNAuthorizationOptionBadge)
-                              completionHandler:
-            ^(BOOL granted, NSError *error) {
-                (void)granted;
-                (void)error;
-            }];
-    }];
+    [alert addAction:
+        [UIAlertAction actionWithTitle:@"Cancelar"
+                                 style:UIAlertActionStyleCancel
+                               handler:nil]];
+
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
-- (void)xfv2_notifyPIN:(NSString *)PIN {
-    if (PIN.length != 6) return;
+- (void)xfv2_beginPairingAfterNotificationCheck {
+    // Calls the ORIGINAL XFAirLiftViewController startOnDevicePairing.
+    [self xfv2_startOnDevicePairing];
 
-    UNUserNotificationCenter *center =
-        UNUserNotificationCenter.currentNotificationCenter;
-
-    [center getNotificationSettingsWithCompletionHandler:
-        ^(UNNotificationSettings *settings) {
-        BOOL allowed =
-            settings.authorizationStatus == UNAuthorizationStatusAuthorized ||
-            settings.authorizationStatus == UNAuthorizationStatusProvisional ||
-            settings.authorizationStatus == UNAuthorizationStatusEphemeral;
-
-        if (!allowed) return;
-
-        UNMutableNotificationContent *content =
-            [[UNMutableNotificationContent alloc] init];
-        content.title = @"XITFORGE";
-        content.body =
-            [NSString stringWithFormat:@"Código de emparejamiento: %@", PIN];
-        content.sound = UNNotificationSound.defaultSound;
-
-        UNTimeIntervalNotificationTrigger *trigger =
-            [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:0.25
-                                                               repeats:NO];
-
-        UNNotificationRequest *request =
-            [UNNotificationRequest
-                requestWithIdentifier:
-                    [NSString stringWithFormat:@"xitforge-pair-%@",
-                                               NSUUID.UUID.UUIDString]
-                              content:content
-                              trigger:trigger];
-
-        [center addNotificationRequest:request withCompletionHandler:nil];
-    }];
+    // Even if the original handler receives the PIN internally,
+    // these controls remain detached/hidden and never reveal it.
+    self.pairingPINLabel.hidden = YES;
+    self.pinCopyButton.hidden = YES;
 }
 
 - (void)xfv2_startOnDevicePairing {
-    [self xfv2_requestNotificationPermission];
+    if (self.busy) return;
 
-    [self xfv2_startOnDevicePairing];
+    UNUserNotificationCenter *center =
+        UNUserNotificationCenter.currentNotificationCenter;
 
-    XFOnDevicePairing *service = self.pairingService;
-    if (!service || !service.pinHandler) return;
+    [center getNotificationSettingsWithCompletionHandler:
+        ^(UNNotificationSettings *settings) {
 
-    static const void *XFV2WrappedPINKey = &XFV2WrappedPINKey;
-    if ([objc_getAssociatedObject(service, XFV2WrappedPINKey) boolValue]) return;
+        if (XFNotificationsAllowed(settings)) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self xfv2_beginPairingAfterNotificationCheck];
+            });
+            return;
+        }
 
-    objc_setAssociatedObject(service,
-                             XFV2WrappedPINKey,
-                             @YES,
-                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (settings.authorizationStatus == UNAuthorizationStatusNotDetermined) {
+            [center requestAuthorizationWithOptions:
+                (UNAuthorizationOptionAlert |
+                 UNAuthorizationOptionSound |
+                 UNAuthorizationOptionBadge)
+                                  completionHandler:
+                ^(BOOL granted, NSError *error) {
+                    (void)error;
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (granted) {
+                            [self xfv2_beginPairingAfterNotificationCheck];
+                        } else {
+                            [self xfv2_showNotificationSettingsRequired];
+                        }
+                    });
+                }];
+            return;
+        }
 
-    void (^original)(NSString *) = [service.pinHandler copy];
-    __weak typeof(self) weakSelf = self;
+        // Denied: don't start a pairing session whose PIN the user cannot see.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self xfv2_showNotificationSettingsRequired];
+        });
+    }];
+}
 
-    service.pinHandler = ^(NSString *PIN) {
-        if (original) original(PIN);
-        [weakSelf xfv2_notifyPIN:PIN];
-    };
+- (void)xfv2_pinDeliveredBySystem:(NSNotification *)notification {
+    (void)notification;
+
+    // Never reveal the code in XITFORGE.
+    self.pairingPINLabel.text = @"";
+    self.pairingPINLabel.hidden = YES;
+    self.pinCopyButton.hidden = YES;
+
+    self.statusLabel.text = @"Código enviado por notificación.";
+    self.pairingGuideLabel.hidden = NO;
+    self.pairingGuideLabel.text =
+        @"Mantente en Ajustes. Usa el código de la notificación de XITFORGE para completar el emparejamiento.";
+
+    [self.view setNeedsLayout];
 }
 
 #pragma mark Open files without app catalog
