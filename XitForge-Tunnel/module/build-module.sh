@@ -22,7 +22,7 @@ objects=()
 for source in \
   XFAirLiftBackend.m \
   XFAirLiftFastReplace.m \
-  XITForgeDiagnosticOnly.m \
+  XITForgeExistenceDiagnostic.m \
   XFOnDevicePairing.m \
   XFAirLiftViewController.m \
   XFAirLiftInstaller.m \

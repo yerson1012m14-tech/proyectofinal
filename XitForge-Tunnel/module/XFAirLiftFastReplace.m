@@ -1,17 +1,18 @@
 #import <Foundation/Foundation.h>
 
 /*
- XITFORGE V18A — DIAGNÓSTICO SOLAMENTE
+ XITFORGE V18B — DIAGNÓSTICO DE RUTA / EXISTENCIA PLAN
 
- Este archivo deja desactivado el FastReplace.
- La lógica de diagnóstico está en XITForgeDiagnosticOnly.m.
+ FastReplace queda desactivado.
+ La lógica está en XITForgeExistenceDiagnostic.m.
 
  Este modo NO escribe.
+ Este modo NO crea.
  Este modo NO reemplaza.
- Este modo NO crea archivos.
+ Este modo NO elimina.
 */
 
 __attribute__((constructor))
-static void XITForgeV18ADiagnosticMode(void) {
-    NSLog(@"XITFORGE V18A: FastReplace desactivado. Modo diagnóstico solamente.");
+static void XITForgeV18BDiagnosticMode(void) {
+    NSLog(@"XITFORGE V18B: FastReplace desactivado. Diagnóstico de ruta/existencia solamente.");
 }
