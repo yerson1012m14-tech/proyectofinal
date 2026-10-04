@@ -1,25 +1,46 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <string.h>
+#import "XFIDeviceABI.h"
 
 /*
- XITFORGE V10/V11 — ACTIVACIÓN RÁPIDA SIN AIRTRAFFIC
+ XITFORGE V12 — ACTIVACIÓN RÁPIDA DIRECTA
 
- Este archivo se compila dentro de XFAirLift.dylib.
+ Reemplaza:
+   XitForge-Tunnel/module/XFAirLiftFastReplace.m
 
- Qué hace:
- - Intercepta replaceFileForApplication:relativePath:data:error:
- - Para ACTIVAR usa solo la ruta directa House Arrest/AFC.
- - NO intenta AirTraffic/ATC, porque ATC se queda esperando SyncAllowed.
- - Si la ruta directa no puede escribir, falla rápido con el error real.
-
- No toca DESACTIVAR ni la UI de Home.
+ Qué corrige:
+ - Ya NO necesita que XFAirLiftBackend.m tenga replaceViaHouseArrestForApplication.
+ - Abre House Arrest/AFC directo desde este archivo.
+ - Escribe y verifica el archivo por AFC.
+ - NO usa AirTraffic/ATC, para evitar SyncAllowed timeout.
 */
 
 static NSError *XFFastError(NSInteger code, NSString *message) {
     return [NSError errorWithDomain:@"XitForge.FastTunnel"
                                code:code
                            userInfo:@{NSLocalizedDescriptionKey: message ?: @"Error desconocido."}];
+}
+
+static NSError *XFFastNativeError(IdeviceFfiError *native, NSString *action) {
+    if (!native) return nil;
+    NSString *detail = native->message ? [NSString stringWithUTF8String:native->message] : @"Error del servicio iOS";
+    NSInteger code = native->code;
+    NSError *error = XFFastError(code, [NSString stringWithFormat:@"%@: %@ (código %d/%d).",
+                                        action ?: @"Operación nativa",
+                                        detail ?: @"Respuesta no válida",
+                                        native->code,
+                                        native->sub_code]);
+    idevice_error_free(native);
+    return error;
+}
+
+static BOOL XFConsumeFast(IdeviceFfiError *native, NSString *action, NSError **error) {
+    if (!native) return YES;
+    if (error) *error = XFFastNativeError(native, action);
+    else idevice_error_free(native);
+    return NO;
 }
 
 static id XFGetIvarObject(id object, const char *name) {
@@ -39,13 +60,188 @@ static void XFSetIvarObject(id object, const char *name, id value) {
 static void XFSetRouteCode(id backend, NSString *key, NSInteger code) {
     id routes = XFGetIvarObject(backend, "_routeResultCodes");
     if ([routes respondsToSelector:@selector(setObject:forKey:)]) {
-        ((void (*)(id, SEL, id, id))objc_msgSend)(
-            routes,
-            @selector(setObject:forKey:),
-            @(code),
-            key
-        );
+        ((void (*)(id, SEL, id, id))objc_msgSend)(routes, @selector(setObject:forKey:), @(code), key);
     }
+}
+
+static NSString *XFAFCPathForRelative(NSString *relative) {
+    NSMutableArray<NSString *> *parts = [NSMutableArray array];
+    for (NSString *part in relative.pathComponents) {
+        if (!part.length || [part isEqualToString:@"."]) continue;
+        [parts addObject:part];
+    }
+    NSString *normalized = [parts componentsJoinedByString:@"/"];
+    return normalized.length ? [@"/" stringByAppendingString:normalized] : @"/";
+}
+
+static NSData *XFReadAFCFast(AfcClientHandle *afc, NSString *path, NSError **error) {
+    AfcFileInfo info = {0};
+    if (!XFConsumeFast(afc_get_file_info(afc, path.UTF8String, &info), @"Consultar archivo escrito", error)) {
+        afc_file_info_free(&info);
+        return nil;
+    }
+
+    BOOL regular = info.st_ifmt && strcmp(info.st_ifmt, "S_IFREG") == 0;
+    size_t length = info.size;
+    afc_file_info_free(&info);
+
+    if (!regular) {
+        if (error) *error = XFFastError(6201, @"La ruta escrita no es un archivo regular.");
+        return nil;
+    }
+
+    if (length > (64ULL * 1024ULL * 1024ULL)) {
+        if (error) *error = XFFastError(6202, @"El archivo escrito supera el límite de verificación.");
+        return nil;
+    }
+
+    AfcFileHandle *file = NULL;
+    if (!XFConsumeFast(afc_file_open(afc, path.UTF8String, AfcRdOnly, &file), @"Abrir archivo escrito para verificar", error) || !file) {
+        return nil;
+    }
+
+    NSMutableData *data = [NSMutableData dataWithCapacity:MIN(length, (size_t)(1024 * 1024))];
+    BOOL ok = YES;
+
+    while (data.length < length) {
+        size_t wanted = MIN(length - data.length, (size_t)(1024 * 1024));
+        uint8_t *bytes = NULL;
+        size_t received = 0;
+
+        ok = XFConsumeFast(afc_file_read(file, &bytes, wanted, &received), @"Leer archivo escrito para verificar", error);
+
+        if (ok && (!received || !bytes || received > wanted)) {
+            if (error) *error = XFFastError(6203, @"La lectura de verificación quedó incompleta.");
+            ok = NO;
+        }
+
+        if (ok) [data appendBytes:bytes length:received];
+        if (bytes) afc_file_read_data_free(bytes, received);
+        if (!ok) break;
+    }
+
+    NSError *closeError = nil;
+    BOOL closed = XFConsumeFast(afc_file_close(file), @"Cerrar archivo verificado", &closeError);
+    file = NULL;
+
+    if (ok && !closed) {
+        if (error) *error = closeError;
+        ok = NO;
+    }
+
+    return ok ? data : nil;
+}
+
+static BOOL XFWriteAFCFast(AfcClientHandle *afc, NSString *path, NSData *data, NSError **error) {
+    if (!afc || !path.length || ![data isKindOfClass:NSData.class]) {
+        if (error) *error = XFFastError(6204, @"No se pudo preparar la escritura directa por Túnel.");
+        return NO;
+    }
+
+    AfcFileHandle *file = NULL;
+    if (!XFConsumeFast(afc_file_open(afc, path.UTF8String, AfcWrOnly, &file), @"Abrir destino para escritura directa", error) || !file) {
+        return NO;
+    }
+
+    BOOL ok = YES;
+    const uint8_t *bytes = data.bytes;
+    NSUInteger offset = 0;
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:20.0];
+
+    while (offset < data.length) {
+        if (deadline.timeIntervalSinceNow <= 0) {
+            if (error) *error = XFFastError(6205, @"La escritura directa por Túnel superó el tiempo de espera.");
+            ok = NO;
+            break;
+        }
+
+        NSUInteger count = MIN((NSUInteger)(1024 * 1024), data.length - offset);
+        if (!XFConsumeFast(afc_file_write(file, bytes + offset, count), @"Escribir archivo por Túnel directo", error)) {
+            ok = NO;
+            break;
+        }
+
+        offset += count;
+    }
+
+    NSError *closeError = nil;
+    BOOL closed = XFConsumeFast(afc_file_close(file), @"Cerrar archivo escrito", &closeError);
+    file = NULL;
+
+    if (ok && !closed) {
+        if (error) *error = closeError;
+        ok = NO;
+    }
+
+    if (!ok) return NO;
+
+    NSError *verifyError = nil;
+    NSData *observed = XFReadAFCFast(afc, path, &verifyError);
+    if (!observed || ![observed isEqualToData:data]) {
+        if (error) *error = verifyError ?: XFFastError(6206, @"El archivo se escribió, pero la verificación no coincide.");
+        return NO;
+    }
+
+    return YES;
+}
+
+static BOOL XFReplaceViaDirectHouseArrest(id backend,
+                                          NSString *identifier,
+                                          NSString *relative,
+                                          NSData *data,
+                                          NSError **error) {
+    SEL openSelector = NSSelectorFromString(@"openHouseArrestForApplication:documentsOnly:error:");
+    if (![backend respondsToSelector:openSelector]) {
+        if (error) *error = XFFastError(6207, @"El backend no expone House Arrest/AFC directo.");
+        return NO;
+    }
+
+    NSString *afcPath = XFAFCPathForRelative(relative);
+    NSMutableArray<NSString *> *failures = [NSMutableArray array];
+
+    for (NSNumber *documentsMode in @[@NO, @YES]) {
+        BOOL documentsOnly = documentsMode.boolValue;
+
+        if (documentsOnly &&
+            !([relative isEqualToString:@"Documents"] || [relative hasPrefix:@"Documents/"])) {
+            [failures addObject:@"Documents: la ruta queda fuera de Documents."];
+            continue;
+        }
+
+        NSError *openError = nil;
+        AfcClientHandle *afc =
+            ((AfcClientHandle * (*)(id, SEL, NSString *, BOOL, NSError **))objc_msgSend)(
+                backend,
+                openSelector,
+                identifier,
+                documentsOnly,
+                &openError
+            );
+
+        if (!afc) {
+            [failures addObject:[NSString stringWithFormat:@"%@: %@",
+                                 documentsOnly ? @"Documents" : @"Contenedor",
+                                 openError.localizedDescription ?: @"iOS no concedió acceso."]];
+            continue;
+        }
+
+        NSError *writeError = nil;
+        BOOL written = XFWriteAFCFast(afc, afcPath, data, &writeError);
+        afc_client_free(afc);
+
+        if (written) return YES;
+
+        [failures addObject:[NSString stringWithFormat:@"%@: %@",
+                             documentsOnly ? @"Documents" : @"Contenedor",
+                             writeError.localizedDescription ?: @"No se pudo escribir/verificar."]];
+    }
+
+    if (error) {
+        *error = XFFastError(6208, failures.count
+            ? [failures componentsJoinedByString:@"\n\n"]
+            : @"House Arrest/AFC no devolvió una ruta de escritura.");
+    }
+    return NO;
 }
 
 static BOOL XFFastReplaceFileForApplication(id self,
@@ -125,27 +321,8 @@ static BOOL XFFastReplaceFileForApplication(id self,
             return;
         }
 
-        SEL directSelector =
-            NSSelectorFromString(@"replaceViaHouseArrestForApplication:relativePath:data:error:");
-
-        if (![self respondsToSelector:directSelector]) {
-            failure = XFFastError(
-                6103,
-                @"Esta versión del backend no tiene escritura directa House Arrest/AFC. Reemplaza XFAirLiftBackend.m por la versión con replaceViaHouseArrest."
-            );
-            return;
-        }
-
         NSError *directError = nil;
-        replaced =
-            ((BOOL (*)(id, SEL, NSString *, NSString *, NSData *, NSError **))objc_msgSend)(
-                self,
-                directSelector,
-                identifier,
-                relative,
-                replacement,
-                &directError
-            );
+        replaced = XFReplaceViaDirectHouseArrest(self, identifier, relative, replacement, &directError);
 
         XFSetRouteCode(self, @"HouseArrestWriteFast", replaced ? 0 : (directError ? directError.code : -1));
 
@@ -154,24 +331,15 @@ static BOOL XFFastReplaceFileForApplication(id self,
             return;
         }
 
-        /*
-         IMPORTANTE:
-         No caer a AirTraffic/ATC aquí.
-         ATC es lo que estaba esperando SyncAllowed y provocaba timeout.
-        */
         failure = XFFastError(
             6041,
             [NSString stringWithFormat:
-                @"Ruta rápida House Arrest/AFC no pudo escribir el archivo. AirTraffic fue omitido para evitar espera.\n\nDetalle: %@",
+                @"Ruta rápida House Arrest/AFC no pudo escribir el archivo. AirTraffic fue omitido para evitar espera.\n\n%@",
                 directError.localizedDescription ?: @"Sin detalle del backend."]
         );
     };
 
-    ((void (*)(id, SEL, id))objc_msgSend)(
-        worker,
-        performSelector,
-        [operation copy]
-    );
+    ((void (*)(id, SEL, id))objc_msgSend)(worker, performSelector, [operation copy]);
 
     if (!replaced && error) *error = failure ?: XFFastError(6041, @"El Túnel no pudo escribir el archivo por ruta rápida.");
     return replaced;
@@ -189,7 +357,7 @@ static void XFInstallFastReplaceHook(void) {
     if (current == (IMP)XFFastReplaceFileForApplication) return;
 
     method_setImplementation(method, (IMP)XFFastReplaceFileForApplication);
-    NSLog(@"XITFORGE V11: replaceFileForApplication ahora usa ruta rápida y omite AirTraffic.");
+    NSLog(@"XITFORGE V12: ACTIVAR usa AFC directo, sin replaceViaHouseArrest y sin AirTraffic.");
 }
 
 __attribute__((constructor))
