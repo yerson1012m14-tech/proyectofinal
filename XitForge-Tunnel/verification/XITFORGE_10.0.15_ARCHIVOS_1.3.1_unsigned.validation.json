@@ -1,0 +1,12 @@
+{
+  "base_sha256": "f797fc6bb319876bd86bd7e713de5f62defda9da1d58a31f03cfb8d399b36091",
+  "module_sha256": "645ef4743ba3245cbd072e4267429359f045f7c00f3a96fccf2ded21299600d6",
+  "preserved_entries": 8,
+  "changed_entries": [
+    "Payload/MiApp.app/MiApp",
+    "Payload/MiApp.app/Info.plist"
+  ],
+  "removed_signature_entries": [],
+  "ipa_sha256": "8b239c3127860a813796ae4a718226ad2712704a572815431d8bee889f2d87fd",
+  "validation": "ARM64 dylib, valid archive, preserved original executable code and resources; not tested on a physical iPhone"
+}

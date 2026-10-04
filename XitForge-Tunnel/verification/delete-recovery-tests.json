@@ -1,0 +1,12 @@
+{
+  "testsPassed": true,
+  "failedAssertionLine": null,
+  "namedCases": 51,
+  "namedDeleteCases": 20,
+  "existingPresenceCombinations": 81,
+  "deletePresenceAndFlagCombinations": 5184,
+  "scope": "actual production pure C helper and fixture; no app/IPA build or remote I/O",
+  "headerSHA256": "0610fdefea1db40b587324092fce57c8b2e4f63dee40532d1cf5078cc528ca48",
+  "fixtureSHA256": "a26510d119f465360748898d7408c691112e234a53b992a8b90fced2e2101801",
+  "assertAdapter": "failed assertions return source line; assertions enabled"
+}

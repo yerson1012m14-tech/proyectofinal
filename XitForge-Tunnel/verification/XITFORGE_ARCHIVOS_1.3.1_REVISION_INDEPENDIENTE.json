@@ -1,0 +1,2349 @@
+{
+  "review": "Independent original-to-final ZIP and Mach-O review; does not import packaging validation code",
+  "generatedAtUTC": "2026-10-04T04:19:47.748490+00:00",
+  "passed": true,
+  "originalIPASHA256": "f797fc6bb319876bd86bd7e713de5f62defda9da1d58a31f03cfb8d399b36091",
+  "finalIPASHA256": "8b239c3127860a813796ae4a718226ad2712704a572815431d8bee889f2d87fd",
+  "zip": {
+    "retainedEntryCount": 10,
+    "unchangedEntryContentCount": 8,
+    "preservedOriginalEntryMetadataCount": 10,
+    "addedEntryCount": 2,
+    "originalFilzaHelperSHA256": "4ae7f4cd6d6e3f24261ac824f9eea8674dd931372e0663dc14dfeebbf8971481",
+    "addedModuleUnixMode": "0o100755",
+    "addedNoticesUnixMode": "0o100644"
+  },
+  "mainExecutable": {
+    "original": {
+      "architecture": "arm64",
+      "fileType": 2,
+      "loadCommandCount": 28,
+      "loadCommandBytes": 4072,
+      "firstSectionFileOffset": 16384,
+      "codeSignatureCommandCount": 0,
+      "fileSHA256": "186e78b9f4d54b3743a92978bb062ebcda973bacdcef9d58f140d2ef37eaab84"
+    },
+    "final": {
+      "architecture": "arm64",
+      "fileType": 2,
+      "loadCommandCount": 29,
+      "loadCommandBytes": 4136,
+      "firstSectionFileOffset": 16384,
+      "codeSignatureCommandCount": 0,
+      "fileSHA256": "abe9ad9a729106b9e5bd9cca01082ee3aad1e212ab280ace7309aad81c7e8cba"
+    },
+    "preservedCodeAndDataSHA256": "56226643f8250ea9ddf58f1320d73b00471cc8c10f3e13196eeeedae4417c022",
+    "preservedCodeAndDataBytes": 506528,
+    "moduleDependencyCount": 1
+  },
+  "addedModule": {
+    "architecture": "arm64",
+    "fileType": 6,
+    "loadCommandCount": 31,
+    "loadCommandBytes": 4552,
+    "firstSectionFileOffset": 16384,
+    "codeSignatureCommandCount": 0,
+    "fileSHA256": "645ef4743ba3245cbd072e4267429359f045f7c00f3a96fccf2ded21299600d6"
+  },
+  "infoPlist": {
+    "bundleIdentifier": "com.apple.mobile.MobileHouseArrest",
+    "moduleVersion": "1.3.1",
+    "originalVersionPreserved": true,
+    "originalExecutablePreserved": true
+  },
+  "knownFileCompiledSelectors": [
+    "readAbsoluteFile:maximumBytes:error:",
+    "replaceAbsoluteFile:data:error:",
+    "recoverPendingKnownFileAtPath:error:",
+    "replaceFileForApplication:relativePath:data:error:",
+    "restorePendingFileForApplication:relativePath:error:",
+    "persistKnownOriginal:error:",
+    "runKnownFilePairs:error:",
+    "returnKnownOriginal:",
+    "returnKnownReplacement:",
+    "deleteAbsoluteFile:error:",
+    "deleteFileForApplication:relativePath:error:",
+    "deletedFileBackupURL",
+    "deletionAbsenceConfirmed",
+    "lastDeletedFileBackupURL",
+    "lastDeletionAbsenceConfirmed",
+    "knownTargetAbsenceAfterMove:error:",
+    "verifyKnownTargetLink:",
+    "publishDeleteReceipt:",
+    "validatedLocalOriginal:error:"
+  ],
+  "pickerCompiledSelectors": [
+    "chooseReplacementForPath:",
+    "documentPickerWasCancelled:",
+    "documentPicker:didPickDocumentsAtURLs:",
+    "initForOpeningContentTypes:asCopy:",
+    "startAccessingSecurityScopedResource",
+    "stopAccessingSecurityScopedResource",
+    "coordinateReadingItemAtURL:options:error:byAccessor:",
+    "beginReplacementRead:target:application:",
+    "cancelReplacementRead",
+    "setShouldShowFileExtensions:",
+    "setCompletionWithItemsHandler:"
+  ],
+  "nativeAccessSourceReview": {
+    "sourceSHA256": "e275f02ddd85d5967fabf27d8dc314809788f0568e03bd0e0b45b53b5666a0ea",
+    "grantHelperSHA256": "444683a7e5adb663971d16d9ab704c7a7ece1669fdb23f82c611e2c34b354d1c",
+    "validatedUUIDRootBeforeTokenUse": true,
+    "kernelBuildPolicyExact": true,
+    "ownedHandleZeroReleased": true,
+    "cFixtureAssertions": 323,
+    "cFixtureFailures": 0
+  },
+  "limitations": [
+    "This review establishes package integrity and static root-bound policy, not iPhone runtime access.",
+    "The Objective-C native lease, known-file read/replace/delete loop, and document picker were not executed on an iPhone in this review.",
+    "Package integrity and selector presence do not establish protected-file return/deletion, picker presentation timing, conflict atomicity, or reboot recovery.",
+    "Unsigned final IPA requires signing that preserves its required main bundle identifier."
+  ],
+  "checks": [
+    {
+      "check": "Exact original IPA source hash",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP has no duplicate entries",
+      "passed": true
+    },
+    {
+      "check": "Final ZIP has no duplicate entries",
+      "passed": true
+    },
+    {
+      "check": "Final ZIP CRC integrity",
+      "passed": true
+    },
+    {
+      "check": "Final ZIP entry paths remain relative and bounded",
+      "passed": true
+    },
+    {
+      "check": "Exact retained and added entry set",
+      "passed": true
+    },
+    {
+      "check": "Unsigned final package has no stale bundle signature entries",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/",
+      "passed": true
+    },
+    {
+      "check": "Original entry content preserved: Payload/",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/MiApp.app/",
+      "passed": true
+    },
+    {
+      "check": "Original entry content preserved: Payload/MiApp.app/",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/MiApp.app/AppIcon60x60@2x.png",
+      "passed": true
+    },
+    {
+      "check": "Original entry content preserved: Payload/MiApp.app/AppIcon60x60@2x.png",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/MiApp.app/AppIcon76x76@2x~ipad.png",
+      "passed": true
+    },
+    {
+      "check": "Original entry content preserved: Payload/MiApp.app/AppIcon76x76@2x~ipad.png",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/MiApp.app/Assets.car",
+      "passed": true
+    },
+    {
+      "check": "Original entry content preserved: Payload/MiApp.app/Assets.car",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/MiApp.app/FilzaApplySandboxExt.dylib",
+      "passed": true
+    },
+    {
+      "check": "Original entry content preserved: Payload/MiApp.app/FilzaApplySandboxExt.dylib",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/MiApp.app/Info.plist",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/MiApp.app/MiApp",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/MiApp.app/PkgInfo",
+      "passed": true
+    },
+    {
+      "check": "Original entry content preserved: Payload/MiApp.app/PkgInfo",
+      "passed": true
+    },
+    {
+      "check": "Original ZIP metadata preserved: Payload/MiApp.app/xitforge_activar.m4a",
+      "passed": true
+    },
+    {
+      "check": "Original entry content preserved: Payload/MiApp.app/xitforge_activar.m4a",
+      "passed": true
+    },
+    {
+      "check": "Original Filza helper is byte identical",
+      "passed": true
+    },
+    {
+      "check": "Original executable: complete Mach header",
+      "passed": true
+    },
+    {
+      "check": "Original executable: thin little-endian Mach-O 64",
+      "passed": true
+    },
+    {
+      "check": "Original executable: ARM64 architecture",
+      "passed": true
+    },
+    {
+      "check": "Original executable: load-command extent is bounded",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 0",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 0",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment header 0",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment sections fit command 0",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment data fits file 0",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 1",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 1",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment header 1",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment sections fit command 1",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment data fits file 1",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/0",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/1",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/2",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/3",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/4",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/5",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/6",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/7",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/8",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/9",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/10",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 1/11",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 2",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 2",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment header 2",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment sections fit command 2",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment data fits file 2",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/0",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/1",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/2",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/3",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/4",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/5",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/6",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/7",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/8",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/9",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/10",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 2/11",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 3",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 3",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment header 3",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment sections fit command 3",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment data fits file 3",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 3/0",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 3/1",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 3/2",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 3/3",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 3/4",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 3/5",
+      "passed": true
+    },
+    {
+      "check": "Original executable: section data is bounded 3/6",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 4",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 4",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment header 4",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment sections fit command 4",
+      "passed": true
+    },
+    {
+      "check": "Original executable: segment data fits file 4",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 5",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 5",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 6",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 6",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 7",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 7",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 8",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 8",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 9",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 9",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 10",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 10",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 11",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 11",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 12",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 12",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 13",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 13",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 14",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 14",
+      "passed": true
+    },
+    {
+      "check": "Original executable: encryption command bounds",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 15",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 15",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 15",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 15",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 15",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 16",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 16",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 16",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 16",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 16",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 17",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 17",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 17",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 17",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 17",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 18",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 18",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 18",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 18",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 18",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 19",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 19",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 19",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 19",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 19",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 20",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 20",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 20",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 20",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 20",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 21",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 21",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 21",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 21",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 21",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 22",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 22",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 22",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 22",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 22",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 23",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 23",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 23",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 23",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 23",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 24",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 24",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 25",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 25",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 26",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 26",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command header 27",
+      "passed": true
+    },
+    {
+      "check": "Original executable: command size 27",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib command header 27",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name bounds 27",
+      "passed": true
+    },
+    {
+      "check": "Original executable: dylib name termination 27",
+      "passed": true
+    },
+    {
+      "check": "Original executable: exact command count and extent",
+      "passed": true
+    },
+    {
+      "check": "Original executable: file-backed section exists",
+      "passed": true
+    },
+    {
+      "check": "Original executable: commands do not overlap first section",
+      "passed": true
+    },
+    {
+      "check": "Original executable: no encrypted payload",
+      "passed": true
+    },
+    {
+      "check": "Final executable: complete Mach header",
+      "passed": true
+    },
+    {
+      "check": "Final executable: thin little-endian Mach-O 64",
+      "passed": true
+    },
+    {
+      "check": "Final executable: ARM64 architecture",
+      "passed": true
+    },
+    {
+      "check": "Final executable: load-command extent is bounded",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 0",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 0",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment header 0",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment sections fit command 0",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment data fits file 0",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 1",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 1",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment header 1",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment sections fit command 1",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment data fits file 1",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/0",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/1",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/2",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/3",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/4",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/5",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/6",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/7",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/8",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/9",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/10",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 1/11",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 2",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 2",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment header 2",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment sections fit command 2",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment data fits file 2",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/0",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/1",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/2",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/3",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/4",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/5",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/6",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/7",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/8",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/9",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/10",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 2/11",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 3",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 3",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment header 3",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment sections fit command 3",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment data fits file 3",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 3/0",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 3/1",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 3/2",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 3/3",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 3/4",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 3/5",
+      "passed": true
+    },
+    {
+      "check": "Final executable: section data is bounded 3/6",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 4",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 4",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment header 4",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment sections fit command 4",
+      "passed": true
+    },
+    {
+      "check": "Final executable: segment data fits file 4",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 5",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 5",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 6",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 6",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 7",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 7",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 8",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 8",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 9",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 9",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 10",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 10",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 11",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 11",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 12",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 12",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 13",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 13",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 14",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 14",
+      "passed": true
+    },
+    {
+      "check": "Final executable: encryption command bounds",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 15",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 15",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 15",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 15",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 15",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 16",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 16",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 16",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 16",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 16",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 17",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 17",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 17",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 17",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 17",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 18",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 18",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 18",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 18",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 18",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 19",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 19",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 19",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 19",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 19",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 20",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 20",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 20",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 20",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 20",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 21",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 21",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 21",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 21",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 21",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 22",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 22",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 22",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 22",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 22",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 23",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 23",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 23",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 23",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 23",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 24",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 24",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 25",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 25",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 26",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 26",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 27",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 27",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 27",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 27",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 27",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command header 28",
+      "passed": true
+    },
+    {
+      "check": "Final executable: command size 28",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib command header 28",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name bounds 28",
+      "passed": true
+    },
+    {
+      "check": "Final executable: dylib name termination 28",
+      "passed": true
+    },
+    {
+      "check": "Final executable: exact command count and extent",
+      "passed": true
+    },
+    {
+      "check": "Final executable: file-backed section exists",
+      "passed": true
+    },
+    {
+      "check": "Final executable: commands do not overlap first section",
+      "passed": true
+    },
+    {
+      "check": "Final executable: no encrypted payload",
+      "passed": true
+    },
+    {
+      "check": "Main executable Mach type remains MH_EXECUTE",
+      "passed": true
+    },
+    {
+      "check": "Main executable file length is preserved",
+      "passed": true
+    },
+    {
+      "check": "Main header fields preserved except command count and command length",
+      "passed": true
+    },
+    {
+      "check": "Original first-section offset is preserved",
+      "passed": true
+    },
+    {
+      "check": "All original code and data bytes from first section onward are preserved",
+      "passed": true
+    },
+    {
+      "check": "All retained original load commands remain byte identical and ordered",
+      "passed": true
+    },
+    {
+      "check": "Only appended load command is LC_LOAD_DYLIB",
+      "passed": true
+    },
+    {
+      "check": "Module dependency occurs exactly once",
+      "passed": true
+    },
+    {
+      "check": "Final main executable has no stale LC_CODE_SIGNATURE",
+      "passed": true
+    },
+    {
+      "check": "Original added-command space was verified zero header padding",
+      "passed": true
+    },
+    {
+      "check": "Final remaining header padding stays zero",
+      "passed": true
+    },
+    {
+      "check": "Packaged module is identical to final compiled module artifact",
+      "passed": true
+    },
+    {
+      "check": "Added module: complete Mach header",
+      "passed": true
+    },
+    {
+      "check": "Added module: thin little-endian Mach-O 64",
+      "passed": true
+    },
+    {
+      "check": "Added module: ARM64 architecture",
+      "passed": true
+    },
+    {
+      "check": "Added module: load-command extent is bounded",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 0",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 0",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment header 0",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment sections fit command 0",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment data fits file 0",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/0",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/1",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/2",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/3",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/4",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/5",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/6",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/7",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/8",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/9",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 0/10",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 1",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 1",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment header 1",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment sections fit command 1",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment data fits file 1",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 1/0",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 1/1",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 1/2",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 1/3",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 1/4",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 1/5",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 1/6",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 2",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 2",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment header 2",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment sections fit command 2",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment data fits file 2",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/0",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/1",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/2",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/3",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/4",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/5",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/6",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/7",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/8",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/9",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/10",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/11",
+      "passed": true
+    },
+    {
+      "check": "Added module: section data is bounded 2/12",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 3",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 3",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment header 3",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment sections fit command 3",
+      "passed": true
+    },
+    {
+      "check": "Added module: segment data fits file 3",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 4",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 4",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 5",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 5",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 6",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 6",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 7",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 7",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 8",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 8",
+      "passed": true
+    },
+    {
+      "check": "Added module: encryption command bounds",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 9",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 9",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib identity header",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib identity is bounded",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 10",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 10",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 11",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 11",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 12",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 12",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 12",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 12",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 12",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 13",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 13",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 13",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 13",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 13",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 14",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 14",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 14",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 14",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 14",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 15",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 15",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 15",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 15",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 15",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 16",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 16",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 16",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 16",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 16",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 17",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 17",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 17",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 17",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 17",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 18",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 18",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 18",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 18",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 18",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 19",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 19",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 19",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 19",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 19",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 20",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 20",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 20",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 20",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 20",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 21",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 21",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 21",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 21",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 21",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 22",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 22",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 22",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 22",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 22",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 23",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 23",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 23",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 23",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 23",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 24",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 24",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 24",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 24",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 24",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 25",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 25",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 25",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 25",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 25",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 26",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 26",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 26",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 26",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 26",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 27",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 27",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 27",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 27",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 27",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 28",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 28",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib command header 28",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name bounds 28",
+      "passed": true
+    },
+    {
+      "check": "Added module: dylib name termination 28",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 29",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 29",
+      "passed": true
+    },
+    {
+      "check": "Added module: command header 30",
+      "passed": true
+    },
+    {
+      "check": "Added module: command size 30",
+      "passed": true
+    },
+    {
+      "check": "Added module: exact command count and extent",
+      "passed": true
+    },
+    {
+      "check": "Added module: file-backed section exists",
+      "passed": true
+    },
+    {
+      "check": "Added module: commands do not overlap first section",
+      "passed": true
+    },
+    {
+      "check": "Added module: no encrypted payload",
+      "passed": true
+    },
+    {
+      "check": "Added module type is MH_DYLIB",
+      "passed": true
+    },
+    {
+      "check": "Added module has exactly the expected install identity",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: readAbsoluteFile:maximumBytes:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: replaceAbsoluteFile:data:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: recoverPendingKnownFileAtPath:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: replaceFileForApplication:relativePath:data:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: restorePendingFileForApplication:relativePath:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: persistKnownOriginal:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: runKnownFilePairs:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: returnKnownOriginal:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: returnKnownReplacement:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: deleteAbsoluteFile:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: deleteFileForApplication:relativePath:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: deletedFileBackupURL",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: deletionAbsenceConfirmed",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: lastDeletedFileBackupURL",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: lastDeletionAbsenceConfirmed",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: knownTargetAbsenceAfterMove:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: verifyKnownTargetLink:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: publishDeleteReceipt:",
+      "passed": true
+    },
+    {
+      "check": "Known-file API selector compiled into module: validatedLocalOriginal:error:",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: FileOriginal",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: FileIncoming",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: FileVerify",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: fileManifest",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: originalMoveIntent",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: originalCaptured",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: incomingPlaceIntent",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: newVerified",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: returnNewIntent",
+      "passed": true
+    },
+    {
+      "check": "Known-file transaction marker compiled into module: committed",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: chooseReplacementForPath:",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: documentPickerWasCancelled:",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: documentPicker:didPickDocumentsAtURLs:",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: initForOpeningContentTypes:asCopy:",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: startAccessingSecurityScopedResource",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: stopAccessingSecurityScopedResource",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: coordinateReadingItemAtURL:options:error:byAccessor:",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: beginReplacementRead:target:application:",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: cancelReplacementRead",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: setShouldShowFileExtensions:",
+      "passed": true
+    },
+    {
+      "check": "Document picker lifecycle API compiled into module: setCompletionWithItemsHandler:",
+      "passed": true
+    },
+    {
+      "check": "Known-file delete receipt marker compiled into module: deleteReceiptWritten",
+      "passed": true
+    },
+    {
+      "check": "Known-file delete receipt marker compiled into module: XitForgeATCFileDelete",
+      "passed": true
+    },
+    {
+      "check": "Known-file delete receipt marker compiled into module: targetAbsenceConfirmed",
+      "passed": true
+    },
+    {
+      "check": "Known-file delete receipt marker compiled into module: KnownFileDeleteCommitted",
+      "passed": true
+    },
+    {
+      "check": "Added module has regular-file executable mode 0755",
+      "passed": true
+    },
+    {
+      "check": "Added notices have regular-file mode 0644",
+      "passed": true
+    },
+    {
+      "check": "Original MHA main bundle identifier is preserved",
+      "passed": true
+    },
+    {
+      "check": "Module version is exactly 1.3.1",
+      "passed": true
+    },
+    {
+      "check": "Only intended Info.plist additions changed",
+      "passed": true
+    },
+    {
+      "check": "All original Info.plist keys remain present",
+      "passed": true
+    },
+    {
+      "check": "Original Info.plist field preserved: CFBundleExecutable",
+      "passed": true
+    },
+    {
+      "check": "Original Info.plist field preserved: CFBundleVersion",
+      "passed": true
+    },
+    {
+      "check": "Original Info.plist field preserved: CFBundleShortVersionString",
+      "passed": true
+    },
+    {
+      "check": "Pairing Bonjour advertisement declared",
+      "passed": true
+    },
+    {
+      "check": "Background audio mode declared",
+      "passed": true
+    },
+    {
+      "check": "Local network permission description declared",
+      "passed": true
+    },
+    {
+      "check": "Original list values preserved: NSBonjourServices",
+      "passed": true
+    },
+    {
+      "check": "Original list values preserved: UIBackgroundModes",
+      "passed": true
+    },
+    {
+      "check": "Production grant helper matches independently executed fixtures",
+      "passed": true
+    },
+    {
+      "check": "Container root is validated before access attempts",
+      "passed": true
+    },
+    {
+      "check": "Validated root check precedes existing-access open and token activation",
+      "passed": true
+    },
+    {
+      "check": "Native root validator restricts app/group UUID root with no descendant suffix",
+      "passed": true
+    },
+    {
+      "check": "Alternate token route is gated by exact kernel-build policy",
+      "passed": true
+    },
+    {
+      "check": "Native reads use bounded readonly descriptors and release owned handle zero",
+      "passed": true
+    },
+    {
+      "check": "Activation requery checks unchanged validated root before token use",
+      "passed": true
+    },
+    {
+      "check": "Grant fixtures exercised current production C bridge with 323 passing assertions",
+      "passed": true
+    },
+    {
+      "check": "Final IPA remained unchanged throughout independent review",
+      "passed": true
+    }
+  ]
+}
