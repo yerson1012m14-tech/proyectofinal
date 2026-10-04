@@ -89,7 +89,6 @@ xcrun --sdk iphoneos clang \
   -lc++ \
   -o build/XFAirLift.dylib
 
-# Correcto para el lipo de Xcode 26.x:
 xcrun lipo build/XFAirLift.dylib -verify_arch arm64
 
 xcrun otool -L build/XFAirLift.dylib > build/dependencies.txt
