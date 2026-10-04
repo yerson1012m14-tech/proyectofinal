@@ -5,16 +5,17 @@
 #import "XFIDeviceABI.h"
 
 /*
- XITFORGE V12 — ACTIVACIÓN RÁPIDA DIRECTA
+ XITFORGE V13 — TÚNEL RÁPIDO + AUTO BUNDLE ID
 
  Reemplaza:
    XitForge-Tunnel/module/XFAirLiftFastReplace.m
 
  Qué corrige:
- - Ya NO necesita que XFAirLiftBackend.m tenga replaceViaHouseArrestForApplication.
- - Abre House Arrest/AFC directo desde este archivo.
- - Escribe y verifica el archivo por AFC.
- - NO usa AirTraffic/ATC, para evitar SyncAllowed timeout.
+ - Sigue sin usar AirTraffic/ATC.
+ - Sigue escribiendo por House Arrest/AFC directo.
+ - Si Home manda com.dts.freefireth pero iOS responde InstallationLookupFailed,
+   consulta el catálogo interno y busca automáticamente el bundle real de Free Fire.
+ - No navega carpetas. Solo usa app exacta + ruta exacta + archivo exacto.
 */
 
 static NSError *XFFastError(NSInteger code, NSString *message) {
@@ -62,6 +63,162 @@ static void XFSetRouteCode(id backend, NSString *key, NSInteger code) {
     if ([routes respondsToSelector:@selector(setObject:forKey:)]) {
         ((void (*)(id, SEL, id, id))objc_msgSend)(routes, @selector(setObject:forKey:), @(code), key);
     }
+}
+
+static NSString *XFStringFast(id value) {
+    return [value isKindOfClass:NSString.class] ? value : @"";
+}
+
+static BOOL XFContainsFast(NSString *haystack, NSString *needle) {
+    return [haystack rangeOfString:needle options:NSCaseInsensitiveSearch].location != NSNotFound;
+}
+
+static NSArray *XFFetchInstalledAppsFast(id backend, NSError **error) {
+    SEL appService = NSSelectorFromString(@"applicationsFromAppServiceWithError:");
+    if ([backend respondsToSelector:appService]) {
+        NSError *appServiceError = nil;
+        NSArray *apps =
+            ((NSArray * (*)(id, SEL, NSError **))objc_msgSend)(backend, appService, &appServiceError);
+        if ([apps isKindOfClass:NSArray.class] && apps.count) return apps;
+        if (error && appServiceError) *error = appServiceError;
+    }
+
+    SEL installationProxy = NSSelectorFromString(@"applicationsFromInstallationProxyWithError:");
+    if ([backend respondsToSelector:installationProxy]) {
+        NSError *installError = nil;
+        NSArray *apps =
+            ((NSArray * (*)(id, SEL, NSError **))objc_msgSend)(backend, installationProxy, &installError);
+        if ([apps isKindOfClass:NSArray.class] && apps.count) return apps;
+        if (error && installError) *error = installError;
+    }
+
+    return nil;
+}
+
+static NSInteger XFScoreFreeFireCandidate(NSDictionary *row, NSString *requestedIdentifier) {
+    NSString *bundle = XFStringFast(row[@"bundleIdentifier"]).lowercaseString;
+    NSString *name = XFStringFast(row[@"name"]).lowercaseString;
+    NSString *combined = [NSString stringWithFormat:@"%@ %@", bundle ?: @"", name ?: @""];
+    NSString *requested = requestedIdentifier.lowercaseString ?: @"";
+
+    if (!bundle.length) return NSIntegerMin;
+
+    NSInteger score = 0;
+
+    if ([bundle isEqualToString:requested]) score += 10000;
+
+    BOOL requestedMax = XFContainsFast(requested, @"max");
+    BOOL candidateMax = XFContainsFast(combined, @"max");
+
+    // Señales fuertes de Free Fire / Garena / DTS.
+    if (XFContainsFast(combined, @"freefire")) score += 700;
+    if (XFContainsFast(combined, @"free fire")) score += 700;
+    if (XFContainsFast(combined, @"garena")) score += 300;
+    if (XFContainsFast(combined, @"dts")) score += 250;
+    if (XFContainsFast(combined, @"free")) score += 80;
+    if (XFContainsFast(combined, @"fire")) score += 80;
+
+    // Paquetes conocidos.
+    if (XFContainsFast(bundle, @"com.dts.freefireth")) score += 900;
+    if (XFContainsFast(bundle, @"com.dts.freefiremax")) score += 900;
+
+    // Mantener Normal/MAX según lo que Home pidió.
+    if (requestedMax) {
+        if (candidateMax) score += 350;
+        else score -= 150;
+    } else {
+        if (candidateMax) score -= 400;
+        else score += 120;
+    }
+
+    // Evitar candidatos claramente no relacionados.
+    BOOL looksRelated =
+        XFContainsFast(combined, @"freefire") ||
+        XFContainsFast(combined, @"free fire") ||
+        XFContainsFast(combined, @"garena") ||
+        XFContainsFast(combined, @"dts");
+
+    if (!looksRelated) score -= 1000;
+
+    return score;
+}
+
+static NSString *XFResolveBundleIDFast(id backend,
+                                       NSString *requestedIdentifier,
+                                       NSString **reportOut) {
+    if (reportOut) *reportOut = nil;
+
+    NSString *requested = XFStringFast(requestedIdentifier);
+    if (!requested.length) return requestedIdentifier;
+
+    NSError *catalogError = nil;
+    NSArray *apps = XFFetchInstalledAppsFast(backend, &catalogError);
+
+    if (![apps isKindOfClass:NSArray.class] || !apps.count) {
+        if (reportOut) {
+            *reportOut = [NSString stringWithFormat:@"No se pudo consultar el catálogo para resolver %@. %@",
+                          requested,
+                          catalogError.localizedDescription ?: @"Sin detalle."];
+        }
+        return requestedIdentifier;
+    }
+
+    NSDictionary *best = nil;
+    NSInteger bestScore = NSIntegerMin;
+
+    NSMutableArray<NSString *> *related = [NSMutableArray array];
+
+    for (id item in apps) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSDictionary *row = (NSDictionary *)item;
+
+        NSString *bundle = XFStringFast(row[@"bundleIdentifier"]);
+        NSString *name = XFStringFast(row[@"name"]);
+        if (!bundle.length) continue;
+
+        if ([bundle caseInsensitiveCompare:requested] == NSOrderedSame) {
+            if (reportOut) *reportOut = [NSString stringWithFormat:@"Bundle confirmado en catálogo: %@.", bundle];
+            return bundle;
+        }
+
+        NSInteger score = XFScoreFreeFireCandidate(row, requested);
+        if (score > bestScore) {
+            bestScore = score;
+            best = row;
+        }
+
+        NSString *combined = [NSString stringWithFormat:@"%@ %@", bundle, name ?: @""];
+        if (XFContainsFast(combined, @"freefire") ||
+            XFContainsFast(combined, @"free fire") ||
+            XFContainsFast(combined, @"garena") ||
+            XFContainsFast(combined, @"dts")) {
+            [related addObject:[NSString stringWithFormat:@"%@%@", bundle, name.length ? [NSString stringWithFormat:@" · %@", name] : @""]];
+        }
+    }
+
+    NSString *bestBundle = XFStringFast(best[@"bundleIdentifier"]);
+    NSString *bestName = XFStringFast(best[@"name"]);
+
+    if (bestBundle.length && bestScore >= 250) {
+        if (reportOut) {
+            *reportOut = [NSString stringWithFormat:
+                          @"Bundle %@ no apareció exacto. Usando candidato del catálogo: %@%@. Puntuación: %ld.",
+                          requested,
+                          bestBundle,
+                          bestName.length ? [NSString stringWithFormat:@" · %@", bestName] : @"",
+                          (long)bestScore];
+        }
+        return bestBundle;
+    }
+
+    if (reportOut) {
+        NSString *list = related.count ? [related componentsJoinedByString:@"\n"] : @"No se encontraron candidatos Free Fire/Garena/DTS.";
+        *reportOut = [NSString stringWithFormat:
+                      @"Bundle %@ no encontrado en catálogo y no hubo candidato seguro.\n\nCandidatos vistos:\n%@",
+                      requested,
+                      list];
+    }
+    return requestedIdentifier;
 }
 
 static NSString *XFAFCPathForRelative(NSString *relative) {
@@ -321,20 +478,35 @@ static BOOL XFFastReplaceFileForApplication(id self,
             return;
         }
 
+        NSString *resolutionReport = nil;
+        NSString *resolvedIdentifier = XFResolveBundleIDFast(self, identifier, &resolutionReport);
+        if (!resolvedIdentifier.length) resolvedIdentifier = identifier;
+
         NSError *directError = nil;
-        replaced = XFReplaceViaDirectHouseArrest(self, identifier, relative, replacement, &directError);
+        replaced = XFReplaceViaDirectHouseArrest(self, resolvedIdentifier, relative, replacement, &directError);
 
         XFSetRouteCode(self, @"HouseArrestWriteFast", replaced ? 0 : (directError ? directError.code : -1));
 
         if (replaced) {
-            XFSetIvarObject(self, "_directoryWarning", @"Archivo escrito y verificado por ruta rápida House Arrest/AFC. AirTraffic omitido.");
+            NSString *warning = [resolvedIdentifier isEqualToString:identifier]
+                ? @"Archivo escrito y verificado por ruta rápida House Arrest/AFC. AirTraffic omitido."
+                : [NSString stringWithFormat:@"Archivo escrito y verificado por ruta rápida House Arrest/AFC. Bundle corregido: %@ → %@. AirTraffic omitido.",
+                   identifier, resolvedIdentifier];
+            XFSetIvarObject(self, "_directoryWarning", warning);
             return;
         }
+
+        // Si la resolución automática no cambió el ID y falló, dejar claro qué vio el catálogo.
+        NSString *bundleText = [resolvedIdentifier isEqualToString:identifier]
+            ? [NSString stringWithFormat:@"Bundle usado: %@.", identifier ?: @""]
+            : [NSString stringWithFormat:@"Bundle original: %@.\nBundle resuelto: %@.", identifier ?: @"", resolvedIdentifier ?: @""];
 
         failure = XFFastError(
             6041,
             [NSString stringWithFormat:
-                @"Ruta rápida House Arrest/AFC no pudo escribir el archivo. AirTraffic fue omitido para evitar espera.\n\n%@",
+                @"Ruta rápida House Arrest/AFC no pudo escribir el archivo. AirTraffic fue omitido para evitar espera.\n\n%@\n\nResolución de app:\n%@\n\nDetalle:\n%@",
+                bundleText,
+                resolutionReport ?: @"No hubo detalle de resolución.",
                 directError.localizedDescription ?: @"Sin detalle del backend."]
         );
     };
@@ -357,7 +529,7 @@ static void XFInstallFastReplaceHook(void) {
     if (current == (IMP)XFFastReplaceFileForApplication) return;
 
     method_setImplementation(method, (IMP)XFFastReplaceFileForApplication);
-    NSLog(@"XITFORGE V12: ACTIVAR usa AFC directo, sin replaceViaHouseArrest y sin AirTraffic.");
+    NSLog(@"XITFORGE V13: ACTIVAR usa AFC directo con auto bundle resolver, sin AirTraffic.");
 }
 
 __attribute__((constructor))
