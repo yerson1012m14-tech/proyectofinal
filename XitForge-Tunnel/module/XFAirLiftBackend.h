@@ -58,6 +58,12 @@ NS_ASSUME_NONNULL_BEGIN
                     relativePath:(NSString *)relativePath
                             data:(NSData *)data
                            error:(NSError **)error;
+/// Experimental marker only; rejects occupied or uncheckable destinations.
+- (BOOL)createTestFileForApplication:(NSString *)bundleIdentifier
+                       relativePath:(NSString *)relativePath error:(NSError **)error;
+/// Retained deletion is authorized only if bytes still match the generated marker.
+- (BOOL)deleteTestFileForApplication:(NSString *)bundleIdentifier
+                       relativePath:(NSString *)relativePath error:(NSError **)error;
 /// Intentionally retires a known regular app file (maximum 64 MiB) to retained
 /// backup. Confirm the concrete destination before calling. A YES result proves
 /// retained relocation; lastDeletionAbsenceConfirmed distinguishes target absence.

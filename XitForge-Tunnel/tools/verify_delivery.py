@@ -27,8 +27,13 @@ def main():
         info = plistlib.loads(z.read('Payload/MiApp.app/Info.plist'))
         assert info['CFBundleIdentifier'] == 'com.apple.mobile.MobileHouseArrest'
         assert info['XFTunnelModuleVersion'] == '1.3.1'
-        assert z.read('Payload/MiApp.app/XFAirLift.dylib') == module
+        archived = release.get('archivedIPA', {})
+        if archived:
+            assert hashlib.sha256(z.read('Payload/MiApp.app/XFAirLift.dylib')).hexdigest() == archived['moduleSHA256']
+        else:
+            assert z.read('Payload/MiApp.app/XFAirLift.dylib') == module
     print(json.dumps({'verifiedFiles': len(manifest), 'moduleVersion': release['moduleVersion'], 'ipaIntegrity': True,
+                      'currentIPAAvailable': release.get('currentIPA') is not None,
                       'physicalIPhoneTest': False}, indent=2))
 
 if __name__ == '__main__':

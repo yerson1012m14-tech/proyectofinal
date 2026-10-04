@@ -5,6 +5,7 @@
 
 #import "XFAirLiftViewController.h"
 #import "XFOnDevicePairing.h"
+#import "XFFileCreationProbeController.h"
 
 #pragma mark - XITFORGE visual language
 
@@ -469,6 +470,7 @@ static void XFReorderMainTabs(void) {
 #pragma mark - Main professional tunnel screen
 
 static const void *XFV2OpenFilesKey = &XFV2OpenFilesKey;
+static const void *XFV2CreateProbeKey = &XFV2CreateProbeKey;
 static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
 
 @implementation XFAirLiftViewController (XFV2)
@@ -906,6 +908,14 @@ static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     [self.headerStack addArrangedSubview:openFiles];
+    UIButton *probe = [self xfv2_actionRowWithTitle:@"Crear archivo de prueba"
+        subtitle:@"Crear, leer y comprobar una ruta nueva"
+        icon:@"doc.badge.plus" selector:@selector(xfv2_openCreationProbe)];
+    probe.enabled = !self.busy && self.tunnelConnected;
+    probe.accessibilityLabel = @"Crear archivo de prueba";
+    for (UIView *child in probe.subviews) child.userInteractionEnabled = NO;
+    objc_setAssociatedObject(self, XFV2CreateProbeKey, probe, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [self.headerStack addArrangedSubview:probe];
 
     // Nota mínima
     UILabel *footer =
@@ -972,6 +982,9 @@ static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
     UIButton *openFiles = objc_getAssociatedObject(self, XFV2OpenFilesKey);
     openFiles.enabled = !self.busy && self.tunnelConnected;
     openFiles.alpha = openFiles.enabled ? 1.0 : 0.45;
+    UIButton *probe = objc_getAssociatedObject(self, XFV2CreateProbeKey);
+    probe.enabled = !self.busy && self.tunnelConnected;
+    probe.alpha = probe.enabled ? 1.0 : 0.45;
 
     self.statusLabel.text =
         [self.statusLabel.text
@@ -1207,6 +1220,13 @@ static const void *XFV2HeaderBuiltKey = &XFV2HeaderBuiltKey;
                                handler:nil]];
 
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)xfv2_openCreationProbe {
+    if (self.busy || !self.tunnelConnected || self.presentedViewController) return;
+    XFFileCreationProbeController *controller = [[XFFileCreationProbeController alloc]
+        initWithBackend:self.backend queue:self.operationQueue];
+    [self.navigationController pushViewController:controller animated:YES];
 }
 
 @end

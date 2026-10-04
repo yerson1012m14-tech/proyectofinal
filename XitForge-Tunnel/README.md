@@ -1,3 +1,9 @@
+# Prueba de creación 1.3.2-probe1
+
+Consulta [PRUEBA_CREACION.md](../PRUEBA_CREACION.md). El módulo precompilado incluye esta prueba; la IPA de `releases/` es la versión histórica 1.3.1 y no la incluye. La nueva IPA se genera con el workflow del proyecto.
+
+---
+
 # Módulo XitForge 1.3.1
 
 Esta carpeta contiene todo el trabajo del túnel y los archivos de apps: fuentes Objective-C/C, fuentes Rust modificadas, biblioteca ARM64, módulo compilado, IPA final, pruebas y explicación de los cambios.

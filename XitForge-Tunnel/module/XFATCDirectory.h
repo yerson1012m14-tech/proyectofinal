@@ -33,6 +33,11 @@ typedef BOOL (^XFATCTunnelFactory)(AdapterHandle * _Nullable * _Nonnull adapter,
 - (nullable NSData *)readAbsoluteFile:(NSString *)path maximumBytes:(NSUInteger)maximumBytes
                                error:(NSError **)error;
 - (BOOL)replaceAbsoluteFile:(NSString *)path data:(NSData *)data error:(NSError **)error;
+/* Experimental, generated marker only. Requires positive target absence;
+   permission errors never authorize creation. Verifies a read from the app. */
+- (BOOL)createTestAbsoluteFile:(NSString *)path error:(NSError **)error;
+/* Uses the existing retained-deletion path, with an exact marker-content guard. */
+- (BOOL)deleteTestAbsoluteFile:(NSString *)path error:(NSError **)error;
 /* Retains the original in owned staging and a durable local copy. TRUE means
    committed retained relocation; consult deletionAbsenceConfirmed for absence.
    Committed deletion is never automatically restored on reconnect. */

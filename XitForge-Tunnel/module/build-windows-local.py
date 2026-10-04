@@ -27,7 +27,8 @@ def main():
         if result.returncode:
             raise SystemExit('Compilation failed; see ' + str(log))
     sources = ['XFAirLiftBackend.m', 'XFOnDevicePairing.m', 'XFAirLiftViewController.m',
-               'XFAirLiftInstaller.m', 'XFATCDirectory.m', 'XFGrappaHelper.m', 'XFMHAContainerAccess.m', 'XFATCZip.c']
+               'XFAirLiftInstaller.m', 'XFAirLiftProfessionalUI.m', 'XFFileCreationProbeController.m',
+               'XFATCDirectory.m', 'XFGrappaHelper.m', 'XFMHAContainerAccess.m', 'XFATCZip.c']
     objects = []
     for source in sources:
         output = build / (Path(source).stem + '.o')
@@ -41,7 +42,7 @@ def main():
                '-syslibroot', args.sdk, '-dead_strip', '-exported_symbols_list', module / 'exports.txt',
                '-install_name', '@executable_path/XFAirLift.dylib', '-o', build / 'XFAirLift.dylib', *objects, archive]
     for framework in ['UIKit', 'Foundation', 'CoreFoundation', 'CoreGraphics', 'UniformTypeIdentifiers',
-                      'QuickLook', 'AVFoundation', 'Security', 'SystemConfiguration', 'CFNetwork']:
+                      'QuickLook', 'AVFoundation', 'UserNotifications', 'Security', 'SystemConfiguration', 'CFNetwork']:
         command += ['-framework', framework]
     run(command + ['-lSystem', '-lobjc', '-lresolv', '-liconv', '-lz', '-lc++'])
     print('ARM64 module: ' + str(build / 'XFAirLift.dylib'))

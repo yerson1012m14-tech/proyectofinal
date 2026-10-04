@@ -4,6 +4,8 @@
 #import "XFGrappaHelper.h"
 #import "XFATCProtocolState.h"
 #import "XFATCFileRecovery.h"
+#import "XFFileCreationProbe.h"
+#import "XFFileCreationProbePolicy.h"
 #import <sys/stat.h>
 #import <string.h>
 #import <stdlib.h>
@@ -594,7 +596,7 @@ closeATC:;
        ![target.stringByDeletingLastPathComponent isEqual:[@"/" stringByAppendingString:journal[@"tail"]]]||
        !XFATCComponent(target.lastPathComponent)||
        [target componentsSeparatedByString:@"/"].count<8)return NO;
-    if(![@[@"read",@"replace",@"delete"] containsObject:file[@"operation"]])return NO;
+    if(![@[@"read",@"replace",@"delete",@"createProbe"] containsObject:file[@"operation"]])return NO;
     for(NSString *pair in @[@"Original",@"Incoming",@"Verify"])
         if(![file[pair] isEqual:[backup stringByAppendingPathComponent:[@"File" stringByAppendingString:pair]]])return NO;
     if(![file[@"snapshot"] isEqual:[token stringByAppendingString:@"-original.bin"]])return NO;
@@ -608,6 +610,14 @@ closeATC:;
     if([file[@"newVerified"] boolValue]&&(!XFATCHash(file[@"newDigest"])||
        ![file[@"newSize"] isKindOfClass:NSNumber.class]||[file[@"newSize"] unsignedLongLongValue]>64u*1024u*1024u))return NO;
     if([file[@"originalReturned"] boolValue]&&![file[@"returnOriginalIntent"] boolValue])return NO;
+    if([file[@"operation"] isEqual:@"createProbe"]) {
+        NSData *marker=XFProbeContents(target);
+        if(!marker || [file[@"originalMoveIntent"] boolValue] || [file[@"originalObserved"] boolValue] ||
+           [file[@"originalCaptured"] boolValue] || [file[@"returnOriginalIntent"] boolValue] ||
+           [file[@"originalReturned"] boolValue])return NO;
+        if(file[@"newDigest"]&&![file[@"newDigest"] isEqual:XFATCDigest(marker)])return NO;
+        if(file[@"newSize"]&&[file[@"newSize"] unsignedLongLongValue]!=marker.length)return NO;
+    }
     if([file[@"operation"] isEqual:@"delete"]) {
         if(![file[@"targetAbsenceConfirmed"] isKindOfClass:NSNumber.class]||
            ![file[@"deleteReceiptWritten"] isKindOfClass:NSNumber.class]||
@@ -684,6 +694,7 @@ closeATC:;
                 if(!link||missing||![link[@"kind"] isEqual:@"S_IFLNK"]||
                    ![link[@"linkTarget"] isEqual:[@"../../../" stringByAppendingString:self.journal[@"tail"]]]){
                     if(error&&!*error)*error=XFATCError(2220,@"El enlace de retorno cambió o desapareció. Se conservaron el original y la recuperación, sin enviarlo a otro destino.");goto closeKnownFile;}
+                if([file[@"operation"] isEqual:@"createProbe"]&&![self requireProbeDestinationAbsent:error])goto closeKnownFile;
             }
             if(![self saveJournal:@"send persisted known-file move" error:error]||
                ![self sendDictionary:[self message:@"FileComplete" session:@1 params:pair] stream:stream littleEndian:YES error:error])goto closeKnownFile;
@@ -955,6 +966,28 @@ closeKnownFile:;
 - (BOOL)recoverKnownFile:(BOOL)explicitRestore error:(NSError **)error {
     NSMutableDictionary *file=self.journal[@"knownFile"];
     if(!file)return YES;
+    if([file[@"operation"] isEqual:@"createProbe"]) {
+        if(![self validKnownFileJournal:self.journal])return NO;
+        // Recovery never writes to or deletes the app target. Only staged bytes
+        // matching this generated marker may be removed from our owned area.
+        BOOL absent=NO;
+        [self info:file[@"Original"] missing:&absent error:error];
+        if(!absent){if(error&&!*error)*error=XFATCError(2240,@"Hay un objeto inesperado en el respaldo de la prueba. Se conservó.");return NO;}
+        NSData *expected=XFProbeContents(file[@"target"]);
+        for(NSString *key in @[@"Incoming",@"Verify"]) {
+            BOOL missing=NO;NSDictionary *info=[self info:file[key] missing:&missing error:error];
+            if(missing)continue;
+            if(!info)return NO;
+            NSData *bytes=[self readKnownStage:file[key] limit:1024 error:error];
+            if(![bytes isEqual:expected]) {
+                // Retain partial or unexpected staging; never delete unknown bytes.
+                self.lastWarning=@"Se conservaron temporales de una prueba incompleta.";
+                continue;
+            }
+            if(![self removeOwned:file[key] expectedKind:@"S_IFREG" error:error])return NO;
+        }
+        return YES;
+    }
     if(![file[@"originalMoveIntent"] boolValue])return YES; // No app-file movement was authorized.
     if(![self validKnownFileJournal:self.journal])return NO;
     BOOL committedDelete=[file[@"operation"] isEqual:@"delete"]&&[file[@"committed"] boolValue];
@@ -1118,6 +1151,75 @@ closeKnownFile:;
     if(!ok&&error)*error=failure?:XFATCError(2216,@"El reemplazo no se completó. Usa Restaurar original pendiente antes de continuar.");
     return ok;
 }
+- (BOOL)requireProbeDestinationAbsent:(NSError **)error {
+    if(![self verifyKnownTargetLink:error])return NO;
+    AfcFileInfo metadata={0};NSError *probeError=nil;
+    IdeviceFfiError *native=afc_get_file_info(_afc,[self knownFileDestination].UTF8String,&metadata);
+    BOOL returnedError=native!=NULL;
+    int code=native?native->code:0,subcode=native?native->sub_code:0;
+    afc_file_info_free(&metadata);
+    BOOL absent=XFProbeAFCConfirmsAbsence(returnedError,code,subcode,YES,YES);
+    if(native) {
+        if(absent)idevice_error_free(native);
+        else XFATCConsume(native,@"Comprobar si existe el archivo de prueba",&probeError);
+    }
+    if(!absent) {
+        NSString *reason=!returnedError?@"El destino ya existe; no se reemplazará.":
+            [NSString stringWithFormat:@"No se pudo comprobar que el destino esté libre. %@",probeError.localizedDescription?:@"Respuesta desconocida."];
+        if(error)*error=[NSError errorWithDomain:@"XitForge.ATCDirectory" code:2243
+            userInfo:@{NSLocalizedDescriptionKey:reason,@"ProbeInconclusive":@YES,
+                       @"UnderlyingCode":@(probeError.code),@"NativeSubcode":probeError.userInfo[@"NativeSubcode"]?:@0}];
+        return NO;
+    }
+    return XFProbeAFCConfirmsAbsence(returnedError,code,subcode,YES,[self verifyKnownTargetLink:error]);
+}
+- (BOOL)createTestAbsoluteFile:(NSString *)path error:(NSError **)error {
+    NSString *target=XFATCPath(path);
+    NSData *marker=XFProbeContents(target);
+    if(!target||!XFATCKnownFilePath(target)||!marker||[target lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>4096) {
+        if(error)*error=XFATCError(2241,@"La prueba requiere una ruta válida y un nombre xitforge_prueba_UUID.txt generado por la app.");return NO;
+    }
+    NSError *failure=nil;BOOL verified=NO,ok=NO;NSString *stage=@"Preparar servicio";
+    do {
+        if(![self prepareKnownFile:target operation:@"createProbe" error:&failure])break;
+        stage=@"Comprobar destino libre";
+        if(![self requireProbeDestinationAbsent:&failure])break;
+        NSMutableDictionary *file=self.journal[@"knownFile"];
+        file[@"newDigest"]=XFATCDigest(marker);file[@"newSize"]=@(marker.length);
+        stage=@"Preparar archivo de prueba";
+        if(![self saveJournal:@"identify generated creation probe before staging" error:&failure]||
+           ![self writeKnownIncoming:marker error:&failure])break;
+        file[@"incomingPlaceIntent"]=@YES;stage=@"Crear archivo en la app";
+        if(![self saveJournal:@"create fresh marker at checked absent destination" error:&failure]||
+           ![self runKnownFilePairs:[self knownFilePair:3 destination:[self knownFileDestination]] error:&failure]||
+           ![self waitKnownFile:file[@"Incoming"] missing:YES error:&failure])break;
+        file[@"verifyMoveIntent"]=@YES;stage=@"Leer la misma ruta y comparar";
+        if(![self saveJournal:@"read generated marker back from application path" error:&failure]||
+           ![self runKnownFilePairs:[self knownFilePair:1 destination:file[@"Verify"]] error:&failure]||
+           ![self waitKnownFile:file[@"Verify"] missing:NO error:&failure])break;
+        NSData *observed=[self readKnownStage:file[@"Verify"] limit:1024 error:&failure];
+        if(![observed isEqual:marker]) {
+            if(!failure)failure=XFATCError(2244,@"El contenido leído desde la app no coincide con la prueba. No se declara éxito.");break;
+        }
+        verified=YES;file[@"newVerified"]=@YES;stage=@"Devolver archivo comprobado a la app";
+        if(![self saveJournal:@"new app file read-back verified byte for byte" error:&failure]||
+           ![self returnKnownReplacement:&failure])break;
+        ok=YES;stage=@"Creación y lectura verificadas";
+    }while(0);
+    [self recordKnownFileStage:stage error:failure];
+    if(![self finishKnownFileWithError:&failure]){ok=NO;stage=@"Recuperar estado temporal";}
+    self.fileOperationDiagnostics=@{@"operation":@"createProbe",@"stage":stage,@"code":@(failure.code),
+        @"readBackVerified":@(verified),@"completed":@(ok),@"targetNameGenerated":@YES};
+    if(!ok&&error) {
+        NSMutableDictionary *details=[failure.userInfo mutableCopy]?:[NSMutableDictionary new];
+        details[@"ProbeStage"]=stage;details[@"ProbeReadBackVerified"]=@(verified);
+        details[NSLocalizedDescriptionKey]=[NSString stringWithFormat:@"Etapa: %@\n%@%@",stage,
+            failure.localizedDescription?:@"El servicio no confirmó el resultado.",
+            verified?@"\nLa creación y la lectura sí se comprobaron, pero el cierre de la prueba quedó incompleto.":@"\nResultado inconcluso: esto no demuestra que todas las formas de creación estén bloqueadas."];
+        *error=[NSError errorWithDomain:failure.domain?:@"XitForge.ATCDirectory" code:failure.code?:2245 userInfo:details];
+    }
+    return ok;
+}
 - (BOOL)verifyKnownTargetLink:(NSError **)error {
     BOOL missing=NO;
     NSDictionary *info=[self info:self.journal[@"link"] missing:&missing error:error];
@@ -1153,12 +1255,20 @@ closeKnownFile:;
     }
 }
 - (BOOL)deleteAbsoluteFile:(NSString *)path error:(NSError **)error {
+    return [self deleteAbsoluteFile:path expectedProbe:nil error:error];
+}
+- (BOOL)deleteTestAbsoluteFile:(NSString *)path error:(NSError **)error {
+    NSData *marker=XFProbeContents(path);
+    if(!marker){if(error)*error=XFATCError(2241,@"El destino no identifica un archivo de prueba de XitForge.");return NO;}
+    return [self deleteAbsoluteFile:path expectedProbe:marker error:error];
+}
+- (BOOL)deleteAbsoluteFile:(NSString *)path expectedProbe:(NSData *)expected error:(NSError **)error {
     self.deletedFileBackupURL=nil;self.deletionAbsenceConfirmed=NO;
     NSString *target=XFATCPath(path);
     if(!target||!XFATCKnownFilePath(target)||!target.UTF8String||[target lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>4096) {
         if(error)*error=XFATCError(2213,@"Elige la ruta de un archivo dentro de la app. No se pueden eliminar carpetas.");return NO;
     }
-    NSError *failure=nil;BOOL ok=NO,committedCurrent=NO,currentAbsence=NO;
+    NSError *failure=nil;BOOL ok=NO,committedCurrent=NO,currentAbsence=NO,alreadyAbsent=NO;
     NSURL *currentBackupURL=nil;
     NSDictionary *currentOriginalRecord=nil;
     do {
@@ -1166,10 +1276,20 @@ closeKnownFile:;
         // Preparation can load a historical receipt during automatic recovery.
         // It must never become the backup reported for this new destination.
         self.deletedFileBackupURL=nil;self.deletionAbsenceConfirmed=NO;
+        if(expected) {
+            BOOL confirmed=NO;NSError *absenceError=nil;
+            if([self knownTargetAbsenceAfterMove:&confirmed error:&absenceError]&&confirmed) {
+                alreadyAbsent=YES;ok=YES;break;
+            }
+        }
         if(![self observeKnownOriginal:&failure])break;
         NSMutableDictionary *file=self.journal[@"knownFile"];
         NSData *original=[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:&failure];
         if(!original||![self persistKnownOriginal:original error:&failure])break;
+        if(expected&&![original isEqual:expected]) {
+            failure=XFATCError(2242,@"El contenido ya no coincide con la prueba. No se confirmó la eliminación; se conservó el original para recuperarlo desde Abrir ruta → Restaurar original pendiente.");
+            break;
+        }
         BOOL absence=NO;
         if(![self knownTargetAbsenceAfterMove:&absence error:&failure])break;
         BOOL incomingMissing=NO,verifyMissing=NO;
@@ -1205,6 +1325,11 @@ closeKnownFile:;
         ok=YES;
     } while(0);
     if(![self finishKnownFileWithError:&failure])ok=NO;
+    if(alreadyAbsent) {
+        self.deletionAbsenceConfirmed=ok;
+        if(!ok&&error)*error=failure;
+        return ok;
+    }
     BOOL verifiedCurrentBackup=committedCurrent&&[self validatedLocalOriginal:currentOriginalRecord error:NULL]!=nil;
     if(committedCurrent&&!verifiedCurrentBackup) {
         ok=NO;

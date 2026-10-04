@@ -25,6 +25,7 @@ for source in \
   XFAirLiftViewController.m \
   XFAirLiftInstaller.m \
   XFAirLiftProfessionalUI.m \
+  XFFileCreationProbeController.m \
   XFATCDirectory.m \
   XFGrappaHelper.m \
   XFMHAContainerAccess.m
