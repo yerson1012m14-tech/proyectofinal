@@ -1,5 +1,6 @@
 #import "XITForgeFileEngine.h"
 #import <objc/message.h>
+#import <UIKit/UIKit.h>
 
 @implementation XITForgeFileEngine
 
@@ -12,7 +13,49 @@
     return queue;
 }
 
++ (id)installedTunnelBackend {
+    __block id backend = nil;
+
+    void (^lookup)(void) = ^{
+        id delegate = UIApplication.sharedApplication.delegate;
+        SEL tabGetter = NSSelectorFromString(@"mainTabBar");
+        if (![delegate respondsToSelector:tabGetter]) return;
+
+        id candidate = ((id (*)(id, SEL))objc_msgSend)(delegate, tabGetter);
+        if (![candidate isKindOfClass:UITabBarController.class]) return;
+
+        Class tunnelClass = NSClassFromString(@"XFAirLiftViewController");
+        if (!tunnelClass) return;
+
+        for (UIViewController *entry in ((UITabBarController *)candidate).viewControllers ?: @[]) {
+            UIViewController *root = entry;
+            if ([entry isKindOfClass:UINavigationController.class]) {
+                root = ((UINavigationController *)entry).viewControllers.firstObject;
+            }
+            if (![root isKindOfClass:tunnelClass]) continue;
+
+            SEL backendGetter = NSSelectorFromString(@"backend");
+            if ([root respondsToSelector:backendGetter]) {
+                backend = ((id (*)(id, SEL))objc_msgSend)(root, backendGetter);
+            }
+            if (backend) break;
+        }
+    };
+
+    if (NSThread.isMainThread) lookup();
+    else dispatch_sync(dispatch_get_main_queue(), lookup);
+
+    return backend;
+}
+
 + (id)sharedTunnelBackend {
+    // Lo primero es reutilizar EXACTAMENTE la instancia de backend que ya usa
+    // la pestaña Túnel. Así Home hereda el pairing, la conexión y los handles
+    // que el usuario ya dejó listos antes de volver a Inicio.
+    id backend = [self installedTunnelBackend];
+    if (backend) return backend;
+
+    // Respaldo si la pestaña todavía no está instalada en el tab bar.
     Class backendClass = NSClassFromString(@"XFAirLiftBackend");
     SEL selector = NSSelectorFromString(@"sharedBackend");
     if (!backendClass || ![backendClass respondsToSelector:selector]) return nil;
@@ -25,8 +68,10 @@
 }
 
 + (BOOL)tunnelFallbackConfigured {
-    id backend = [self sharedTunnelBackend];
-    return backend && [self boolGetter:NSSelectorFromString(@"hasPairingRecord") object:backend];
+    // MUY IMPORTANTE: esto solo decide si Home debe CONTINUAR al fallback.
+    // No debe volver a mostrar el error de MCM por falta de sandbox token.
+    // El pairing/conexión se comprueba después en ensureTunnelReady.
+    return [self sharedTunnelBackend] != nil;
 }
 
 + (BOOL)isSafeComponent:(NSString *)component {
@@ -158,8 +203,11 @@
 
     NSData *payload = [data copy];
 
+    // Resolver ANTES de saltar a otra cola. En Home esta llamada ocurre en el
+    // main thread, donde podemos recuperar con seguridad el backend de la tab Túnel.
+    id backend = [self sharedTunnelBackend];
+
     dispatch_async([self operationQueue], ^{
-        id backend = [self sharedTunnelBackend];
         NSError *readyError = nil;
         if (![self ensureTunnelReady:backend error:&readyError]) {
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -201,8 +249,9 @@
         return;
     }
 
+    id backend = [self sharedTunnelBackend];
+
     dispatch_async([self operationQueue], ^{
-        id backend = [self sharedTunnelBackend];
         NSError *readyError = nil;
         if (![self ensureTunnelReady:backend error:&readyError]) {
             dispatch_async(dispatch_get_main_queue(), ^{
