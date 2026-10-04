@@ -1,14 +1,17 @@
 #import <Foundation/Foundation.h>
 
 /*
- XITFORGE V17 — NO FORZAR HOUSE ARREST/AFC
+ XITFORGE V18A — DIAGNÓSTICO SOLAMENTE
 
- ACTIVAR usa Books/AirTraffic.
- El envío directo rápido está en XFAirTrafficDirectSend.m.
- SyncAllowed 8 mensajes + 3 intentos está en XFAirTrafficFastTimeout.m.
+ Este archivo deja desactivado el FastReplace.
+ La lógica de diagnóstico está en XITForgeDiagnosticOnly.m.
+
+ Este modo NO escribe.
+ Este modo NO reemplaza.
+ Este modo NO crea archivos.
 */
 
 __attribute__((constructor))
-static void XITForgeV17UseATCDirectSend(void) {
-    NSLog(@"XITFORGE V17: FastReplace desactivado. ACTIVAR usa ATC DirectSend.");
+static void XITForgeV18ADiagnosticMode(void) {
+    NSLog(@"XITFORGE V18A: FastReplace desactivado. Modo diagnóstico solamente.");
 }
