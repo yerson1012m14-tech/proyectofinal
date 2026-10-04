@@ -87,7 +87,9 @@ xcrun --sdk iphoneos clang \
   -lc++ \
   -o build/XFAirLift.dylib
 
-xcrun lipo -verify_arch arm64 build/XFAirLift.dylib
+# Correcto para el lipo de Xcode 26.x:
+xcrun lipo build/XFAirLift.dylib -verify_arch arm64
+
 xcrun otool -L build/XFAirLift.dylib > build/dependencies.txt
 shasum -a 256 build/XFAirLift.dylib > build/SHA256.txt
 echo "Módulo generado: $module/build/XFAirLift.dylib"
