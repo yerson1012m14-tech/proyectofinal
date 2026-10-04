@@ -1,0 +1,24 @@
+{
+  "moduleVersion": "1.3.1",
+  "nativeUpstream": "https://github.com/jkcoxson/idevice",
+  "nativeUpstreamTag": "v0.1.68",
+  "nativeUpstreamCommit": "d32c8189c51c2789496b0768039419c3705498c3",
+  "nativeModifications": "native/XITFORGE_PATCHES.md and docs/native-tracked-changes.patch; complete added source files are included",
+  "binaryArchitecture": "arm64-apple-ios",
+  "deploymentTarget": "17.0",
+  "physicalIPhoneTested": false,
+  "artifacts": {
+    "prebuilt/XFAirLift.dylib": {
+      "bytes": 4075856,
+      "sha256": "645ef4743ba3245cbd072e4267429359f045f7c00f3a96fccf2ded21299600d6"
+    },
+    "prebuilt/libidevice_ffi.a": {
+      "bytes": 17690184,
+      "sha256": "9ed817487bdc6b30cfcad7ca41974f589b1d98ab1491506f68eaefabb4be6d56"
+    },
+    "releases/XITFORGE_10.0.15_ARCHIVOS_1.3.1_unsigned.ipa": {
+      "bytes": 4866979,
+      "sha256": "8b239c3127860a813796ae4a718226ad2712704a572815431d8bee889f2d87fd"
+    }
+  }
+}
