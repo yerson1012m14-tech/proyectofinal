@@ -6,6 +6,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// on one dedicated worker thread. AirTraffic file operations use a recoverable
 /// device staging area; replacement is limited to an explicitly selected file.
 @interface XFAirLiftBackend : NSObject
++ (instancetype)sharedBackend;
 @property (nonatomic, readonly) BOOL connected;
 @property (nonatomic, readonly) BOOL hasPairingRecord;
 @property (nonatomic, copy) NSString *deviceAddress;

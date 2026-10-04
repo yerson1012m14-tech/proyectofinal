@@ -118,6 +118,14 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
 @end
 
 @implementation XFAirLiftBackend
++ (instancetype)sharedBackend {
+    static XFAirLiftBackend *backend;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        backend = [[self alloc] init];
+    });
+    return backend;
+}
 - (instancetype)init {
     if ((self = [super init])) {
         _worker = [XFNativeWorker new];

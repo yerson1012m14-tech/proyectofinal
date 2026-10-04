@@ -816,7 +816,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 @end
 
 @implementation XFAirLiftViewController
-- (instancetype)init { return [self initWithBackend:[[XFAirLiftBackend alloc] init]]; }
+- (instancetype)init { return [self initWithBackend:[XFAirLiftBackend sharedBackend]]; }
 - (instancetype)initWithBackend:(XFAirLiftBackend *)backend {
     self = [super initWithStyle:UITableViewStyleInsetGrouped];
     if (self) {
