@@ -102,6 +102,11 @@ jobs:
           test -f XitForge-Tunnel/prebuilt/libidevice_ffi.a
           echo "Archivos del túnel encontrados correctamente"
 
+      - name: Verificar excepciones del ejecutor nativo
+        run: |
+          python3 XitForge-Tunnel/tools/test_native_worker.py
+          python3 XitForge-Tunnel/tools/test_sync_retry.py
+
       - name: Compilar módulo XitForge actualizado
         run: |
           bash XitForge-Tunnel/module/build-module.sh
@@ -117,7 +122,7 @@ jobs:
           echo "=== SHA256 del módulo actualizado ==="
           shasum -a 256 XitForge-Tunnel/module/build/XFAirLift.dylib
 
-      - name: Integrar módulo XitForge 1.3.1
+      - name: Integrar módulo XitForge 1.3.2-probe4
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -139,24 +144,24 @@ jobs:
               'XitForge-Tunnel/module/package_ipa.py',
               str(base[0]),
               str(module),
-              'XitForge-1.3.1-unsigned.ipa',
+              'XitForge-1.3.2-probe4-unsigned.ipa',
               'XitForge-Tunnel/module/Notices.txt'
           ], check=True)
           PY
 
       - name: Verificar IPA final
         run: |
-          test -f XitForge-1.3.1-unsigned.ipa
-          test -f XitForge-1.3.1-unsigned.validation.json
+          test -f XitForge-1.3.2-probe4-unsigned.ipa
+          test -f XitForge-1.3.2-probe4-unsigned.validation.json
 
-          unzip -t XitForge-1.3.1-unsigned.ipa
+          unzip -t XitForge-1.3.2-probe4-unsigned.ipa
           echo "IPA final creada correctamente"
 
       - name: Subir IPA final
         uses: actions/upload-artifact@v4
         with:
-          name: Mi-App-XitForge-1.3.1
+          name: Mi-App-XitForge-1.3.2-probe4
           path: |
-            XitForge-1.3.1-unsigned.ipa
-            XitForge-1.3.1-unsigned.validation.json
+            XitForge-1.3.2-probe4-unsigned.ipa
+            XitForge-1.3.2-probe4-unsigned.validation.json
           if-no-files-found: error
