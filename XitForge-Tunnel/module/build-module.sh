@@ -21,11 +21,11 @@ objects=()
 
 for source in \
   XFAirLiftBackend.m \
+  XFAirLiftFastReplace.m \
   XFOnDevicePairing.m \
   XFAirLiftViewController.m \
   XFAirLiftInstaller.m \
   XFAirLiftProfessionalUI.m \
-  XFFileCreationProbeController.m \
   XFATCDirectory.m \
   XFGrappaHelper.m \
   XFMHAContainerAccess.m
