@@ -1,5 +1,6 @@
 #import "HomeViewController.h"
 #import "LicenseValidator.h"
+#import "XITForgeFileEngine.h"
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <dlfcn.h>
@@ -402,6 +403,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 @property (nonatomic, assign) BOOL deactivationTargetsAll;
 @property (nonatomic, strong) AVAudioPlayer *activationAudioPlayer;
 @property (nonatomic, strong) NSURLSession *downloadSession;
+@property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSDictionary *> *downloadContexts;
 @end
 
 // Keep the most recent options screen for each game alive while it has active
@@ -417,6 +419,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.downloadContexts = [NSMutableDictionary dictionary];
     self.view.backgroundColor = [UIColor blackColor];
     [self loadPersistedActiveOptions];
     if (self.activeOptionKeys.count && self.game.length) XFActiveScreens()[self.game] = self;
@@ -1278,8 +1281,16 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     if (!self.deactivationInProgress) { self.deactivateButton.enabled = YES; self.deactivateButton.alpha = 1.0; }
     NSArray<XITForgeOption *> *activatedOptions = [self.activationSucceededOptions copy] ?: @[];
     if (success) {
-        self.selectionHintLabel.text = [self selectionHintText];
-        self.selectionHintLabel.textColor = [UIColor colorWithWhite:0.48 alpha:1.0];
+        if ([message containsString:@"TÚNEL"]) {
+            self.selectionHintLabel.text = @"✓  ACTIVADO · TÚNEL";
+            self.selectionHintLabel.textColor = [UIColor colorWithWhite:0.92 alpha:1.0];
+        } else if ([message containsString:@"ACCESO LOCAL"]) {
+            self.selectionHintLabel.text = @"✓  ACTIVADO · ACCESO LOCAL";
+            self.selectionHintLabel.textColor = [UIColor colorWithWhite:0.92 alpha:1.0];
+        } else {
+            self.selectionHintLabel.text = [self selectionHintText];
+            self.selectionHintLabel.textColor = [UIColor colorWithWhite:0.48 alpha:1.0];
+        }
         [self showActivationBannerForOptions:activatedOptions];
         [self playActivationAudio];
         if (self.warnOnCurrentActivation) [self showAimbotWarning];
@@ -1500,8 +1511,23 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
             NSString *resolveError = nil;
             NSURL *destinationURL = [self destinationURLForOption:option error:&resolveError];
             NSURL *downloadURL = [self absoluteServerURLForString:option.originalFileUrl];
-            if (!destinationURL || !downloadURL) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
-            [items addObject:@{@"downloadURL": downloadURL, @"destinationURL": destinationURL}];
+            NSString *relativeError = nil;
+            NSString *relativePath = [XITForgeFileEngine relativePathForRoute:option.route fileName:option.fileName error:&relativeError];
+            if (!downloadURL || !relativePath) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
+            if (!destinationURL && ![XITForgeFileEngine tunnelFallbackConfigured]) {
+                [self finishDeactivationUIWithSuccess:NO noOriginals:NO];
+                return;
+            }
+            NSMutableDictionary *restoreItem = [NSMutableDictionary dictionaryWithDictionary:@{
+                @"downloadURL": downloadURL,
+                @"bundleID": option.bundleId.length ? option.bundleId : self.bundleId ?: @"",
+                @"route": option.route ?: @"",
+                @"fileName": option.fileName ?: @"",
+                @"relativePath": relativePath
+            }];
+            if (destinationURL) restoreItem[@"destinationURL"] = destinationURL;
+            if (resolveError.length) restoreItem[@"localResolveError"] = resolveError;
+            [items addObject:restoreItem];
         }
         if (items.count == 0) {
             [self finishDeactivationUIWithSuccess:YES noOriginals:YES];
@@ -1591,8 +1617,9 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     if (index >= items.count) { [self finishDeactivationUIWithSuccess:YES noOriginals:NO]; return; }
     NSDictionary *item = items[index];
     NSURL *downloadURL = item[@"downloadURL"];
-    NSURL *destinationURL = item[@"destinationURL"];
-    if (!downloadURL || !destinationURL) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
+    NSURL *destinationURL = [item[@"destinationURL"] isKindOfClass:NSURL.class] ? item[@"destinationURL"] : nil;
+    if (!downloadURL) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
+
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:downloadURL];
     [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
     if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; }); return; }
@@ -1604,19 +1631,40 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
             dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
             return;
         }
-        NSError *writeError = nil;
-        BOOL written = XITForgeWriteExactFile(location, destinationURL, &writeError);
-        if (!written) {
+
+        // Primero intentamos restaurar por el acceso local existente.
+        if (destinationURL) {
+            NSError *writeError = nil;
+            BOOL written = XITForgeWriteExactFile(location, destinationURL, &writeError);
+            if (written) {
+                NSError *verifyError = nil;
+                BOOL verified = XITForgeFilesAreIdentical(location, destinationURL, &verifyError);
+                if (verified) {
+                    dispatch_async(dispatch_get_main_queue(), ^{ [self restoreOriginalItems:items index:(index + 1)]; });
+                    return;
+                }
+            }
+        }
+
+        // Si FilzaSlop/MCM no pudo restaurar el original, usar el mismo archivo
+        // descargado a través del backend compartido del Túnel.
+        if (![XITForgeFileEngine tunnelFallbackConfigured]) {
             dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
             return;
         }
-        NSError *verifyError = nil;
-        BOOL verified = XITForgeFilesAreIdentical(location, destinationURL, &verifyError);
-        if (!verified) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
-            return;
-        }
-        dispatch_async(dispatch_get_main_queue(), ^{ [self restoreOriginalItems:items index:(index + 1)]; });
+
+        [XITForgeFileEngine replaceFileViaTunnelFromURL:location
+                                               bundleID:item[@"bundleID"] ?: self.bundleId
+                                                  route:item[@"route"] ?: @""
+                                               fileName:item[@"fileName"] ?: @""
+                                             completion:^(BOOL success, NSString *message) {
+            (void)message;
+            if (!success) {
+                [self finishDeactivationUIWithSuccess:NO noOriginals:NO];
+                return;
+            }
+            [self restoreOriginalItems:items index:(index + 1)];
+        }];
     }];
     [task resume];
     }];
@@ -1682,15 +1730,36 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     if (option.fileUrl.length == 0) { [self showResult:@"Esta opción no tiene un archivo configurado." success:NO]; return; }
     if (option.route.length == 0) { [self showResult:@"Esta opción no tiene una ruta configurada." success:NO]; return; }
     if (option.fileName.length == 0) { [self showResult:@"Esta opción no tiene un nombre de archivo configurado." success:NO]; return; }
+
+    // LOCAL-FIRST: conservar exactamente el flujo actual de FilzaSlop/MCM.
+    // Si no puede resolver el contenedor, no fallamos todavía: el Túnel puede
+    // ejecutar la misma operación usando bundleId + ruta relativa.
     NSString *resolveError = nil;
     NSURL *destinationURL = [self destinationURLForOption:option error:&resolveError];
-    if (!destinationURL) { [self showResult:resolveError ?: @"No se pudo resolver el contenedor o la ruta." success:NO]; return; }
+    if (!destinationURL && ![XITForgeFileEngine tunnelFallbackConfigured]) {
+        [self showResult:resolveError ?: @"No se pudo resolver el contenedor o la ruta." success:NO];
+        return;
+    }
+
+    NSString *relativeError = nil;
+    NSString *relativePath = [XITForgeFileEngine relativePathForRoute:option.route
+                                                             fileName:option.fileName
+                                                                error:&relativeError];
+    if (!relativePath) {
+        [self showResult:relativeError ?: @"La ruta configurada no es válida." success:NO];
+        return;
+    }
+
     NSURL *downloadURL = [self absoluteServerURLForString:option.fileUrl];
     if (!downloadURL) { [self showResult:@"La URL del archivo no es válida." success:NO]; return; }
-    [self startDownload:downloadURL option:option destinationURL:destinationURL];
+    [self startDownload:downloadURL option:option destinationURL:destinationURL relativePath:relativePath localResolveError:resolveError];
 }
 
-- (void)startDownload:(NSURL *)url option:(XITForgeOption *)option destinationURL:(NSURL *)destinationURL {
+- (void)startDownload:(NSURL *)url
+                option:(XITForgeOption *)option
+        destinationURL:(NSURL *)destinationURL
+          relativePath:(NSString *)relativePath
+     localResolveError:(NSString *)localResolveError {
     self.statusLabel.hidden = YES;
     NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
     configuration.timeoutIntervalForRequest = 30.0;
@@ -1700,7 +1769,16 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
         if (!authorized) { [self showResult:@"Licencia no autorizada. Inicia sesión nuevamente." success:NO]; return; }
         NSURLSessionDownloadTask *task = [self.downloadSession downloadTaskWithRequest:request];
-        task.taskDescription = [NSString stringWithFormat:@"%ld|%@", (long)option.optionId.integerValue, destinationURL.path];
+        NSString *bundleID = option.bundleId.length ? option.bundleId : self.bundleId;
+        NSMutableDictionary *context = [NSMutableDictionary dictionaryWithDictionary:@{
+            @"bundleID": bundleID ?: @"",
+            @"route": option.route ?: @"",
+            @"fileName": option.fileName ?: @"",
+            @"relativePath": relativePath ?: @""
+        }];
+        if (destinationURL.path.length) context[@"destinationPath"] = destinationURL.path;
+        if (localResolveError.length) context[@"localResolveError"] = localResolveError;
+        self.downloadContexts[@(task.taskIdentifier)] = context;
         [task resume];
     }];
 }
@@ -1710,26 +1788,67 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     NSHTTPURLResponse *http = [downloadTask.response isKindOfClass:[NSHTTPURLResponse class]]
         ? (NSHTTPURLResponse *)downloadTask.response : nil;
     if (!http || http.statusCode < 200 || http.statusCode >= 300) {
+        [self.downloadContexts removeObjectForKey:@(downloadTask.taskIdentifier)];
         [self showResult:@"La descarga fue rechazada por el servidor." success:NO];
         return;
     }
-    NSString *description = downloadTask.taskDescription;
-    NSArray *parts = [description componentsSeparatedByString:@"|"];
-    if (parts.count < 2) { [self showResult:@"No se pudo determinar el destino del archivo." success:NO]; return; }
-    NSString *destinationPath = parts[1];
-    NSURL *destinationURL = [NSURL fileURLWithPath:destinationPath];
-    NSError *writeError = nil;
-    BOOL written = XITForgeWriteExactFile(location, destinationURL, &writeError);
-    if (!written) { [self showResult:@"No se pudo agregar o reemplazar el archivo." success:NO]; return; }
-    NSError *verifyError = nil;
-    BOOL verified = XITForgeFilesAreIdentical(location, destinationURL, &verifyError);
-    if (!verified) { [self showResult:@"El archivo se descargó, pero no quedó verificado en la ruta final." success:NO]; return; }
-    [self showResult:@"Archivo agregado y verificado correctamente." success:YES];
+
+    NSDictionary *context = self.downloadContexts[@(downloadTask.taskIdentifier)];
+    [self.downloadContexts removeObjectForKey:@(downloadTask.taskIdentifier)];
+    if (![context isKindOfClass:NSDictionary.class]) {
+        [self showResult:@"No se pudo determinar el destino del archivo." success:NO];
+        return;
+    }
+
+    NSString *destinationPath = [context[@"destinationPath"] isKindOfClass:NSString.class] ? context[@"destinationPath"] : nil;
+    NSString *localFailure = [context[@"localResolveError"] isKindOfClass:NSString.class] ? context[@"localResolveError"] : nil;
+
+    // 1) Intento normal por FilzaSlop/MCM.
+    if (destinationPath.length) {
+        NSURL *destinationURL = [NSURL fileURLWithPath:destinationPath];
+        NSError *writeError = nil;
+        BOOL written = XITForgeWriteExactFile(location, destinationURL, &writeError);
+        if (written) {
+            NSError *verifyError = nil;
+            BOOL verified = XITForgeFilesAreIdentical(location, destinationURL, &verifyError);
+            if (verified) {
+                [self showResult:@"Archivo agregado y verificado correctamente · ACCESO LOCAL" success:YES];
+                return;
+            }
+            localFailure = verifyError.localizedDescription ?: @"El archivo local no quedó verificado.";
+        } else {
+            localFailure = writeError.localizedDescription ?: @"FilzaSlop no pudo escribir el archivo.";
+        }
+    }
+
+    // 2) Fallback automático al Túnel solamente después de una descarga válida
+    // y de un fallo de acceso/escritura local.
+    if (![XITForgeFileEngine tunnelFallbackConfigured]) {
+        NSString *message = localFailure.length
+            ? [NSString stringWithFormat:@"No se pudo aplicar por acceso local. %@ Configura el Túnel para usar el respaldo automático.", localFailure]
+            : @"No se pudo aplicar por acceso local y el Túnel no está configurado.";
+        [self showResult:message success:NO];
+        return;
+    }
+
+    NSString *bundleID = context[@"bundleID"];
+    NSString *route = context[@"route"];
+    NSString *fileName = context[@"fileName"];
+    [XITForgeFileEngine replaceFileViaTunnelFromURL:location
+                                           bundleID:bundleID
+                                              route:route
+                                           fileName:fileName
+                                         completion:^(BOOL success, NSString *message) {
+        [self showResult:success ? @"Archivo agregado correctamente · TÚNEL" : message success:success];
+    }];
 }
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
     [self.activityIndicator stopAnimating];
-    if (error) { [self showResult:@"No se pudo descargar el archivo." success:NO]; }
+    if (error) {
+        [self.downloadContexts removeObjectForKey:@(task.taskIdentifier)];
+        [self showResult:@"No se pudo descargar el archivo." success:NO];
+    }
     [session finishTasksAndInvalidate];
     if (self.downloadSession == session) self.downloadSession = nil;
 }

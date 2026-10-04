@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import "LicenseValidator.h"
+#import "XITForgeFileEngine.h"
 
 /*
  * XITFORGE - BORRAR ARCHIVOS AL DESACTIVAR
@@ -54,6 +55,13 @@ static const void *XITForgeDeletePrefetchKey =
 
 - (void)xf_delete_finishDeactivationUIWithSuccess:(BOOL)success
                                       noOriginals:(BOOL)noOriginals;
+
+- (void)xf_deleteRuleWithFallback:(NSDictionary *)rule
+                       completion:(void (^)(BOOL success, NSString *message))completion;
+
+- (void)xf_deleteProcessRules:(NSArray<NSDictionary *> *)rules
+                         index:(NSUInteger)index
+                    completion:(void (^)(BOOL success))completion;
 
 @end
 
@@ -655,6 +663,70 @@ static const void *XITForgeDeletePrefetchKey =
 }
 
 
+
+/*
+ * =========================================================
+ * BORRADO LOCAL-FIRST + FALLBACK TÚNEL
+ * =========================================================
+ */
+
+- (void)xf_deleteRuleWithFallback:(NSDictionary *)rule
+                       completion:(void (^)(BOOL success, NSString *message))completion {
+
+  NSString *route =
+    [rule[@"route"] isKindOfClass:NSString.class] ? rule[@"route"] : nil;
+  NSString *fileName =
+    [rule[@"fileName"] isKindOfClass:NSString.class] ? rule[@"fileName"] : nil;
+  NSString *bundleId =
+    [rule[@"bundleId"] isKindOfClass:NSString.class] ? rule[@"bundleId"] : self.bundleId;
+
+  if (route.length == 0 || fileName.length == 0 || bundleId.length == 0) {
+    if (completion) completion(NO, @"Regla de borrado incompleta.");
+    return;
+  }
+
+  NSString *localError = nil;
+  if ([self xf_deleteLocalRule:rule error:&localError]) {
+    if (completion) completion(YES, @"Eliminado mediante acceso local.");
+    return;
+  }
+
+  if (![XITForgeFileEngine tunnelFallbackConfigured]) {
+    if (completion) {
+      completion(NO, localError.length
+        ? [NSString stringWithFormat:@"%@ El Túnel no está configurado.", localError]
+        : @"No se pudo borrar localmente y el Túnel no está configurado.");
+    }
+    return;
+  }
+
+  [XITForgeFileEngine deleteFileViaTunnelForBundleID:bundleId
+                                               route:route
+                                            fileName:fileName
+                                          completion:^(BOOL success, NSString *message) {
+    if (completion) completion(success, message);
+  }];
+}
+
+- (void)xf_deleteProcessRules:(NSArray<NSDictionary *> *)rules
+                         index:(NSUInteger)index
+                    completion:(void (^)(BOOL success))completion {
+  if (index >= rules.count) {
+    if (completion) completion(YES);
+    return;
+  }
+
+  NSDictionary *rule = rules[index];
+  [self xf_deleteRuleWithFallback:rule completion:^(BOOL success, NSString *message) {
+    if (!success) {
+      NSLog(@"XITFORGE DEACT DELETE ERROR: %@", message ?: @"Sin detalle");
+      if (completion) completion(NO);
+      return;
+    }
+    [self xf_deleteProcessRules:rules index:(index + 1) completion:completion];
+  }];
+}
+
 /*
  * =========================================================
  * AL TERMINAR LA RESTAURACIÓN, BORRAR LAS REGLAS ASOCIADAS
@@ -781,55 +853,27 @@ static const void *XITForgeDeletePrefetchKey =
   }
 
 
-  BOOL allDeleted =
-    YES;
-
-
-  for (
-    NSDictionary *rule
-    in matching
-  ) {
-
-    NSString *deleteError =
-      nil;
-
-
-    BOOL deleted =
-      [self
-        xf_deleteLocalRule:
-          rule
-        error:
-          &deleteError
-      ];
-
-
-    if (!deleted) {
-
-      allDeleted =
-        NO;
-
-      NSLog(
-        @"XITFORGE DEACT DELETE ERROR: %@",
-        deleteError ?:
-        @"Sin detalle"
-      );
-
-      break;
-    }
-  }
-
-
   /*
-   * Si no había originales pero sí había archivos configurados
-   * para borrar, una eliminación correcta cuenta como una
-   * desactivación real. Por eso forzamos noOriginals=NO.
+   * Procesar en serie. Cada regla intenta primero FilzaSlop/MCM y solo si
+   * ese acceso falla pasa al backend compartido del Túnel.
    */
-  [self
-    xf_delete_finishDeactivationUIWithSuccess:
-      allDeleted
-    noOriginals:
-      NO
-  ];
+  [self xf_deleteProcessRules:matching
+                         index:0
+                    completion:^(BOOL allDeleted) {
+    /*
+     * Si no había originales pero sí había archivos configurados
+     * para borrar, una eliminación correcta cuenta como una
+     * desactivación real. Por eso forzamos noOriginals=NO.
+     *
+     * Después del swizzle este selector llama al finish ORIGINAL.
+     */
+    [self
+      xf_delete_finishDeactivationUIWithSuccess:
+        allDeleted
+      noOriginals:
+        NO
+    ];
+  }];
 }
 
 @end
