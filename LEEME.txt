@@ -1,0 +1,29 @@
+XITFORGE — TÚNEL PROFESIONAL
+
+SUBE EXACTAMENTE ESTOS 3 ARCHIVOS:
+
+1) NUEVO
+XitForge-Tunnel/module/XFAirLiftProfessionalUI.m
+
+2) REEMPLAZAR
+XitForge-Tunnel/module/build-module.sh
+
+3) REEMPLAZAR
+.github/workflows/build.yml
+
+NO tienes que reemplazar XFAirLiftViewController.m.
+El archivo nuevo aplica los cambios encima del módulo actual y así evitamos tocar
+el archivo grande que ya contiene todo el sistema de lectura/reemplazo/eliminación.
+
+CAMBIOS INCLUIDOS:
+- Inicio primero, Túnel segundo, Ajustes tercero.
+- Túnel con estilo negro/rojo XITFORGE.
+- “Túnel: conectado” en rojo en vez de verde.
+- Pairing guardado también en rojo.
+- Catálogo de apps y buscador ocultos.
+- Botón “Conectar túnel”.
+- Botón “Abrir archivos por identificador” para conservar acceso a archivos sin mostrar catálogo.
+- Solicitud de permiso de notificaciones.
+- El PIN de emparejamiento aparece en una notificación cuando se recibe.
+- Ayuda del túnel reescrita más limpia.
+- GitHub Actions recompila el módulo nuevo; ya no empaqueta el prebuilt viejo sin tus cambios.
