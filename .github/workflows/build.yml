@@ -76,8 +76,26 @@ jobs:
           zip -qr MiApp_${FECHA}.ipa Payload/
           echo "IPA generado: MiApp_${FECHA}.ipa"
 
+      - name: Agregar módulo XitForge 1.3.1
+        run: |
+          python3 XitForge-Tunnel/tools/verify_delivery.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+          base = list(Path('.').glob('MiApp_*.ipa'))
+          if len(base) != 1:
+              raise SystemExit('Se esperaba exactamente una IPA base de esta compilación')
+          subprocess.run([sys.executable, 'XitForge-Tunnel/module/package_ipa.py',
+                          str(base[0]), 'XitForge-Tunnel/prebuilt/XFAirLift.dylib',
+                          'XitForge-1.3.1-unsigned.ipa', 'XitForge-Tunnel/module/Notices.txt'], check=True)
+          PY
+
       - name: Subir IPA final
         uses: actions/upload-artifact@v4
         with:
-          name: Mi-App-Final
-          path: MiApp_*.ipa
+          name: Mi-App-XitForge-1.3.1
+          path: |
+            XitForge-1.3.1-unsigned.ipa
+            XitForge-1.3.1-unsigned.validation.json
+          if-no-files-found: error
