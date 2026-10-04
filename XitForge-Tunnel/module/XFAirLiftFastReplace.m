@@ -1,17 +1,15 @@
 #import <Foundation/Foundation.h>
 
 /*
- XITFORGE V15 — NO FORZAR HOUSE ARREST/AFC
+ XITFORGE V16 — NO FORZAR HOUSE ARREST/AFC
 
  Este archivo reemplaza XFAirLiftFastReplace.m.
 
- V10/V11/V12/V13 forzaban House Arrest/AFC y en tu caso esa ruta falla.
- V14 volvió al replace original por Books/AirTraffic.
- V15 mantiene ese flujo, pero agrega XFAirTrafficFastTimeout.m para que AirTraffic
- no haga 3 intentos largos ni espere demasiado SyncAllowed.
+ Mantiene ACTIVAR usando el replace original por Books/AirTraffic.
+ El ajuste fino de SyncAllowed/reintentos está en XFAirTrafficFastTimeout.m.
 */
 
 __attribute__((constructor))
-static void XITForgeV15UseOriginalAirTrafficReplace(void) {
-    NSLog(@"XITFORGE V15: FastReplace desactivado. Replace usará Books/AirTraffic con timeout rápido.");
+static void XITForgeV16UseOriginalAirTrafficReplace(void) {
+    NSLog(@"XITFORGE V16: FastReplace desactivado. ACTIVAR usa Books/AirTraffic con SyncAllowed 8 mensajes.");
 }
