@@ -138,16 +138,27 @@
         return;
     }
 
-    dispatch_async([self operationQueue], ^{
-        NSError *readError = nil;
-        NSData *data = [NSData dataWithContentsOfURL:sourceURL options:NSDataReadingMappedIfSafe error:&readError];
-        if (!data) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (completion) completion(NO, readError.localizedDescription ?: @"No se pudo leer el archivo descargado.");
-            });
-            return;
+    /*
+     * IMPORTANTE:
+     * `sourceURL` viene de URLSession:didFinishDownloadingToURL:. iOS solo
+     * garantiza ese archivo temporal durante el callback. La V1/V2 esperaba
+     * a otra cola antes de leerlo y para entonces el archivo podía haber sido
+     * eliminado, provocando "NO SE PUDO ACTIVAR" aunque el Túnel estuviera
+     * conectado. Copiamos los bytes AHORA y solo el trabajo nativo se manda
+     * a la cola del Túnel.
+     */
+    NSError *readError = nil;
+    NSData *data = [NSData dataWithContentsOfURL:sourceURL options:0 error:&readError];
+    if (!data) {
+        if (completion) {
+            completion(NO, readError.localizedDescription ?: @"No se pudo copiar el archivo temporal descargado antes de usar el Túnel.");
         }
+        return;
+    }
 
+    NSData *payload = [data copy];
+
+    dispatch_async([self operationQueue], ^{
         id backend = [self sharedTunnelBackend];
         NSError *readyError = nil;
         if (![self ensureTunnelReady:backend error:&readyError]) {
@@ -167,7 +178,7 @@
 
         NSError *operationError = nil;
         BOOL success = ((BOOL (*)(id, SEL, NSString *, NSString *, NSData *, NSError **))objc_msgSend)(
-            backend, selector, bundleID, relativePath, data, &operationError);
+            backend, selector, bundleID, relativePath, payload, &operationError);
 
         dispatch_async(dispatch_get_main_queue(), ^{
             if (completion) {
