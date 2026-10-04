@@ -1,5 +1,5 @@
 {
-  "moduleVersion": "1.3.2-probe2",
+  "moduleVersion": "1.3.2-probe3",
   "nativeUpstream": "https://github.com/jkcoxson/idevice",
   "nativeUpstreamTag": "v0.1.68",
   "nativeUpstreamCommit": "d32c8189c51c2789496b0768039419c3705498c3",
@@ -9,8 +9,8 @@
   "physicalIPhoneTested": false,
   "artifacts": {
     "prebuilt/XFAirLift.dylib": {
-      "bytes": 4186488,
-      "sha256": "92a69c0e845e51ed894a0d4d37618aa1e01c3bd69261fe6813583a989491d9e1"
+      "bytes": 4188088,
+      "sha256": "1f14da66c6bd6b7227881ded498f5dd730c445f81c6d36d8f507c341defee3e6"
     },
     "prebuilt/libidevice_ffi.a": {
       "bytes": 17690184,

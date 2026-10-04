@@ -20,10 +20,12 @@ static UILabel *XFProbeLabel(NSString *text, UIFontTextStyle style) {
 @property(nonatomic,copy) NSDictionary *record;
 @property(nonatomic,copy) NSString *report;
 @property(nonatomic,assign) BOOL busy;
+@property(nonatomic,assign) BOOL confirmationPending;
+@property(nonatomic,assign) BOOL requiresRestart;
 @end
 @implementation XFFileCreationProbeController
 - (instancetype)initWithBackend:(XFAirLiftBackend *)backend queue:(dispatch_queue_t)queue {
-    if((self=[super init])){_backend=backend;_queue=queue;self.title=@"Prueba de creación";}
+    if((self=[super init])){_backend=backend;_queue=queue?:dispatch_queue_create("XitForge.Probe.Operation",DISPATCH_QUEUE_SERIAL);self.title=@"Prueba de creación";}
     return self;
 }
 - (UIButton *)button:(NSString *)title selector:(SEL)selector primary:(BOOL)primary {
@@ -83,8 +85,8 @@ static UILabel *XFProbeLabel(NSString *text, UIFontTextStyle style) {
 - (void)updateControls {
     self.applicationField.enabled=!self.busy&&!self.record;
     self.folderField.enabled=!self.busy&&!self.record;
-    self.createButton.enabled=!self.busy&&!self.record;
-    self.deleteButton.enabled=!self.busy&&self.record!=nil;
+    self.createButton.enabled=!self.busy&&!self.confirmationPending&&!self.requiresRestart&&!self.record;
+    self.deleteButton.enabled=!self.busy&&!self.confirmationPending&&!self.requiresRestart&&self.record!=nil;
     self.reportCopyButton.enabled=!self.busy&&self.report.length>0;
     self.navigationItem.hidesBackButton=self.busy;
     self.tabBarController.tabBar.userInteractionEnabled=!self.busy;
@@ -129,27 +131,60 @@ static UILabel *XFProbeLabel(NSString *text, UIFontTextStyle style) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)confirmDelete {
-    if(self.busy||!self.record)return;
+    if(self.busy||self.confirmationPending||self.requiresRestart||!self.record||self.presentedViewController)return;
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Eliminar archivo de prueba" message:[NSString stringWithFormat:@"App: %@\nRuta: %@\n\nSe comprobará que el contenido siga siendo el texto generado por XitForge. Cierra la app de destino.",self.record[@"app"],self.record[@"path"]] preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil]];
     __weak typeof(self) weakSelf=self;
-    [alert addAction:[UIAlertAction actionWithTitle:@"Comprobar y eliminar" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){[weakSelf runProbeDeleting:YES];}]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Comprobar y eliminar" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
+        typeof(self) self=weakSelf;if(!self||self.busy||self.confirmationPending)return;
+        self.confirmationPending=YES;
+        // UIKit is dismissing the alert inside this callback. Start after its
+        // transition, rather than changing navigation state during dismissal.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __block BOOL started=NO;
+            void (^start)(void)=^{
+                if(started)return;started=YES;
+                self.confirmationPending=NO;
+                if(self.viewIfLoaded.window)[self runProbeDeleting:YES];
+            };
+            UIViewController *presented=self.presentedViewController;
+            id<UIViewControllerTransitionCoordinator> transition=presented.transitionCoordinator;
+            if(transition&&[transition animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context){start();}])return;
+            if(presented)[self dismissViewControllerAnimated:YES completion:start];else start();
+        });
+    }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)runProbeDeleting:(BOOL)deleting {
-    if(self.busy||!self.record)return;
+    if(self.busy||self.requiresRestart||!self.record)return;
+    if(![self.record[@"app"] isKindOfClass:NSString.class]||!XFProbeUUID(self.record[@"path"])) {
+        [self alert:@"Prueba no válida" message:@"El registro de la prueba está incompleto. No se inició el borrado."];return;
+    }
     self.busy=YES;[self updateControls];
     NSString *app=[self.record[@"app"] copy],*path=[self.record[@"path"] copy];
     [self showReport:deleting?@"Comprobando y eliminando la prueba…":@"Creando y comprobando la misma ruta… El resultado sigue pendiente."];
     dispatch_async(self.queue, ^{
         NSError *error=nil;
-        BOOL ok=deleting?[self.backend deleteTestFileForApplication:app relativePath:path error:&error]:
-            [self.backend createTestFileForApplication:app relativePath:path error:&error];
-        BOOL absent=deleting&&self.backend.lastDeletionAbsenceConfirmed;
-        NSString *warning=self.backend.lastDirectoryWarning;
-        NSString *diagnostic=self.backend.connectionDiagnostics;
+        BOOL ok=NO,absent=NO,restart=NO;
+        NSString *warning=nil,*diagnostic=nil;
+        @try {
+            ok=deleting?[self.backend deleteTestFileForApplication:app relativePath:path error:&error]:
+                [self.backend createTestFileForApplication:app relativePath:path error:&error];
+            restart=[error.userInfo[@"ProbeException"] boolValue];
+            if(restart)diagnostic=[NSString stringWithFormat:@"Operación interrumpida por %@. No se consultó de nuevo el servicio.",error.userInfo[@"ExceptionName"]?:@"una excepción"];
+            else {
+                absent=deleting&&self.backend.lastDeletionAbsenceConfirmed;
+                warning=self.backend.lastDirectoryWarning;
+                diagnostic=self.backend.connectionDiagnostics;
+            }
+        } @catch(NSException *exception) {
+            ok=NO;absent=NO;restart=YES;
+            error=[NSError errorWithDomain:@"XitForge.Probe" code:1037 userInfo:@{
+                NSLocalizedDescriptionKey:[NSString stringWithFormat:@"La operación se interrumpió (%@). Cierra y vuelve a abrir XitForge. Su resultado no está confirmado.",exception.name?:@"NSException"]}];
+            diagnostic=@"Excepción al ejecutar la prueba o preparar su resultado. Registro conservado.";
+        }
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.busy=NO;
+            self.busy=NO;self.requiresRestart=restart;
             NSString *result=ok?(deleting?(absent?@"LIMPIEZA CONFIRMADA: iOS confirmó la ausencia del archivo de prueba.":@"PRUEBA RETIRADA: se conservó respaldo, pero iOS no permitió confirmar su ausencia. No se declara limpieza completa."):
                 @"CREACIÓN VERIFICADA: se creó el archivo, se leyó desde esa misma ruta y el contenido coincidió. El servicio confirmó el retorno del archivo a la app."):
                 [NSString stringWithFormat:@"RESULTADO INCONCLUSO\n%@",error.localizedDescription?:@"El servicio no confirmó la operación."];
