@@ -54,12 +54,23 @@ jobs:
         run: |
           mkdir -p Payload
           APP_PATH=$(find build -name "MiApp.app" -type d | head -n 1)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No se encontró MiApp.app"
+            exit 1
+          fi
+
           echo "App encontrada en: $APP_PATH"
           cp -r "$APP_PATH" Payload/
 
           DYLIB_PATH=$(find motor_filza -name "FilzaApplySandboxExt.dylib" | head -n 1)
           if [ -z "$DYLIB_PATH" ]; then
             DYLIB_PATH=$(find motor_filza/.theos -name "*.dylib" | head -n 1)
+          fi
+
+          if [ -z "$DYLIB_PATH" ]; then
+            echo "ERROR: No se encontró la dylib del motor"
+            exit 1
           fi
 
           DYLIB_NAME=$(basename "$DYLIB_PATH")
@@ -75,22 +86,34 @@ jobs:
 
           echo "=== Contenido del bundle ==="
           ls -la Payload/MiApp.app/
+
           echo "=== Load commands del binario ==="
           otool -L Payload/MiApp.app/MiApp
 
           FECHA=$(date +%Y%m%d_%H%M%S)
           zip -qr MiApp_${FECHA}.ipa Payload/
-          echo "IPA generado: MiApp_${FECHA}.ipa"
+          echo "IPA base generada: MiApp_${FECHA}.ipa"
 
-      - name: Verificar base del módulo
+      - name: Comprobar archivos del túnel
         run: |
-          python3 XitForge-Tunnel/tools/verify_delivery.py
+          test -f XitForge-Tunnel/module/XFAirLiftProfessionalUI.m
+          test -f XitForge-Tunnel/module/build-module.sh
+          test -f XitForge-Tunnel/module/package_ipa.py
+          test -f XitForge-Tunnel/prebuilt/libidevice_ffi.a
+          echo "Archivos del túnel encontrados correctamente"
 
       - name: Compilar módulo XitForge actualizado
         run: |
           bash XitForge-Tunnel/module/build-module.sh
+
           test -f XitForge-Tunnel/module/build/XFAirLift.dylib
+          xcrun lipo -verify_arch arm64 XitForge-Tunnel/module/build/XFAirLift.dylib
+
+          echo "=== Dependencias del módulo actualizado ==="
           otool -L XitForge-Tunnel/module/build/XFAirLift.dylib
+
+          echo "=== SHA256 del módulo actualizado ==="
+          shasum -a 256 XitForge-Tunnel/module/build/XFAirLift.dylib
 
       - name: Integrar módulo XitForge 1.3.1
         run: |
@@ -101,17 +124,31 @@ jobs:
 
           base = list(Path('.').glob('MiApp_*.ipa'))
           if len(base) != 1:
-              raise SystemExit('Se esperaba exactamente una IPA base de esta compilación')
+              raise SystemExit(
+                  f'Se esperaba exactamente una IPA base de esta compilación y se encontraron {len(base)}'
+              )
+
+          module = Path('XitForge-Tunnel/module/build/XFAirLift.dylib')
+          if not module.is_file():
+              raise SystemExit('No existe la dylib actualizada del túnel')
 
           subprocess.run([
               sys.executable,
               'XitForge-Tunnel/module/package_ipa.py',
               str(base[0]),
-              'XitForge-Tunnel/module/build/XFAirLift.dylib',
+              str(module),
               'XitForge-1.3.1-unsigned.ipa',
               'XitForge-Tunnel/module/Notices.txt'
           ], check=True)
           PY
+
+      - name: Verificar IPA final
+        run: |
+          test -f XitForge-1.3.1-unsigned.ipa
+          test -f XitForge-1.3.1-unsigned.validation.json
+
+          unzip -t XitForge-1.3.1-unsigned.ipa
+          echo "IPA final creada correctamente"
 
       - name: Subir IPA final
         uses: actions/upload-artifact@v4
