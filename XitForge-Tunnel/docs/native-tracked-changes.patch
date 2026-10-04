@@ -1,0 +1,1026 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 2015749..dad84b3 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1979,8 +1979,6 @@ dependencies = [
+ [[package]]
+ name = "plist_ffi"
+ version = "0.1.6"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "35ed070b06d9f2fdd7e816ef784fb07b09672f2acf37527f810dbedf450b7769"
+ dependencies = [
+  "cbindgen",
+  "cc",
+diff --git a/Cargo.toml b/Cargo.toml
+index c2e80fb..50aabbb 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -8,3 +8,8 @@ opt-level = "z"
+ codegen-units = 1
+ lto = true
+ panic = "abort"
++
++[patch.crates-io]
++# Only the header-generation build script is disabled in this exact 0.1.6 copy.
++# Its Rust C-ABI implementation remains byte-for-byte original source.
++plist_ffi = { path = "plist_ffi_local" }
+diff --git a/ffi/Cargo.toml b/ffi/Cargo.toml
+index 93d2ca8..ebc2614 100644
+--- a/ffi/Cargo.toml
++++ b/ffi/Cargo.toml
+@@ -137,4 +137,4 @@ default = ["full", "aws-lc"]
+ cbindgen = "0.29.0"
+ 
+ [lib]
+-crate-type = ["staticlib", "cdylib", "rlib"]
++crate-type = ["staticlib"]
+diff --git a/ffi/src/core_device/file_service.rs b/ffi/src/core_device/file_service.rs
+index f1769c7..673b309 100644
+--- a/ffi/src/core_device/file_service.rs
++++ b/ffi/src/core_device/file_service.rs
+@@ -4,7 +4,7 @@ use std::ffi::{CStr, CString, c_char};
+ use std::os::raw::c_int;
+ use std::ptr::null_mut;
+ 
+-use idevice::core_device::{Domain, FileServiceClient};
++use idevice::core_device::{Domain, FileServiceClient, FILE_SERVICE_CONTROL_TIMEOUT};
+ use idevice::{IdeviceError, ReadWrite};
+ 
+ use crate::{IdeviceFfiError, ReadWriteOpaque, ffi_err, run_sync, run_sync_local};
+@@ -75,11 +75,15 @@ pub unsafe extern "C" fn file_service_connect_rsd(
+         return ffi_err!(IdeviceError::FfiInvalidArg);
+     }
+ 
++    unsafe { *handle = null_mut() };
++
+     let res: Result<FileServiceClient<Box<dyn ReadWrite>>, IdeviceError> = run_sync_local(async {
+         let provider_ref = unsafe { &mut (*provider).0 };
+         let handshake_ref = unsafe { &mut (*handshake).0 };
+ 
+-        FileServiceClient::connect_rsd(provider_ref, handshake_ref).await
++        tokio::time::timeout(FILE_SERVICE_CONTROL_TIMEOUT,
++            FileServiceClient::connect_rsd(provider_ref, handshake_ref))
++            .await.map_err(|_| IdeviceError::Timeout)?
+     });
+ 
+     match res {
+@@ -112,8 +116,11 @@ pub unsafe extern "C" fn file_service_new(
+         return ffi_err!(IdeviceError::FfiInvalidArg);
+     }
+ 
++    unsafe { *handle = null_mut() };
++
+     let socket = unsafe { Box::from_raw(socket) };
+-    let res = run_sync(async move { FileServiceClient::new(socket.inner.unwrap()).await });
++    let Some(inner) = socket.inner else { return ffi_err!(IdeviceError::FfiInvalidArg); };
++    let res = run_sync(async move { FileServiceClient::new(inner).await });
+ 
+     match res {
+         Ok(client) => {
+@@ -236,6 +243,8 @@ pub unsafe extern "C" fn file_service_retrieve_directory_list(
+         return ffi_err!(IdeviceError::FfiInvalidArg);
+     }
+ 
++    unsafe { *entries = null_mut(); *len = 0; }
++
+     let path = match unsafe { CStr::from_ptr(path) }.to_str() {
+         Ok(s) => s,
+         Err(_) => return ffi_err!(IdeviceError::FfiInvalidString),
+@@ -314,6 +323,8 @@ pub unsafe extern "C" fn file_service_retrieve_file(
+         return ffi_err!(IdeviceError::FfiInvalidArg);
+     }
+ 
++    unsafe { *data = null_mut(); *len = 0; }
++
+     let path = match unsafe { CStr::from_ptr(path) }.to_str() {
+         Ok(s) => s,
+         Err(_) => return ffi_err!(IdeviceError::FfiInvalidString),
+@@ -383,6 +394,8 @@ pub unsafe extern "C" fn file_service_retrieve_file_with_stream(
+         return ffi_err!(IdeviceError::FfiInvalidArg);
+     }
+ 
++    unsafe { *data = null_mut(); *len = 0; }
++
+     let path = match unsafe { CStr::from_ptr(path) }.to_str() {
+         Ok(s) => s,
+         Err(_) => return ffi_err!(IdeviceError::FfiInvalidString),
+@@ -511,3 +524,84 @@ pub unsafe extern "C" fn file_service_free(handle: *mut FileServiceHandle) {
+         let _ = unsafe { Box::from_raw(handle) };
+     }
+ }
++
++#[cfg(test)]
++mod safety_ffi_tests {
++    use super::*;
++    use tokio::io::AsyncWriteExt;
++
++    fn response(channel: u32, object: idevice::xpc::XPCObject) -> Vec<u8> {
++        let body = idevice::xpc::XPCMessage::new(None, Some(object), Some(1)).encode(1).unwrap();
++        let length = (body.len() as u32).to_be_bytes();
++        let mut frame = vec![length[1], length[2], length[3], 0, 0];
++        frame.extend(channel.to_be_bytes());
++        frame.extend(body);
++        frame
++    }
++    fn client(extra: Vec<u8>) -> (*mut FileServiceHandle, tokio::io::DuplexStream) {
++        let (control, mut peer) = tokio::io::duplex(65536);
++        let mut replies = response(3, idevice::xpc!({ "NewSessionID": "mock-session" }));
++        replies.extend(extra);
++        run_sync_local(async { peer.write_all(&replies).await.unwrap(); });
++        let control: Box<dyn ReadWrite> = Box::new(control);
++        let client = run_sync_local(FileServiceClient::new(control)).unwrap();
++        let handle = Box::into_raw(Box::new(FileServiceHandle(client)));
++        let identifier = CString::new("test.owned.app").unwrap();
++        assert!(unsafe { file_service_create_session(handle,
++            IdeviceFileServiceDomain::IdeviceFileServiceDomainAppDataContainer,
++            identifier.as_ptr(), null_mut()) }.is_null());
++        (handle, peer)
++    }
++
++    #[test]
++    fn failed_directory_request_clears_output_slots_and_keeps_handle_freeable() {
++        let (handle, peer) = client(Vec::new());
++        drop(peer);
++        let path = CString::new(".").unwrap();
++        let mut names = std::ptr::dangling_mut::<*mut c_char>();
++        let mut length = 123;
++        unsafe {
++            let error = file_service_retrieve_directory_list(handle, path.as_ptr(), &mut names, &mut length);
++            assert!(!error.is_null());
++            assert!(names.is_null());
++            assert_eq!(length, 0);
++            crate::idevice_error_free(error);
++            file_service_free(handle);
++        }
++    }
++
++    #[test]
++    fn oversized_stream_download_preserves_c_ownership_and_zeroes_outputs() {
++        let (handle, _peer) = client(response(1, idevice::xpc!({ "Response": 7u64, "NewFileID": 19u64 })));
++        let (data, mut data_peer) = tokio::io::duplex(65536);
++        let mut prefix = vec![0; 36];
++        prefix.extend(u32::MAX.to_be_bytes());
++        run_sync_local(async { data_peer.write_all(&prefix).await.unwrap(); });
++        let stream = Box::into_raw(Box::new(ReadWriteOpaque { inner: Some(Box::new(data)) }));
++        let path = CString::new("known-file").unwrap();
++        let mut bytes = std::ptr::dangling_mut::<u8>();
++        let mut length = 123;
++        unsafe {
++            // with_stream consumes the stream on this failure, but borrows handle.
++            let error = file_service_retrieve_file_with_stream(handle, path.as_ptr(), stream, &mut bytes, &mut length);
++            assert!(!error.is_null());
++            assert!(CStr::from_ptr((*error).message).to_str().unwrap().contains("128 MiB"));
++            assert!(bytes.is_null());
++            assert_eq!(length, 0);
++            crate::idevice_error_free(error);
++            file_service_free(handle);
++        }
++    }
++
++    #[test]
++    fn an_empty_socket_wrapper_returns_error_without_unwinding_across_c() {
++        let socket = Box::into_raw(Box::new(ReadWriteOpaque { inner: None }));
++        let mut handle = std::ptr::dangling_mut::<FileServiceHandle>();
++        unsafe {
++            let error = file_service_new(socket, &mut handle);
++            assert!(!error.is_null());
++            assert!(handle.is_null());
++            crate::idevice_error_free(error);
++        }
++    }
++}
+diff --git a/ffi/src/lib.rs b/ffi/src/lib.rs
+index 6e818c2..b637a34 100644
+--- a/ffi/src/lib.rs
++++ b/ffi/src/lib.rs
+@@ -79,6 +79,8 @@ pub mod syslog_relay;
+ pub mod tcp_object_stack;
+ #[cfg(feature = "tunnel_tcp_stack")]
+ pub mod tunnel_provider;
++#[cfg(feature = "tunnel_tcp_stack")]
++pub mod xf_stream;
+ #[cfg(feature = "usbmuxd")]
+ pub mod usbmuxd;
+ pub mod util;
+diff --git a/idevice/src/lib.rs b/idevice/src/lib.rs
+index 5613853..b828a4f 100644
+--- a/idevice/src/lib.rs
++++ b/idevice/src/lib.rs
+@@ -247,6 +247,11 @@ impl Idevice {
+         self.socket
+     }
+ 
++    /// Discards a connection whose wire framing is no longer trustworthy.
++    pub(crate) fn invalidate_socket(&mut self) {
++        self.socket = None;
++    }
++
+     /// Sets cached UDID
+     pub fn set_udid(&mut self, udid: impl Into<String>) {
+         self.udid = Some(udid.into());
+diff --git a/idevice/src/services/afc/mod.rs b/idevice/src/services/afc/mod.rs
+index c92453a..ebc358c 100644
+--- a/idevice/src/services/afc/mod.rs
++++ b/idevice/src/services/afc/mod.rs
+@@ -219,7 +219,11 @@ impl AfcClient {
+ 
+         let st_nlink = kvs.remove("st_nlink").ok_or(AfcError::MissingAttribute)?;
+         let st_ifmt = kvs.remove("st_ifmt").ok_or(AfcError::MissingAttribute)?;
+-        let st_link_target = kvs.remove("st_link_target");
++        // AFC uses LinkTarget. Keep the older alias for compatible peers;
++        // otherwise typed file info silently loses the symlink destination.
++        let st_link_target = kvs
++            .remove("LinkTarget")
++            .or_else(|| kvs.remove("st_link_target"));
+ 
+         if !kvs.is_empty() {
+             warn!("File info kvs not empty: {kvs:?}");
+@@ -615,7 +619,7 @@ impl AfcClient {
+     /// Retrieves the raw key/value attributes of a file or directory.
+     ///
+     /// Sends the `GetFileInfo` operation (opcode 0x0A) and returns the attribute strings exactly
+-    /// as the device reports them (e.g. `st_size`, `st_mtime`, `st_birthtime`, `st_link_target`).
++    /// as the device reports them (e.g. `st_size`, `st_mtime`, `st_birthtime`, `LinkTarget`).
+     /// Prefer [`get_file_info`](Self::get_file_info) for a typed view; use this when the raw
+     /// values (such as the nanosecond timestamps) are needed verbatim.
+     ///
+@@ -649,9 +653,17 @@ impl AfcClient {
+     /// # Returns
+     /// The received `AfcPacket`
+     pub async fn read(&mut self) -> Result<AfcPacket, IdeviceError> {
+-        let res = AfcPacket::read(&mut self.idevice).await?;
++        // A silent AFC peer must not hold XitForge's native worker indefinitely.
++        let result = tokio::time::timeout(std::time::Duration::from_secs(15),
++            AfcPacket::read(&mut self.idevice)).await;
++        let res = match result {
++            Ok(Ok(packet)) => packet,
++            Ok(Err(error)) => { self.invalidate_connection(); return Err(error); }
++            Err(_) => { self.invalidate_connection(); return Err(IdeviceError::Timeout); }
++        };
+         if res.header.operation == AfcOpcode::Status {
+             if res.header_payload.len() < 8 {
++                self.invalidate_connection();
+                 tracing::error!("AFC returned error opcode, but not a code");
+                 return Err(IdeviceError::UnexpectedResponse(
+                     "AFC error status response too short for error code".into(),
+@@ -674,8 +686,82 @@ impl AfcClient {
+     /// * `packet` - The packet to send
+     pub async fn send(&mut self, packet: AfcPacket) -> Result<(), IdeviceError> {
+         let packet = packet.serialize();
+-        self.idevice.send_raw(&packet).await?;
+-        Ok(())
++        let result = tokio::time::timeout(std::time::Duration::from_secs(15),
++            self.idevice.send_raw(&packet)).await;
++        match result {
++            Ok(Ok(())) => Ok(()),
++            Ok(Err(error)) => { self.invalidate_connection(); Err(error) },
++            Err(_) => { self.invalidate_connection(); Err(IdeviceError::Timeout) },
++        }
++    }
++
++    /// Recovery must reconnect after partial transport reads or writes.
++    /// Legitimate AFC status errors keep their already-consumed connection.
++    pub fn invalidate_connection(&mut self) {
++        self.idevice.invalidate_socket();
++    }
++}
++
++#[cfg(test)]
++mod file_info_tests {
++    use super::*;
++    use tokio::io::{AsyncReadExt, AsyncWriteExt};
++
++    async fn info_from_afc_response(attributes: &[(&str, &str)]) -> FileInfo {
++        let (client, mut peer) = tokio::io::duplex(4096);
++        let mut afc = AfcClient::new(Idevice::new(Box::new(client), "file-info-test"));
++        let mut payload = Vec::new();
++        for (key, value) in attributes {
++            payload.extend_from_slice(key.as_bytes()); payload.push(0);
++            payload.extend_from_slice(value.as_bytes()); payload.push(0);
++        }
++        let response = AfcPacket {
++            header: AfcPacketHeader {
++                magic: MAGIC,
++                entire_len: AfcPacketHeader::LEN + payload.len() as u64,
++                header_payload_len: AfcPacketHeader::LEN,
++                packet_num: 0,
++                operation: AfcOpcode::Data,
++            },
++            header_payload: Vec::new(), payload,
++        }.serialize();
++        let server = async {
++            let mut header = [0u8; 40];
++            peer.read_exact(&mut header).await.unwrap();
++            let request_len = u64::from_le_bytes(header[8..16].try_into().unwrap());
++            let operation = u64::from_le_bytes(header[32..40].try_into().unwrap());
++            assert_eq!(operation, AfcOpcode::GetFileInfo as u64);
++            let mut request = vec![0; (request_len - 40) as usize];
++            peer.read_exact(&mut request).await.unwrap();
++            assert!(request.starts_with(b"generated-stage/p0/p1/p2/link"));
++            // The actual client must decode the null-separated AFC frame.
++            for chunk in response.chunks(7) { peer.write_all(chunk).await.unwrap(); }
++        };
++        let (info, ()) = tokio::join!(afc.get_file_info("generated-stage/p0/p1/p2/link"), server);
++        info.unwrap()
++    }
++
++    fn attributes() -> Vec<(&'static str, &'static str)> {
++        vec![("st_size", "61"), ("st_blocks", "0"), ("st_birthtime", "1700000000000000000"),
++             ("st_mtime", "1700000000000000123"), ("st_nlink", "1"), ("st_ifmt", "S_IFLNK")]
++    }
++
++    #[tokio::test]
++    async fn preserves_link_target_from_standard_afc_response() {
++        let mut fields = attributes();
++        let target = "../../../var/mobile/Containers/Data/Application/00000000-0000-4000-8000-000000000001";
++        fields.push(("LinkTarget", target));
++        let info = info_from_afc_response(&fields).await;
++        assert_eq!(info.st_ifmt, "S_IFLNK");
++        assert_eq!(info.st_link_target.as_deref(), Some(target));
++    }
++
++    #[tokio::test]
++    async fn accepts_legacy_target_alias_and_keeps_missing_target_unknown() {
++        let mut fields = attributes();
++        fields.push(("st_link_target", "../../../var/legacy"));
++        assert_eq!(info_from_afc_response(&fields).await.st_link_target.as_deref(), Some("../../../var/legacy"));
++        assert_eq!(info_from_afc_response(&attributes()).await.st_link_target, None);
+     }
+ }
+ 
+diff --git a/idevice/src/services/afc/packet.rs b/idevice/src/services/afc/packet.rs
+index 4a67227..6cd9fe6 100644
+--- a/idevice/src/services/afc/packet.rs
++++ b/idevice/src/services/afc/packet.rs
+@@ -73,6 +73,12 @@ impl AfcPacket {
+ 
+     pub async fn read(reader: &mut Idevice) -> Result<Self, IdeviceError> {
+         let header = AfcPacketHeader::read(reader).await?;
++        if header.header_payload_len < AfcPacketHeader::LEN
++            || header.entire_len < header.header_payload_len
++            || header.entire_len > 64 * 1024 * 1024
++        {
++            return Err(IdeviceError::UnexpectedResponse("Invalid or oversized AFC frame".into()));
++        }
+         debug!("afc header: {header:?}");
+         let header_payload = reader
+             .read_raw((header.header_payload_len - AfcPacketHeader::LEN) as usize)
+diff --git a/idevice/src/services/core_device/file_service.rs b/idevice/src/services/core_device/file_service.rs
+index aa7108c..c1162c5 100644
+--- a/idevice/src/services/core_device/file_service.rs
++++ b/idevice/src/services/core_device/file_service.rs
+@@ -1,6 +1,7 @@
+ //! Browse and transfer files over the CoreDevice file service.
+ 
+ use std::borrow::Cow;
++use std::time::Duration;
+ 
+ use tokio::io::{AsyncReadExt, AsyncWriteExt};
+ use tracing::debug;
+@@ -12,6 +13,10 @@ use super::CoreDeviceError;
+ /// Fixed-size preamble the data port answers a `rwb!FILE` request with, before
+ /// the length-prefixed payload.
+ const DATA_PREAMBLE_LEN: usize = 0x24;
++/// Maximum payload accepted before reserving memory for a download.
++pub const FILE_SERVICE_MAX_READ_SIZE: usize = 128 * 1024 * 1024;
++pub const FILE_SERVICE_CONTROL_TIMEOUT: Duration = Duration::from_secs(15);
++pub const FILE_SERVICE_READ_TIMEOUT: Duration = Duration::from_secs(60);
+ 
+ /// Which of the device's filesystem domains a session is scoped to.
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+@@ -51,6 +56,9 @@ impl Domain {
+ pub struct FileServiceClient<R: ReadWrite> {
+     inner: RemoteXpcClient<R>,
+     session: Option<String>,
++    usable: bool,
++    control_timeout: Duration,
++    read_timeout: Duration,
+ }
+ 
+ #[cfg(feature = "rsd")]
+@@ -66,11 +74,21 @@ impl crate::RsdService for FileServiceClient<Box<dyn ReadWrite>> {
+ 
+ impl<R: ReadWrite> FileServiceClient<R> {
+     pub async fn new(inner: R) -> Result<Self, IdeviceError> {
+-        let mut inner = RemoteXpcClient::new(inner).await?;
+-        inner.do_handshake().await?;
++        Self::new_with_timeout(inner, FILE_SERVICE_CONTROL_TIMEOUT).await
++    }
++
++    async fn new_with_timeout(inner: R, timeout: Duration) -> Result<Self, IdeviceError> {
++        let inner = tokio::time::timeout(timeout, async {
++            let mut inner = RemoteXpcClient::new(inner).await?;
++            inner.do_handshake().await?;
++            Ok::<_, IdeviceError>(inner)
++        }).await.map_err(|_| IdeviceError::Timeout)??;
+         Ok(Self {
+             inner,
+             session: None,
++            usable: true,
++            control_timeout: FILE_SERVICE_CONTROL_TIMEOUT,
++            read_timeout: FILE_SERVICE_READ_TIMEOUT,
+         })
+     }
+ 
+@@ -82,6 +100,16 @@ impl<R: ReadWrite> FileServiceClient<R> {
+         &mut self,
+         domain: Domain,
+         identifier: &str,
++    ) -> Result<String, IdeviceError> {
++        let result = tokio::time::timeout(self.control_timeout,
++            self.create_session_inner(domain, identifier)).await;
++        self.finish_operation(result)
++    }
++
++    async fn create_session_inner(
++        &mut self,
++        domain: Domain,
++        identifier: &str,
+     ) -> Result<String, IdeviceError> {
+         let res = self
+             .send_receive(crate::xpc!({
+@@ -107,6 +135,16 @@ impl<R: ReadWrite> FileServiceClient<R> {
+     pub async fn retrieve_directory_list(
+         &mut self,
+         path: &str,
++    ) -> Result<Vec<String>, IdeviceError> {
++        self.session()?;
++        let result = tokio::time::timeout(self.control_timeout,
++            self.retrieve_directory_list_inner(path)).await;
++        self.finish_operation(result)
++    }
++
++    async fn retrieve_directory_list_inner(
++        &mut self,
++        path: &str,
+     ) -> Result<Vec<String>, IdeviceError> {
+         let session = self.session()?;
+         let res = self
+@@ -135,6 +173,24 @@ impl<R: ReadWrite> FileServiceClient<R> {
+         path: &str,
+         connect_data: F,
+     ) -> Result<Vec<u8>, IdeviceError>
++    where
++        S: ReadWrite,
++        F: FnOnce() -> Fut,
++        Fut: std::future::Future<Output = Result<S, IdeviceError>>,
++    {
++        self.session()?;
++        let result = tokio::time::timeout(self.read_timeout,
++            self.retrieve_file_inner(path, connect_data)).await;
++        let result = self.finish_operation(result);
++        if result.is_err() { self.invalidate_connection(); }
++        result
++    }
++
++    async fn retrieve_file_inner<S, F, Fut>(
++        &mut self,
++        path: &str,
++        connect_data: F,
++    ) -> Result<Vec<u8>, IdeviceError>
+     where
+         S: ReadWrite,
+         F: FnOnce() -> Fut,
+@@ -179,7 +235,17 @@ impl<R: ReadWrite> FileServiceClient<R> {
+ 
+         let mut len = [0u8; 4];
+         data_stream.read_exact(&mut len).await?;
+-        let mut payload = vec![0u8; u32::from_be_bytes(len) as usize];
++        let length = u32::from_be_bytes(len) as usize;
++        if length > FILE_SERVICE_MAX_READ_SIZE {
++            return Err(IdeviceError::UnexpectedResponse(
++                "FileService payload exceeds the 128 MiB read limit".into(),
++            ));
++        }
++        let mut payload = Vec::new();
++        payload.try_reserve_exact(length).map_err(|_| {
++            IdeviceError::InternalError("FileService payload allocation failed".into())
++        })?;
++        payload.resize(length, 0);
+         data_stream.read_exact(&mut payload).await?;
+         Ok(payload)
+     }
+@@ -214,7 +280,33 @@ impl<R: ReadWrite> FileServiceClient<R> {
+         self.session.as_deref()
+     }
+ 
++    /// A timed-out request may have partially sent or consumed protocol bytes.
++    /// Prevent reuse rather than matching a late reply to a later request.
++    pub fn invalidate_connection(&mut self) {
++        self.usable = false;
++        self.session = None;
++    }
++
++    fn finish_operation<T>(
++        &mut self,
++        result: Result<Result<T, IdeviceError>, tokio::time::error::Elapsed>,
++    ) -> Result<T, IdeviceError> {
++        match result {
++            Err(_) => {
++                self.invalidate_connection();
++                Err(IdeviceError::Timeout)
++            }
++            Ok(Err(error @ IdeviceError::CoreDevice(CoreDeviceError::DeviceError(_)))) => Err(error),
++            Ok(Err(error)) => {
++                self.invalidate_connection();
++                Err(error)
++            }
++            Ok(result) => result,
++        }
++    }
++
+     fn session(&self) -> Result<String, IdeviceError> {
++        if !self.usable { return Err(IdeviceError::NoEstablishedConnection); }
+         self.session.clone().ok_or_else(|| {
+             IdeviceError::UnexpectedResponse("no file service session; call create_session".into())
+         })
+@@ -224,6 +316,9 @@ impl<R: ReadWrite> FileServiceClient<R> {
+         &mut self,
+         request: impl Into<XPCObject>,
+     ) -> Result<plist::Value, IdeviceError> {
++        if !self.usable {
++            return Err(IdeviceError::NoEstablishedConnection);
++        }
+         self.inner.send_object(request, true).await?;
+         // `CreateSession` is answered on the reply channel, every later command
+         // on the root channel, so wait on both.
+@@ -249,3 +344,265 @@ fn plist_u64(value: &plist::Value) -> Option<u64> {
+         .as_unsigned_integer()
+         .or_else(|| value.as_signed_integer().map(|x| x as u64))
+ }
++
++#[cfg(test)]
++mod safety_tests {
++    use super::*;
++    use std::pin::Pin;
++    use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}};
++    use std::task::{Context, Poll};
++    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
++    use crate::xpc::XPCMessage;
++
++    #[derive(Debug)]
++    struct MockStream {
++        incoming: Vec<u8>,
++        position: usize,
++        eof: bool,
++        stall_write: bool,
++        written: Arc<Mutex<Vec<u8>>>,
++        consumed: Arc<AtomicUsize>,
++        dropped: Arc<AtomicUsize>,
++    }
++
++    impl MockStream {
++        fn new(incoming: Vec<u8>, eof: bool) -> Self {
++            Self { incoming, position: 0, eof, stall_write: false,
++                written: Arc::new(Mutex::new(Vec::new())),
++                consumed: Arc::new(AtomicUsize::new(0)),
++                dropped: Arc::new(AtomicUsize::new(0)) }
++        }
++    }
++    impl Drop for MockStream {
++        fn drop(&mut self) { self.dropped.fetch_add(1, Ordering::SeqCst); }
++    }
++    impl AsyncRead for MockStream {
++        fn poll_read(mut self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &mut ReadBuf<'_>)
++            -> Poll<std::io::Result<()>> {
++            if self.position == self.incoming.len() {
++                return if self.eof { Poll::Ready(Ok(())) } else { Poll::Pending };
++            }
++            // Force fragmentation through both HTTP/2 control and data framing.
++            let count = (self.incoming.len() - self.position).min(buf.remaining()).min(3);
++            buf.put_slice(&self.incoming[self.position..self.position + count]);
++            self.position += count;
++            self.consumed.store(self.position, Ordering::SeqCst);
++            Poll::Ready(Ok(()))
++        }
++    }
++    impl AsyncWrite for MockStream {
++        fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8])
++            -> Poll<std::io::Result<usize>> {
++            if self.stall_write { return Poll::Pending; }
++            let count = buf.len().min(5);
++            self.written.lock().unwrap().extend_from_slice(&buf[..count]);
++            Poll::Ready(Ok(count))
++        }
++        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>)
++            -> Poll<std::io::Result<()>> { Poll::Ready(Ok(())) }
++        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>)
++            -> Poll<std::io::Result<()>> { Poll::Ready(Ok(())) }
++    }
++
++    fn response(channel: u32, object: XPCObject) -> Vec<u8> {
++        let body = XPCMessage::new(None, Some(object), Some(1)).encode(1).unwrap();
++        let length = (body.len() as u32).to_be_bytes();
++        let mut frame = vec![length[1], length[2], length[3], 0, 0];
++        frame.extend(channel.to_be_bytes());
++        frame.extend(body);
++        frame
++    }
++    fn session_response() -> Vec<u8> {
++        response(3, crate::xpc!({ "NewSessionID": "mock-session" }))
++    }
++    fn file_response() -> Vec<u8> {
++        response(1, crate::xpc!({ "Response": 7u64, "NewFileID": 19u64 }))
++    }
++    fn data_reply(length: u32, bytes: &[u8]) -> Vec<u8> {
++        let mut reply = vec![0; DATA_PREAMBLE_LEN];
++        reply.extend(length.to_be_bytes());
++        reply.extend(bytes);
++        reply
++    }
++    fn control_commands(bytes: &[u8]) -> Vec<plist::Dictionary> {
++        assert_eq!(&bytes[..24], b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
++        let mut offset = 24;
++        let mut commands = Vec::new();
++        while offset < bytes.len() {
++            let header = &bytes[offset..offset + 9];
++            let length = u32::from_be_bytes([0, header[0], header[1], header[2]]) as usize;
++            let body = &bytes[offset + 9..offset + 9 + length];
++            if header[3] == 0 {
++                let message = XPCMessage::decode(body).unwrap();
++                if let Some(value) = message.message {
++                    let value = value.to_plist();
++                    if let Some(dict) = value.as_dictionary() && dict.contains_key("Cmd") {
++                        commands.push(dict.clone());
++                    }
++                }
++            }
++            offset += 9 + length;
++        }
++        commands
++    }
++    async fn session_client(extra: Vec<u8>) -> FileServiceClient<MockStream> {
++        let mut replies = session_response();
++        replies.extend(extra);
++        let mut client = FileServiceClient::new(MockStream::new(replies, false)).await.unwrap();
++        client.create_session(Domain::AppDataContainer, "test.owned.app").await.unwrap();
++        client
++    }
++
++    #[tokio::test]
++    async fn fragmented_control_and_binary_download_preserve_wire_protocol() {
++        let mut replies = session_response();
++        replies.extend(response(1, crate::xpc!({ "FileList": ["Library/Caches/file", "Documents"] })));
++        replies.extend(file_response());
++        let control = MockStream::new(replies, false);
++        let control_written = control.written.clone();
++        let mut client = FileServiceClient::new(control).await.unwrap();
++        assert_eq!(client.create_session(Domain::AppDataContainer, "test.owned.app").await.unwrap(), "mock-session");
++        assert_eq!(client.retrieve_directory_list(".").await.unwrap(), vec!["Library/Caches/file", "Documents"]);
++        let expected = [0, 0xff, 0x80, b'P', b'K', 0, 0xfe];
++        let data = MockStream::new(data_reply(expected.len() as u32, &expected), true);
++        let written = data.written.clone();
++        let dropped = data.dropped.clone();
++        let actual = client.retrieve_file("Documents/file", async || Ok(data)).await.unwrap();
++        assert_eq!(actual, expected);
++        assert_eq!(dropped.load(Ordering::SeqCst), 1);
++        let mut request = b"rwb!FILE".to_vec();
++        for value in [7u64, 0, 19, 0] { request.extend(value.to_be_bytes()); }
++        assert_eq!(*written.lock().unwrap(), request);
++        let commands = control_commands(&control_written.lock().unwrap());
++        assert_eq!(commands.len(), 3);
++        assert_eq!(commands[0]["Cmd"].as_string(), Some("CreateSession"));
++        assert_eq!(commands[0]["Domain"].as_unsigned_integer(), Some(1));
++        assert_eq!(commands[0]["Identifier"].as_string(), Some("test.owned.app"));
++        assert_eq!(commands[0]["User"].as_string(), Some("mobile"));
++        assert_eq!(commands[1]["Cmd"].as_string(), Some("RetrieveDirectoryList"));
++        assert_eq!(commands[1]["Path"].as_string(), Some("."));
++        assert!(uuid::Uuid::parse_str(commands[1]["MessageUUID"].as_string().unwrap()).is_ok());
++        assert_eq!(commands[2]["Cmd"].as_string(), Some("RetrieveFile"));
++        assert_eq!(commands[2]["Path"].as_string(), Some("Documents/file"));
++        assert_eq!(commands[2]["SessionID"].as_string(), Some("mock-session"));
++    }
++
++    #[tokio::test]
++    async fn oversized_length_is_rejected_before_any_payload_read() {
++        for length in [(FILE_SERVICE_MAX_READ_SIZE + 1) as u32, u32::MAX] {
++            let mut client = session_client(file_response()).await;
++            let data = MockStream::new(data_reply(length, b"must-not-be-read"), false);
++            let consumed = data.consumed.clone();
++            let dropped = data.dropped.clone();
++            let result = client.retrieve_file("known-file", async || Ok(data)).await;
++            assert!(matches!(result, Err(IdeviceError::UnexpectedResponse(ref message)) if message.contains("128 MiB")));
++            assert_eq!(consumed.load(Ordering::SeqCst), DATA_PREAMBLE_LEN + 4);
++            assert_eq!(dropped.load(Ordering::SeqCst), 1);
++            assert!(matches!(client.retrieve_directory_list(".").await, Err(IdeviceError::NoEstablishedConnection)));
++        }
++    }
++
++    #[tokio::test]
++    async fn empty_file_is_a_valid_zero_length_download() {
++        let mut client = session_client(file_response()).await;
++        let data = MockStream::new(data_reply(0, &[]), true);
++        assert!(client.retrieve_file("empty", async || Ok(data)).await.unwrap().is_empty());
++    }
++
++    #[tokio::test]
++    async fn truncated_payload_closes_the_operation_without_partial_contents() {
++        let mut client = session_client(file_response()).await;
++        let data = MockStream::new(data_reply(4, &[0, 0xff]), true);
++        let dropped = data.dropped.clone();
++        let result = client.retrieve_file("truncated", async || Ok(data)).await;
++        assert!(matches!(result, Err(IdeviceError::Socket(ref error)) if error.kind() == std::io::ErrorKind::UnexpectedEof));
++        assert_eq!(dropped.load(Ordering::SeqCst), 1);
++        assert!(!client.usable);
++    }
++
++    #[tokio::test]
++    async fn stalled_constructor_is_cancelled_and_drops_its_stream() {
++        let mut stream = MockStream::new(Vec::new(), false);
++        stream.stall_write = true;
++        let dropped = stream.dropped.clone();
++        let result = FileServiceClient::new_with_timeout(stream, Duration::from_millis(30)).await;
++        assert!(matches!(result, Err(IdeviceError::Timeout)));
++        assert_eq!(dropped.load(Ordering::SeqCst), 1);
++    }
++
++    #[tokio::test]
++    async fn stalled_session_cannot_be_reused_for_a_late_response() {
++        let stream = MockStream::new(Vec::new(), false);
++        let written = stream.written.clone();
++        let mut client = FileServiceClient::new(stream).await.unwrap();
++        client.control_timeout = Duration::from_millis(30);
++        assert!(matches!(client.create_session(Domain::AppDataContainer, "test.owned.app").await, Err(IdeviceError::Timeout)));
++        let before = written.lock().unwrap().len();
++        assert!(matches!(client.create_session(Domain::AppDataContainer, "test.owned.app").await, Err(IdeviceError::NoEstablishedConnection)));
++        assert_eq!(written.lock().unwrap().len(), before);
++    }
++
++    #[tokio::test]
++    async fn incomplete_directory_control_frame_times_out_and_invalidates() {
++        let mut client = session_client(vec![0, 0, 100, 0, 0, 0]).await;
++        client.control_timeout = Duration::from_millis(30);
++        assert!(matches!(client.retrieve_directory_list(".").await, Err(IdeviceError::Timeout)));
++        assert!(!client.usable);
++        assert!(client.session_id().is_none());
++    }
++
++    #[tokio::test]
++    async fn download_deadline_covers_control_reply_before_data_connect() {
++        let mut client = session_client(Vec::new()).await;
++        client.read_timeout = Duration::from_millis(30);
++        let connected = Arc::new(AtomicBool::new(false));
++        let flag = connected.clone();
++        let result = client.retrieve_file("silent-control", async move || {
++            flag.store(true, Ordering::SeqCst);
++            Ok(MockStream::new(Vec::new(), false))
++        }).await;
++        assert!(matches!(result, Err(IdeviceError::Timeout)));
++        assert!(!connected.load(Ordering::SeqCst));
++        assert!(!client.usable);
++    }
++
++    #[tokio::test]
++    async fn download_deadline_covers_stalled_data_and_drops_stream() {
++        let mut client = session_client(file_response()).await;
++        client.read_timeout = Duration::from_millis(30);
++        let data = MockStream::new(vec![0; 8], false);
++        let dropped = data.dropped.clone();
++        let result = client.retrieve_file("silent-data", async || Ok(data)).await;
++        assert!(matches!(result, Err(IdeviceError::Timeout)));
++        assert_eq!(dropped.load(Ordering::SeqCst), 1);
++        assert!(!client.usable);
++    }
++
++    #[tokio::test]
++    async fn device_session_denial_does_not_poison_a_complete_control_reply() {
++        let mut replies = response(3, crate::xpc!({ "EncodedError": "permission", "LocalizedDescription": "denied" }));
++        replies.extend(session_response());
++        let mut client = FileServiceClient::new(MockStream::new(replies, false)).await.unwrap();
++        assert!(client.create_session(Domain::AppDataContainer, "test.owned.app").await.is_err());
++        assert!(client.usable);
++        assert_eq!(client.create_session(Domain::AppDataContainer, "test.owned.app").await.unwrap(), "mock-session");
++    }
++
++    #[tokio::test]
++    async fn malformed_complete_control_reply_invalidates_without_reuse() {
++        let mut malformed = response(1, crate::xpc!({ "FileList": ["file"] }));
++        malformed[9] ^= 0xff; // Corrupt the XPC wrapper magic, preserving HTTP/2 framing.
++        let mut client = session_client(malformed).await;
++        assert!(client.retrieve_directory_list(".").await.is_err());
++        assert!(!client.usable);
++        assert!(matches!(client.create_session(Domain::AppDataContainer, "test.owned.app").await, Err(IdeviceError::NoEstablishedConnection)));
++    }
++
++    #[tokio::test]
++    async fn caller_without_session_can_still_open_a_valid_session() {
++        let mut client = FileServiceClient::new(MockStream::new(session_response(), false)).await.unwrap();
++        assert!(client.retrieve_directory_list(".").await.is_err());
++        assert!(client.usable);
++        assert_eq!(client.create_session(Domain::AppDataContainer, "test.owned.app").await.unwrap(), "mock-session");
++    }
++}
+diff --git a/idevice/src/services/rsd.rs b/idevice/src/services/rsd.rs
+index a9ed724..52fbf7b 100644
+--- a/idevice/src/services/rsd.rs
++++ b/idevice/src/services/rsd.rs
+@@ -26,11 +26,124 @@ pub struct RsdService {
+ #[derive(Debug, Clone)]
+ pub struct RsdHandshake {
+     pub services: HashMap<String, RsdService>,
++    /// Original advertised service values, retained for read-only diagnostics.
++    pub advertised_services: plist::Dictionary,
+     pub protocol_version: usize,
+     pub properties: HashMap<String, plist::Value>,
+     pub uuid: String,
+ }
+ 
++fn parse_service_port(value: &plist::Value) -> Option<u16> {
++    let port = if let Some(text) = value.as_string() {
++        text.parse::<u16>().ok()?
++    } else if let Some(number) = value.as_unsigned_integer() {
++        u16::try_from(number).ok()?
++    } else if let Some(number) = value.as_signed_integer() {
++        u16::try_from(number).ok()?
++    } else {
++        return None;
++    };
++    (port != 0).then_some(port)
++}
++
++#[cfg(test)]
++mod port_tests {
++    use super::{parse_service_port, parse_services_dict};
++    use plist::Value;
++
++    #[test]
++    fn accepts_port_string_and_integer_without_truncation() {
++        assert_eq!(parse_service_port(&Value::String("49152".into())), Some(49152));
++        assert_eq!(parse_service_port(&Value::Integer(49152_u64.into())), Some(49152));
++        assert_eq!(parse_service_port(&Value::Integer(49152_i64.into())), Some(49152));
++        assert_eq!(parse_service_port(&Value::Integer(65536_u64.into())), None);
++        assert_eq!(parse_service_port(&Value::Integer((-1_i64).into())), None);
++        assert_eq!(parse_service_port(&Value::String("0".into())), None);
++    }
++
++    #[test]
++    fn retains_public_services_without_entitlement_and_preserves_xpc_flag() {
++        let services = plist_macro::plist!({
++            "com.apple.atc.shim.remote": { "Port": 49152 },
++            "com.apple.streaming_zip_conduit.shim.remote": { "Port": "49153" },
++            "xpc": { "Port": 49154, "Properties": { "UsesRemoteXPC": true } },
++            "invalid": { "Port": 65536 },
++        });
++        let parsed = parse_services_dict(services.as_dictionary().unwrap());
++        assert_eq!(parsed.len(), 3);
++        assert_eq!(parsed["com.apple.atc.shim.remote"].entitlement, "");
++        assert_eq!(parsed["com.apple.atc.shim.remote"].port, 49152);
++        assert_eq!(parsed["com.apple.streaming_zip_conduit.shim.remote"].port, 49153);
++        assert!(parsed["xpc"].uses_remote_xpc);
++        assert!(!parsed.contains_key("invalid"));
++    }
++}
++
++fn parse_services_dict(services_dict: &plist::Dictionary) -> HashMap<String, RsdService> {
++    let mut services: HashMap<String, RsdService> = HashMap::new();
++    for (name, service) in services_dict.into_iter() {
++        match service.as_dictionary() {
++            Some(service) => {
++                // Public and shim services can omit Entitlement entirely.
++                let entitlement = service.get("Entitlement")
++                    .and_then(|x| x.as_string()).unwrap_or("").to_owned();
++                let port = match service.get("Port").and_then(parse_service_port) {
++                    Some(e) => e,
++                    None => {
++                        warn!("Service did not contain a valid nonzero port");
++                        continue;
++                    }
++                };
++                let uses_remote_xpc = match service
++                    .get("Properties")
++                    .and_then(|x| x.as_dictionary())
++                    .and_then(|x| x.get("UsesRemoteXPC"))
++                    .and_then(|x| x.as_boolean())
++                {
++                    Some(e) => e.to_owned(),
++                    None => false, // default is false
++                };
++
++                let features = service
++                    .get("Properties")
++                    .and_then(|x| x.as_dictionary())
++                    .and_then(|x| x.get("Features"))
++                    .and_then(|x| x.as_array())
++                    .map(|f| {
++                        f.iter()
++                            .filter_map(|x| x.as_string())
++                            .map(|x| x.to_string())
++                            .collect::<Vec<String>>()
++                    });
++
++                let service_version = service
++                    .get("Properties")
++                    .and_then(|x| x.as_dictionary())
++                    .and_then(|x| x.get("ServiceVersion"))
++                    .and_then(|x| x.as_signed_integer())
++                    .map(|e| e.to_owned());
++
++                services.insert(
++                    name.to_string(),
++                    RsdService {
++                        entitlement,
++                        port,
++                        uses_remote_xpc,
++                        features,
++                        service_version,
++                    },
++                );
++            }
++            None => {
++                warn!("Service is not a dictionary!");
++                continue;
++            }
++        }
++    }
++
++    services
++}
++
+ impl RsdHandshake {
+     pub async fn new(socket: impl ReadWrite) -> Result<Self, IdeviceError> {
+         let mut xpc_client = RemoteXpcClient::new(socket).await?;
+@@ -51,75 +164,7 @@ impl RsdHandshake {
+             }
+         };
+ 
+-        // Parse available services
+-        let mut services: HashMap<String, RsdService> = HashMap::new();
+-        for (name, service) in services_dict.into_iter() {
+-            match service.as_dictionary() {
+-                Some(service) => {
+-                    let entitlement = match service.get("Entitlement").and_then(|x| x.as_string()) {
+-                        Some(e) => e.to_string(),
+-                        None => {
+-                            warn!("Service did not contain entitlement string");
+-                            continue;
+-                        }
+-                    };
+-                    let port = match service
+-                        .get("Port")
+-                        .and_then(|x| x.as_string())
+-                        .and_then(|x| x.parse::<u16>().ok())
+-                    {
+-                        Some(e) => e,
+-                        None => {
+-                            warn!("Service did not contain port string");
+-                            continue;
+-                        }
+-                    };
+-                    let uses_remote_xpc = match service
+-                        .get("Properties")
+-                        .and_then(|x| x.as_dictionary())
+-                        .and_then(|x| x.get("UsesRemoteXPC"))
+-                        .and_then(|x| x.as_boolean())
+-                    {
+-                        Some(e) => e.to_owned(),
+-                        None => false, // default is false
+-                    };
+-
+-                    let features = service
+-                        .get("Properties")
+-                        .and_then(|x| x.as_dictionary())
+-                        .and_then(|x| x.get("Features"))
+-                        .and_then(|x| x.as_array())
+-                        .map(|f| {
+-                            f.iter()
+-                                .filter_map(|x| x.as_string())
+-                                .map(|x| x.to_string())
+-                                .collect::<Vec<String>>()
+-                        });
+-
+-                    let service_version = service
+-                        .get("Properties")
+-                        .and_then(|x| x.as_dictionary())
+-                        .and_then(|x| x.get("ServiceVersion"))
+-                        .and_then(|x| x.as_signed_integer())
+-                        .map(|e| e.to_owned());
+-
+-                    services.insert(
+-                        name.to_string(),
+-                        RsdService {
+-                            entitlement,
+-                            port,
+-                            uses_remote_xpc,
+-                            features,
+-                            service_version,
+-                        },
+-                    );
+-                }
+-                None => {
+-                    warn!("Service is not a dictionary!");
+-                    continue;
+-                }
+-            }
+-        }
++        let services = parse_services_dict(services_dict);
+ 
+         let protocol_version = match data.as_dictionary().and_then(|x| {
+             x.get("MessagingProtocolVersion")
+@@ -162,6 +207,7 @@ impl RsdHandshake {
+ 
+         Ok(Self {
+             services,
++            advertised_services: services_dict.clone(),
+             protocol_version,
+             properties,
+             uuid,

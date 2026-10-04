@@ -1,0 +1,1083 @@
+--- 1.3.0/Notices.txt
++++ 1.3.1/Notices.txt
+@@ -38,9 +38,11 @@
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+ 
+-XitForge known-file module revision 1.3.0
+-The known-file read/replacement transaction and recovery classifier are
++XitForge known-file module revision 1.3.1
++The known-file read/replacement/deletion transactions and recovery classifier are
+ independently implemented. Protocol interfaces were checked against the
+ user-supplied 3105 executable and public AirLift research. No 3105 executable
+ code is copied into this module. Reads temporarily relocate existing files.
++Deletion retains a durable local original. The source picker imports a copy,
++with a cancellable, bounded background read after the picker returns.
+ 
+--- 1.3.0/package_ipa.py
++++ 1.3.1/package_ipa.py
+@@ -10,7 +10,7 @@
+ 
+ DYLIB_NAME = "XFAirLift.dylib"
+ LOAD_PATH = "@executable_path/" + DYLIB_NAME
+-MODULE_VERSION = "1.3.0"
++MODULE_VERSION = "1.3.1"
+ 
+ 
+ def digest(data):
+--- 1.3.0/README.md
++++ 1.3.1/README.md
+@@ -1,40 +1,31 @@
+-# XitForge: acceso directo a archivos — módulo 1.2.7
++# XitForge: archivos por ruta conocida — módulo 1.3.1
+ 
+-Esta versión añade la ruta nativa MHA-C2 encontrada en el IPA 3105 proporcionado. Antes de usar CoreDevice, HouseArrest o AirTraffic/AFC, XitForge solicita acceso al contenedor existente de la app. Si iOS lo concede, lista carpetas y lee archivos para previsualizar o exportar. La operación directa puede funcionar aunque el túnel esté desconectado.
++Esta versión corrige la espera del selector de reemplazo y añade eliminación de archivos por ruta conocida. Mantiene la lectura, exportación, reemplazo verificado y recuperación de 1.3.0.
+ 
+-El catálogo inicial sigue consultándose mediante el túnel. Una reconexión fallida conserva el catálogo ya cargado. Los indicadores de túnel y pairing se mantienen separados y muestran el último estado comprobado; pairing guardado no implica conexión actual.
++## Uso
+ 
+-## Instalación y uso
++Firma la IPA y sus dylibs conservando la identidad com.apple.mobile.MobileHouseArrest. Conecta el túnel con el emparejamiento de ese iPhone, selecciona una app y entra en **Abrir ruta**. Introduce una ruta relativa completa, por ejemplo Documents/carpeta/archivo.ext.
+ 
+-1. Firma e instala el IPA manteniendo **com.apple.mobile.MobileHouseArrest**, también en la identidad de firma del ejecutable. El módulo comprueba esa identidad: cambiar solo Info.plist no basta. El proyecto 3105 prescribe firma empresarial como su vía soportada; el PoC original describe también firma de desarrollo. No se ha verificado aquí la modalidad de firma final en el teléfono.
+-2. Abre **Túnel**, activa LocalDevVPN y pulsa **Conectar y cargar apps**. El pie debe indicar **Módulo 1.2.7**.
+-3. Selecciona una app. Cuando funciona MHA-C2, el pie dice **Carpeta abierta mediante acceso directo**. Usa el menú de un archivo para previsualizarlo o exportarlo.
+-4. Si iOS deniega el contenedor, la alerta conserva el motivo del acceso directo y los errores de las rutas de túnel.
++- **Reemplazar archivo**: en Archivos elige el archivo nuevo cuyos bytes sustituirán al destino. La selección importa una copia; cuando Archivos la entrega, XitForge cierra el selector y muestra una lectura cancelable. Revisa la app, el destino y el tamaño antes de confirmar.
++- **Eliminar archivo**: confirma la app y la ruta. El original se traslada a un respaldo propio y se guarda una copia local duradera antes de confirmar la operación. El resultado ofrece **Guardar copia original**. Solo dice Archivo eliminado si el servicio confirma que el destino está ausente; cuando iOS deniega esa comprobación, informa Archivo trasladado al respaldo.
++- **Restaurar original pendiente**: úsalo para la misma app y ruta si una operación quedó interrumpida antes de completarse. Requiere confirmación porque puede reemplazar el contenido actual. Una eliminación ya completada no se deshace automáticamente al reconectar.
+ 
+-Para emparejar desde iOS 27, pulsa **Emparejar este iPhone**, abre **Ajustes → Privacidad y seguridad → Modo de desarrollador → Emparejar con XitForge**, vuelve para copiar el PIN y apruébalo en Ajustes. En otras versiones, importa un registro válido. El túnel prueba 10.7.0.1 y 127.0.0.1; admite Remote Pairing y Lockdown.
++Cierra la app de destino durante las operaciones. El límite es 64 MiB por archivo; no se eliminan carpetas. Conserva XitForge y sus datos mientras haya una recuperación pendiente. Guarda las copias antes de desinstalarlo.
+ 
+-## AFC y las capacidades reales de 3105
++## Selector de reemplazo
+ 
+-**Afc(PermDenied) (106/10)** significa que AFC denegó enumerar esa ruta. El túnel conectado y el permiso de la carpeta son comprobaciones distintas. El propio 3105 contempla el listado bloqueado aunque un parche pueda operar sobre rutas de archivo conocidas. No hay evidencia de que oculte PermDenied para fabricar un listado.
++El selector acepta tipos de archivo generales e importa una copia. La lectura local se ejecuta fuera de la cola del túnel, valida que el origen sea regular, rechaza enlaces, limita el tamaño y detecta cambios durante la lectura. La interfaz permite cancelar y deja de esperar a los 30 segundos. Los resultados tardíos no muestran confirmaciones ni modifican archivos. Si un proveedor tarda antes de entregar la selección a la app, ese tiempo lo controla Archivos; descarga el archivo antes de elegirlo.
+ 
+-El binario 3105 incluye acceso nativo MHA-C2 y AirLift. Se confirmaron listado, lectura de bytes, previsualización, exportación, reemplazo, edición, creación y borrado. Su lectura AirLift mueve temporalmente un archivo a una zona legible por AFC, lo lee y solicita devolverlo. Esa lectura mediante traslado no está implementada en este módulo: XitForge añade lectura directa MHA-C2 y conserva CoreDevice/HouseArrest.
++## Alcance
+ 
+-El diagnóstico nuevo distingue el rechazo de la carpeta de la app de un rechazo al limpiar o recuperar temporales. Incluye fase, rol y códigos sin registrar rutas de apps, contenido, tokens, PIN ni claves. También indica si la firma y las APIs permiten solicitar MHA-C2; esa configuración no garantiza que iOS conceda una app concreta.
++La operación AirLift usa un traslado temporal o definitivo del archivo existente; los permisos para listar carpetas siguen siendo independientes. El log aportado de 3105 también registra PermDenied al listar carpetas, aunque completa lectura y reemplazo de una ruta conocida. Esta versión no afirma corregir permisos de exploración.
+ 
+-## Alcance y verificación
++El protocolo no ofrece una colocación atómica sin conflictos con una app que modifique o recree el destino. Los permisos denegados, errores de conexión y estados desconocidos no se convierten en una confirmación de ausencia. Las copias se conservan con registros de dispositivo, ruta y transacción.
+ 
+-- MHA-C2 consulta clase 2 para apps y clase 7 para grupos existentes. Conserva el permiso durante la operación y lo libera al terminar.
+-- La nueva ruta es de lectura: no crea, borra, reemplaza ni mueve archivos de la app. Usa rutas relativas y descriptores de directorio, sin seguir enlaces simbólicos.
+-- Lee archivos regulares de hasta 128 MB y rechaza un archivo que cambie durante la lectura. Comprueba la legibilidad antes de ofrecer previsualización o exportación.
+-- CoreDevice/HouseArrest mantienen el listado y lectura sujetos a permisos de iOS. Algunas entradas del catálogo son servicios del sistema sin contenedor.
+-- AirTraffic/AFC mantiene el listado mediante enlace temporal validado, túneles separados y recuperación del estado original de Books. No implementa lectura por traslado. La recuperación conserva cambios desconocidos y bloquea nuevas operaciones AirTraffic si no puede restaurar; no borra recursivamente.
++## Compilación y comprobación
+ 
+-La compilación ARM64 pasó, al igual que las pruebas del código C de autenticación y transiciones AirTraffic. El empaquetador comprueba hashes, integridad, versión y conservación del código y recursos originales. La ruta nativa fue revisada, incluida la duración del permiso y la validación de rutas. **No se ha ejecutado este IPA en el iPhone físico: el permiso real y la firma final siguen pendientes de comprobar allí.** El build 24A5355q suministrado figura entre los verificados por 3105.
++build-windows-local.py usa el LLVM, el SDK de iPhone y la biblioteca idevice ARM64 ya presentes en el workspace. package_ipa.py genera una copia de la IPA original con el módulo 1.3.1; verifica su estructura y la conservación del código y recursos originales. No incluye una identidad de firma.
+ 
+-Fuentes primarias: [3105](https://github.com/YangJiiii/3105), [MobileHouseArrest PoC](https://github.com/0xjohnnydev/MobileHouseArrest-PoC), [AirLift](https://github.com/0xjohnnydev/airlift), [AFC](https://github.com/libimobiledevice/libimobiledevice/blob/master/include/libimobiledevice/afc.h). La implementación MHA es independiente y no incorpora código GPL de 3105.
++Las pruebas del clasificador de recuperación ejecutan el código C de producción. La revisión independiente verifica el paquete final y sus símbolos. Ninguna de estas comprobaciones sustituye una ejecución de UIKit y los servicios de Apple en el iPhone; esta entrega no se ha probado físicamente en él.
+ 
+-## Compilación
+-
+-El ZIP incluye xitforge_module y xitforge_ffi_native, basado en idevice v0.1.68. Consulte XITFORGE_PATCHES.md y Notices.txt para procedencia y avisos MIT de idevice/AirCard-iOS.
+-
+-En Mac con Xcode y Rust, ejecute build-module.sh y después package_ipa.py con el IPA original, build/XFAirLift.dylib, el nombre de salida y Notices.txt. En Windows, build-windows-local.py usa LLVM, SDK de iPhone local y el archivo estático ARM64 reconstruido. El IPA se entrega sin firmar.
++Las interfaces del protocolo se revisaron en la IPA 3105 suministrada y en AirLift; el módulo mantiene su implementación independiente y no incorpora código ejecutable de 3105. Consulte Notices.txt para los avisos de las dependencias.
+--- 1.3.0/XFAirLiftBackend.h
++++ 1.3.1/XFAirLiftBackend.h
+@@ -32,6 +32,11 @@
+ /// or application paths/content.
+ @property (nonatomic, readonly, copy) NSString *connectionDiagnostics;
+ @property (nonatomic, readonly, copy) NSString *lastDirectoryWarning;
++/// Durable local original from the latest committed deletion, for user export.
++/// The URL remains valid across reconnects; callers must never move/remove it.
++@property (nonatomic, readonly, nullable) NSURL *lastDeletedFileBackupURL;
++/// Whether AFC positively confirmed target absence after that relocation.
++@property (nonatomic, readonly) BOOL lastDeletionAbsenceConfirmed;
+ - (BOOL)importPairingRecordURL:(NSURL *)url error:(NSError **)error;
+ - (BOOL)connectWithError:(NSError **)error;
+ - (void)disconnect;
+@@ -52,6 +57,12 @@
+                     relativePath:(NSString *)relativePath
+                             data:(NSData *)data
+                            error:(NSError **)error;
++/// Intentionally retires a known regular app file (maximum 64 MiB) to retained
++/// backup. Confirm the concrete destination before calling. A YES result proves
++/// retained relocation; lastDeletionAbsenceConfirmed distinguishes target absence.
++- (BOOL)deleteFileForApplication:(NSString *)bundleIdentifier
++                    relativePath:(NSString *)relativePath
++                           error:(NSError **)error;
+ /// Explicitly restores the retained original for this exact known-file target.
+ /// The caller must confirm that the current target content may be replaced.
+ - (BOOL)restorePendingFileForApplication:(NSString *)bundleIdentifier
+--- 1.3.0/XFAirLiftBackend.m
++++ 1.3.1/XFAirLiftBackend.m
+@@ -104,6 +104,8 @@
+     NSDictionary *_fileServiceAttempt;
+     XFATCDirectory *_atcDirectory;
+     NSString *_directoryWarning;
++    NSURL *_lastDeletedFileBackupURL;
++    BOOL _lastDeletionAbsenceConfirmed;
+     NSMutableDictionary<NSString *, NSNumber *> *_catalogResultCodes;
+     NSMutableDictionary<NSString *, NSNumber *> *_routeResultCodes;
+     BOOL _containersQueried;
+@@ -164,6 +166,16 @@
+     }
+ }
+ - (BOOL)hasPairingRecord { __block BOOL value; [_worker perform:^{ value = self->_pairingData.length > 0; }]; return value; }
++- (NSURL *)lastDeletedFileBackupURL {
++    __block NSURL *value;
++    [_worker perform:^{ value = [self->_lastDeletedFileBackupURL copy]; }];
++    return value;
++}
++- (BOOL)lastDeletionAbsenceConfirmed {
++    __block BOOL value = NO;
++    [_worker perform:^{ value = self->_lastDeletionAbsenceConfirmed; }];
++    return value;
++}
+ - (NSString *)applicationCatalogSource {
+     __block NSString *value;
+     [_worker perform:^{ value = [self->_applicationCatalogSource copy]; }];
+@@ -324,6 +336,8 @@
+     [_routeResultCodes removeAllObjects];
+     _containersQueried = NO;
+     _directoryWarning = @"";
++    _lastDeletedFileBackupURL = nil;
++    _lastDeletionAbsenceConfirmed = NO;
+     _connectionAddress=nil;
+     if (_handshake) { rsd_handshake_free(_handshake); _handshake = NULL; }
+     if (_adapter) { XFConsume(adapter_close(_adapter), @"Cerrar túnel", NULL); adapter_free(_adapter); _adapter = NULL; }
+@@ -439,7 +453,11 @@
+                     // The validated journal requires explicit action for this
+                     // exact file. Keep metadata/tunnel access for that action;
+                     // the ATC module blocks new moves until recovery resolves it.
+-                    self->_directoryWarning = [NSString stringWithFormat:@"Hay un original pendiente de recuperar. En XitForge, selecciona la app correspondiente y usa «Abrir ruta» → «Restaurar original pendiente» con la misma ruta. %@", failure.localizedDescription ?: @""];
++                    id deletionCommitted=failure.userInfo[@"KnownFileDeleteCommitted"];
++                    BOOL retainedDelete=[deletionCommitted isKindOfClass:NSNumber.class]&&[deletionCommitted boolValue];
++                    self->_directoryWarning = retainedDelete?
++                        [NSString stringWithFormat:@"El retiro ya se confirmó y se conservó la copia. Vuelve a conectar para reintentar la recuperación del estado temporal; el archivo no se restaurará en la app. %@",failure.localizedDescription?:@""]:
++                        [NSString stringWithFormat:@"Hay un original pendiente de recuperar. En XitForge, selecciona la app correspondiente y usa «Abrir ruta» → «Restaurar original pendiente» con la misma ruta. %@", failure.localizedDescription ?: @""];
+                     self->_routeResultCodes[@"AirTrafficRecovery"] = @(2210);
+                 } else {
+                     success = NO;
+@@ -447,6 +465,10 @@
+                 }
+             } else {
+                 self->_directoryWarning = [directory.lastWarning copy] ?: @"";
++            }
++            if (directory.deletedFileBackupURL) {
++                self->_lastDeletedFileBackupURL = [directory.deletedFileBackupURL copy];
++                self->_lastDeletionAbsenceConfirmed = directory.deletionAbsenceConfirmed;
+             }
+         }
+         if (!success) {
+@@ -1168,6 +1190,34 @@
+     if (!restored && error) *error = failure;
+     return restored;
+ }
++- (BOOL)deleteFileForApplication:(NSString *)identifier relativePath:(NSString *)path error:(NSError **)error {
++    __block BOOL deleted = NO; __block NSError *failure = nil;
++    [_worker perform:^{
++        self->_directoryWarning = @"";
++        self->_fileServiceAttempt = @{};
++        self->_lastDeletedFileBackupURL = nil;
++        self->_lastDeletionAbsenceConfirmed = NO;
++        const char *identifierBytes = [identifier isKindOfClass:NSString.class] ? identifier.UTF8String : NULL;
++        if (!identifier.length || !identifierBytes || strlen(identifierBytes) != [identifier lengthOfBytesUsingEncoding:NSUTF8StringEncoding]) {
++            failure = XFError(1009, @"Falta un identificador válido de la app."); return;
++        }
++        NSString *relative = [self validatedKnownFileRelativePath:path error:&failure];
++        if ([@[@"Documents", @"Library", @"SystemData", @"tmp"] containsObject:relative]) {
++            failure = XFError(1034, @"La ruta corresponde a una carpeta de la app. Elige un archivo dentro de ella."); return;
++        }
++        NSString *absolute = relative ? [self atcAbsolutePathForIdentifier:identifier shared:NO path:relative error:&failure] : nil;
++        XFATCDirectory *directory = absolute ? [self atcDirectoryNativeWithError:&failure] : nil;
++        if (directory) {
++            deleted = [directory deleteAbsoluteFile:absolute error:&failure];
++            self->_directoryWarning = [directory.lastWarning copy] ?: @"";
++            self->_lastDeletedFileBackupURL = [directory.deletedFileBackupURL copy];
++            self->_lastDeletionAbsenceConfirmed = directory.deletionAbsenceConfirmed;
++        }
++        self->_routeResultCodes[@"AirTrafficDelete"] = @(deleted ? 0 : failure.code ?: -1);
++    }];
++    if (!deleted && error) *error = failure;
++    return deleted;
++}
+ - (NSArray<NSDictionary *> *)listATCDirectoryForIdentifier:(NSString *)identifier shared:(BOOL)shared path:(NSString *)relative error:(NSError **)error {
+     NSString *absolute = [self atcAbsolutePathForIdentifier:identifier shared:shared path:relative error:error];
+     if (!absolute) return nil;
+--- 1.3.0/XFAirLiftViewController.h
++++ 1.3.1/XFAirLiftViewController.h
+@@ -4,7 +4,7 @@
+ 
+ NS_ASSUME_NONNULL_BEGIN
+ 
+-/// An application browser with explicit known-file replacement. The backend performs all device operations
++/// An application browser with explicit known-file replacement and deletion. The backend performs all device operations
+ /// on a serial queue shared with the pushed browser screens.
+ /// On iOS 27 the optional on-device pairing screen displays the protocol's PIN;
+ /// importing an existing pairing record remains available on earlier versions.
+--- 1.3.0/XFAirLiftViewController.m
++++ 1.3.1/XFAirLiftViewController.m
+@@ -23,7 +23,7 @@
+     if (!bytes || !path.length || [path lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 4096 ||
+         strlen(bytes) != [path lengthOfBytesUsingEncoding:NSUTF8StringEncoding] ||
+         [path hasPrefix:@"/"] || [path containsString:@"\\"]) {
+-        if (error) *error = XFReplacementInputError(@"Introduce la ruta relativa completa del archivo que quieres reemplazar."); return nil;
++        if (error) *error = XFReplacementInputError(@"Introduce la ruta relativa completa del archivo de la app."); return nil;
+     }
+     NSArray<NSString *> *parts = [path componentsSeparatedByString:@"/"];
+     if (parts.count > 128) {
+@@ -35,17 +35,47 @@
+     return path;
+ }
+ 
+-// The security scope is owned by the picker callback and spans this coordinated
+-// background read. Never allocate from an unbounded provider-reported file size.
+-static NSData *XFReadReplacementURL(NSURL *URL, NSError **error) {
++@interface XFReplacementReadRequest : NSObject
++@property (atomic, assign) BOOL cancelled;
++@property (nonatomic, strong) NSFileCoordinator *coordinator;
++@property (nonatomic, assign) NSTimeInterval deadline;
++- (BOOL)shouldStop;
++- (void)cancel;
++@end
++
++@implementation XFReplacementReadRequest
++- (instancetype)init {
++    if ((self = [super init])) {
++        _coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
++        _deadline = NSProcessInfo.processInfo.systemUptime + 30;
++    }
++    return self;
++}
++- (BOOL)shouldStop { return self.cancelled || NSProcessInfo.processInfo.systemUptime >= self.deadline; }
++- (void)cancel { self.cancelled = YES; [self.coordinator cancel]; }
++@end
++
++// At most one provider read may remain in flight after cancellation. Never
++// accumulate stuck workers or block the device-operation queue on a provider.
++static dispatch_semaphore_t XFReplacementReaderSlot(void) {
++    static dispatch_semaphore_t slot;
++    static dispatch_once_t once;
++    dispatch_once(&once, ^{ slot = dispatch_semaphore_create(1); });
++    return slot;
++}
++
++// The worker owns the security scope until its finally block. Cancellation
++// invalidates UI results immediately and cooperatively stops bounded reads.
++static NSData *XFReadReplacementURL(NSURL *URL, XFReplacementReadRequest *request, NSError **error) {
+     if (!URL.isFileURL) {
+         if (error) *error = XFReplacementInputError(@"Elige un archivo desde el selector de Archivos."); return nil;
+     }
+     __block NSData *result = nil;
+     __block NSError *readFailure = nil;
+     NSError *coordinationFailure = nil;
+-    NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
+-    [coordinator coordinateReadingItemAtURL:URL options:0 error:&coordinationFailure byAccessor:^(NSURL *coordinatedURL) {
++    if (request.shouldStop) { if (error) *error = XFReplacementInputError(@"Se canceló la lectura del archivo elegido."); return nil; }
++    [request.coordinator coordinateReadingItemAtURL:URL options:0 error:&coordinationFailure byAccessor:^(NSURL *coordinatedURL) {
++        if (request.shouldStop) { readFailure = XFReplacementInputError(@"Se canceló la lectura del archivo elegido."); return; }
+         const char *source = coordinatedURL.fileSystemRepresentation;
+         NSString *sourcePath = coordinatedURL.path;
+         NSString *nul = [NSString stringWithFormat:@"%C", (unichar)0];
+@@ -63,6 +93,7 @@
+             NSMutableData *data = [NSMutableData dataWithCapacity:MIN((NSUInteger)before.st_size, (NSUInteger)(1024 * 1024))];
+             uint8_t buffer[64 * 1024];
+             while (YES) {
++                if (request.shouldStop) { readFailure = XFReplacementInputError(@"La lectura se canceló o superó los 30 segundos. Descarga el archivo antes de seleccionarlo."); return; }
+                 ssize_t got = read(fd, buffer, sizeof(buffer));
+                 if (got < 0 && errno == EINTR) continue;
+                 if (got < 0) { readFailure = XFReplacementInputError(@"La lectura del archivo elegido quedó incompleta."); return; }
+@@ -86,6 +117,7 @@
+             }
+         }
+     }];
++    if (request.shouldStop) { result = nil; readFailure = XFReplacementInputError(@"La lectura se canceló o superó los 30 segundos."); }
+     if (!result && error) *error = readFailure ?: coordinationFailure ?: XFReplacementInputError(@"No se pudo leer el archivo elegido.");
+     return result;
+ }
+@@ -225,6 +257,8 @@
+ @property (nonatomic, copy) NSString *directoryWarning;
+ @property (nonatomic, strong) XFConnectionStatusView *connectionStatus;
+ @property (nonatomic, copy, nullable) NSString *pendingReplacementPath;
++@property (nonatomic, strong, nullable) UIDocumentPickerViewController *replacementPicker;
++@property (nonatomic, strong, nullable) XFReplacementReadRequest *replacementRead;
+ - (instancetype)initWithBackend:(XFAirLiftBackend *)backend queue:(dispatch_queue_t)queue
+                   applicationID:(NSString *)applicationID relativePath:(NSString *)relativePath;
+ @end
+@@ -259,6 +293,13 @@
+ - (void)viewDidLayoutSubviews {
+     [super viewDidLayoutSubviews];
+     XFFitTableHeader(self.tableView);
++}
++
++- (void)viewWillDisappear:(BOOL)animated {
++    [super viewWillDisappear:animated];
++    if (self.isMovingFromParentViewController || self.navigationController.isBeingDismissed) {
++        [self cancelReplacementRead];
++    }
+ }
+ 
+ - (void)viewWillAppear:(BOOL)animated {
+@@ -462,6 +503,9 @@
+     [alert addAction:[UIAlertAction actionWithTitle:@"Reemplazar archivo" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+         [self chooseReplacementForPath:enteredPath()];
+     }]];
++    [alert addAction:[UIAlertAction actionWithTitle:@"Eliminar archivo" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
++        [self confirmDeleteForPath:enteredPath()];
++    }]];
+     [alert addAction:[UIAlertAction actionWithTitle:@"Restaurar original pendiente" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+         [self confirmRestoreForPath:enteredPath()];
+     }]];
+@@ -476,8 +520,13 @@
+     if (!target) { XFPresentError(self, @"Ruta de reemplazo no válida", XFErrorMessage(error)); return; }
+     self.pendingReplacementPath = [target copy];
+     [self setBusyUI:YES];
+-    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:NO];
++    // Import a copy and accept unfamiliar extensions. The reader still rejects
++    // directories, symbolic links and files larger than 64 MiB.
++    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeItem] asCopy:YES];
+     picker.delegate = self; picker.allowsMultipleSelection = NO;
++    picker.title = @"Elige el archivo nuevo";
++    picker.shouldShowFileExtensions = YES;
++    self.replacementPicker = picker;
+     void (^presentPicker)(void) = ^{ [self presentViewController:picker animated:YES completion:nil]; };
+     if ([self.presentedViewController isKindOfClass:UIAlertController.class]) {
+         [self.presentedViewController dismissViewControllerAnimated:YES completion:presentPicker];
+@@ -485,36 +534,92 @@
+ }
+ 
+ - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
++    if (controller != self.replacementPicker) return;
++    self.replacementPicker = nil;
+     self.pendingReplacementPath = nil;
+     [self setBusyUI:NO];
+     [controller dismissViewControllerAnimated:YES completion:nil];
+ }
+ 
+ - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
++    if (controller != self.replacementPicker) return;
++    self.replacementPicker = nil;
+     NSURL *URL = urls.firstObject;
+     NSString *target = [self.pendingReplacementPath copy];
+     NSString *application = [self.applicationID copy];
+     self.pendingReplacementPath = nil;
+     if (!URL || !target.length) { [self setBusyUI:NO]; [controller dismissViewControllerAnimated:YES completion:nil]; return; }
+-    BOOL scoped = [URL startAccessingSecurityScopedResource];
++    __weak typeof(self) weakSelf = self;
++    void (^startRead)(void) = ^{
++        typeof(self) owner = weakSelf;
++        if (!owner) return;
++        if (!owner.view.window || owner.navigationController.topViewController != owner) { [owner setBusyUI:NO]; return; }
++        [owner beginReplacementRead:URL target:target application:application];
++    };
++    // Close Files before coordinating or reading any bytes. Some providers
++    // dismiss themselves; wait for their transition before showing app UI.
++    if (controller.isBeingDismissed && controller.transitionCoordinator) {
++        [controller.transitionCoordinator animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) { startRead(); }];
++    } else if (controller.presentingViewController) {
++        [controller dismissViewControllerAnimated:YES completion:startRead];
++    } else dispatch_async(dispatch_get_main_queue(), startRead);
++}
++
++- (void)cancelReplacementRead {
++    XFReplacementReadRequest *request = self.replacementRead;
++    if (!request) return;
++    self.replacementRead = nil;
++    [request cancel];
++    self.navigationItem.prompt = nil;
++    [self setBusyUI:NO];
++}
++
++- (void)beginReplacementRead:(NSURL *)URL target:(NSString *)target application:(NSString *)application {
++    if (dispatch_semaphore_wait(XFReplacementReaderSlot(), DISPATCH_TIME_NOW) != 0) {
++        [self setBusyUI:NO];
++        XFPresentError(self, @"Lectura anterior pendiente", @"El proveedor todavía no terminó de cerrar el archivo anterior. Espera un momento antes de elegir otro archivo.");
++        return;
++    }
++    XFReplacementReadRequest *request = [[XFReplacementReadRequest alloc] init];
++    self.replacementRead = request;
++    self.navigationItem.prompt = @"Leyendo el archivo elegido…";
++    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Cancelar lectura" style:UIBarButtonItemStylePlain target:self action:@selector(cancelReplacementRead)];
+     NSString *sourceName = URL.lastPathComponent ?: @"archivo";
+-    dispatch_async(self.operationQueue, ^{
++    __weak typeof(self) weakSelf = self;
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
++        typeof(self) owner = weakSelf;
++        if (!owner || owner.replacementRead != request) return;
++        [owner cancelReplacementRead];
++        XFPresentError(owner, @"La lectura tardó demasiado", @"No se modificó el archivo de la app. Descarga el archivo nuevo en Archivos y selecciónalo otra vez.");
++    });
++    // Provider waits cannot hold the serial queue used by the tunnel/recovery.
++    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+         NSError *error = nil; NSData *payload = nil;
+-        @try { payload = XFReadReplacementURL(URL, &error); }
+-        @finally { if (scoped) [URL stopAccessingSecurityScopedResource]; }
++        BOOL scoped = [URL startAccessingSecurityScopedResource];
++        @try { payload = XFReadReplacementURL(URL, request, &error); }
++        @finally {
++            if (scoped) [URL stopAccessingSecurityScopedResource];
++            dispatch_semaphore_signal(XFReplacementReaderSlot());
++        }
+         dispatch_async(dispatch_get_main_queue(), ^{
+-            void (^showResult)(void) = ^{
+-                if (!payload) { [self setBusyUI:NO]; XFPresentError(self, @"Archivo elegido no válido", XFErrorMessage(error)); return; }
+-                NSString *message = [NSString stringWithFormat:@"App: %@\nDestino: %@\nArchivo elegido: %@\nTamaño: %lu bytes\n\nSe conservará el original hasta verificar el reemplazo. Cierra la app de destino durante la operación.\n\nSi se interrumpe, vuelve a conectar para recuperar el original. No desinstales XitForge mientras haya una recuperación pendiente.", application, target, sourceName, (unsigned long)payload.length];
+-                UIAlertController *confirmation = [UIAlertController alertControllerWithTitle:@"Confirmar reemplazo" message:message preferredStyle:UIAlertControllerStyleAlert];
+-                [confirmation addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) { [self setBusyUI:NO]; }]];
+-                [confirmation addAction:[UIAlertAction actionWithTitle:@"Reemplazar" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+-                    [self replaceKnownFileAtPath:target application:application data:payload];
+-                }]];
+-                [self presentViewController:confirmation animated:YES completion:nil];
+-            };
+-            if (self.presentedViewController == controller) [controller dismissViewControllerAnimated:YES completion:showResult];
+-            else showResult();
++            typeof(self) owner = weakSelf;
++            if (!owner || owner.replacementRead != request) return;
++            owner.replacementRead = nil;
++            owner.navigationItem.prompt = nil;
++            if (!owner.view.window || owner.navigationController.topViewController != owner) { [owner setBusyUI:NO]; return; }
++            if (request.shouldStop || !payload) {
++                [owner setBusyUI:NO];
++                XFPresentError(owner, @"Archivo elegido no válido", request.shouldStop ? @"La lectura superó los 30 segundos. Descarga el archivo y vuelve a seleccionarlo." : XFErrorMessage(error));
++                return;
++            }
++            [owner setBusyUI:YES];
++            NSString *message = [NSString stringWithFormat:@"App: %@\nDestino: %@\nArchivo nuevo: %@\nTamaño: %lu bytes\n\nEl archivo elegido sustituirá el contenido del destino. Se conservará el original hasta verificar el reemplazo. Cierra la app de destino durante la operación.\n\nSi se interrumpe, vuelve a conectar para recuperar el original. No desinstales XitForge mientras haya una recuperación pendiente.", application, target, sourceName, (unsigned long)payload.length];
++            UIAlertController *confirmation = [UIAlertController alertControllerWithTitle:@"Confirmar reemplazo" message:message preferredStyle:UIAlertControllerStyleAlert];
++            [confirmation addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) { [owner setBusyUI:NO]; }]];
++            [confirmation addAction:[UIAlertAction actionWithTitle:@"Reemplazar" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
++                [owner replaceKnownFileAtPath:target application:application data:payload];
++            }]];
++            [owner presentViewController:confirmation animated:YES completion:nil];
+         });
+     });
+ }
+@@ -535,6 +640,86 @@
+             XFPresentError(self, replaced ? @"Archivo reemplazado" : @"No se pudo reemplazar", detail);
+             // Do not refresh LIST here: a denied listing must not replace the
+             // write/recovery result or erase the operation diagnostics.
++        });
++    });
++}
++
++- (void)confirmDeleteForPath:(NSString *)path {
++    if (self.busy) return;
++    NSError *error = nil;
++    NSString *target = XFReplacementRelativePath(path, &error);
++    if (!target) { XFPresentError(self, @"Ruta de eliminación no válida", XFErrorMessage(error)); return; }
++    NSString *application = [self.applicationID copy];
++    [self setBusyUI:YES];
++    NSString *message = [NSString stringWithFormat:@"App: %@\nArchivo: %@\n\nSe retirará este archivo de su ubicación y se conservará una copia original en XitForge. Solo admite archivos de hasta 64 MiB, no carpetas.\n\nCierra la app de destino. Si la operación se interrumpe, usa Restaurar original pendiente para esta misma ruta. Guarda la copia antes de desinstalar XitForge.", application, target];
++    UIAlertController *confirmation = [UIAlertController alertControllerWithTitle:@"¿Eliminar este archivo?" message:message preferredStyle:UIAlertControllerStyleAlert];
++    [confirmation addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) { [self setBusyUI:NO]; }]];
++    [confirmation addAction:[UIAlertAction actionWithTitle:@"Eliminar archivo" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
++        [self deleteKnownFileAtPath:target application:application];
++    }]];
++    void (^showConfirmation)(void) = ^{ [self presentViewController:confirmation animated:YES completion:nil]; };
++    if ([self.presentedViewController isKindOfClass:UIAlertController.class]) [self.presentedViewController dismissViewControllerAnimated:YES completion:showConfirmation];
++    else showConfirmation();
++}
++
++- (void)deleteKnownFileAtPath:(NSString *)path application:(NSString *)application {
++    dispatch_async(self.operationQueue, ^{
++        NSError *error = nil;
++        BOOL removed = [self.backend deleteFileForApplication:application relativePath:path error:&error];
++        BOOL absent = self.backend.lastDeletionAbsenceConfirmed;
++        NSURL *backup = self.backend.lastDeletedFileBackupURL;
++        NSString *warning = self.backend.lastDirectoryWarning;
++        BOOL connected = self.backend.connected; BOOL paired = self.backend.hasPairingRecord;
++        dispatch_async(dispatch_get_main_queue(), ^{
++            [self setBusyUI:NO];
++            [self.connectionStatus showConnected:connected pairingAvailable:paired];
++            self.directoryWarning = warning;
++            [self.view setNeedsLayout];
++            NSString *title = !removed ? @"No se completó la eliminación" : (absent ? @"Archivo eliminado" : @"Archivo trasladado al respaldo");
++            NSString *detail = removed ? [NSString stringWithFormat:@"App: %@\nArchivo: %@\n\n%@", application, path,
++                absent ? @"Se confirmó que la ruta ya no contiene el archivo. La copia original se conserva en XitForge." : @"El original se recuperó en el respaldo. iOS no permitió confirmar si la ruta de la app ya está ausente."] : XFErrorMessage(error);
++            if (warning.length && [detail rangeOfString:warning].location == NSNotFound) detail = [detail stringByAppendingFormat:@"\n\n%@", warning];
++            UIAlertController *result = [UIAlertController alertControllerWithTitle:title message:detail preferredStyle:UIAlertControllerStyleAlert];
++            if (backup) [result addAction:[UIAlertAction actionWithTitle:@"Guardar copia original" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
++                [self exportDeletedBackup:backup filename:path.lastPathComponent];
++            }]];
++            [result addAction:[UIAlertAction actionWithTitle:@"Entendido" style:UIAlertActionStyleCancel handler:nil]];
++            [self presentViewController:result animated:YES completion:nil];
++            // Keep this result visible even where LIST is denied.
++        });
++    });
++}
++
++- (void)exportDeletedBackup:(NSURL *)backup filename:(NSString *)filename {
++    [self setBusyUI:YES];
++    dispatch_async(self.operationQueue, ^{
++        NSError *error = nil;
++        NSURL *directory = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
++            URLByAppendingPathComponent:[@"XitForge-Backups/" stringByAppendingString:NSUUID.UUID.UUIDString] isDirectory:YES];
++        NSURL *fileURL = nil;
++        if ([NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:YES
++            attributes:@{NSFileProtectionKey:NSFileProtectionCompleteUntilFirstUserAuthentication} error:&error]) {
++            fileURL = [directory URLByAppendingPathComponent:filename isDirectory:NO];
++            if (![NSFileManager.defaultManager copyItemAtURL:backup toURL:fileURL error:&error]) fileURL = nil;
++        }
++        dispatch_async(dispatch_get_main_queue(), ^{
++            [self setBusyUI:NO];
++            if (!fileURL) { XFPresentError(self, @"No se pudo exportar la copia", XFErrorMessage(error)); return; }
++            UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:@[fileURL] applicationActivities:nil];
++            share.completionWithItemsHandler = ^(UIActivityType activityType, BOOL completed, NSArray *items, NSError *activityError) {
++                dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
++                    // Remove only this share's temporary copy. The durable
++                    // original supplied by the backend is never handed off.
++                    [NSFileManager.defaultManager removeItemAtURL:fileURL error:NULL];
++                    NSArray *remaining = [NSFileManager.defaultManager contentsOfDirectoryAtURL:directory includingPropertiesForKeys:nil options:0 error:NULL];
++                    if (remaining && !remaining.count) [NSFileManager.defaultManager removeItemAtURL:directory error:NULL];
++                });
++            };
++            share.popoverPresentationController.sourceView = self.view;
++            share.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
++            void (^presentShare)(void) = ^{ [self presentViewController:share animated:YES completion:nil]; };
++            if ([self.presentedViewController isKindOfClass:UIAlertController.class]) [self.presentedViewController dismissViewControllerAnimated:YES completion:presentShare];
++            else presentShare();
+         });
+     });
+ }
+@@ -581,6 +766,7 @@
+         [menu addAction:[UIAlertAction actionWithTitle:@"Previsualizar archivo" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { [self readFile:name export:NO]; }]];
+         [menu addAction:[UIAlertAction actionWithTitle:@"Exportar archivo" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { [self readFile:name export:YES]; }]];
+         [menu addAction:[UIAlertAction actionWithTitle:@"Reemplazar archivo" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { [self chooseReplacementForPath:XFChildPath(self.relativePath, name)]; }]];
++        [menu addAction:[UIAlertAction actionWithTitle:@"Eliminar archivo" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { [self confirmDeleteForPath:XFChildPath(self.relativePath, name)]; }]];
+     }
+     [menu addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil]];
+     menu.popoverPresentationController.sourceView = self.tableView;
+--- 1.3.0/XFATCDirectory.h
++++ 1.3.1/XFATCDirectory.h
+@@ -12,6 +12,12 @@
+    by one metadata query after app-directory AFC 106/8 or 106/10, before recovery.
+    A matching link target does not prove target resolution or directory access. */
+ @property (nonatomic, readonly) NSDictionary *protocolDiagnostics;
++/* A durable local copy for an intentionally committed deletion. It is retained
++   across reconnects and is never included in copied connection diagnostics. */
++@property (nonatomic, readonly, nullable) NSURL *deletedFileBackupURL;
++/* YES only when AFC positively reported the selected destination absent after
++   relocation. NO means a retained relocation, not proof of target absence. */
++@property (nonatomic, readonly) BOOL deletionAbsenceConfirmed;
+ - (instancetype)initWithAdapter:(AdapterHandle *)adapter
+                              rsd:(RsdHandshakeHandle *)rsd
+                       journalURL:(NSURL *)journalURL;
+@@ -27,6 +33,10 @@
+ - (nullable NSData *)readAbsoluteFile:(NSString *)path maximumBytes:(NSUInteger)maximumBytes
+                                error:(NSError **)error;
+ - (BOOL)replaceAbsoluteFile:(NSString *)path data:(NSData *)data error:(NSError **)error;
++/* Retains the original in owned staging and a durable local copy. TRUE means
++   committed retained relocation; consult deletionAbsenceConfirmed for absence.
++   Committed deletion is never automatically restored on reconnect. */
++- (BOOL)deleteAbsoluteFile:(NSString *)path error:(NSError **)error;
+ - (BOOL)recoverPendingKnownFileAtPath:(NSString *)path error:(NSError **)error;
+ @end
+ NS_ASSUME_NONNULL_END
+--- 1.3.0/XFATCDirectory.m
++++ 1.3.1/XFATCDirectory.m
+@@ -126,12 +126,16 @@
+ @property (nonatomic, copy) NSDictionary *temporaryDirectoryFailure;
+ @property (nonatomic, copy) NSDictionary *generatedAppLinkProbe;
+ @property (nonatomic, copy) NSDictionary *fileOperationDiagnostics;
++@property (nonatomic, readwrite, nullable) NSURL *deletedFileBackupURL;
++@property (nonatomic, readwrite) BOOL deletionAbsenceConfirmed;
+ - (BOOL)validKnownFileJournal:(NSDictionary *)journal;
+ - (NSArray<NSString *> *)knownFileAssetIDs:(NSDictionary *)journal;
+ - (NSDictionary *)ownerRecord;
+ - (BOOL)verifyRemoteOwner:(NSError **)error;
+ - (BOOL)validJournal:(NSDictionary *)journal;
+ - (BOOL)recoverKnownFile:(BOOL)explicitRestore error:(NSError **)error;
++- (BOOL)publishDeleteReceipt:(NSError **)error;
++- (void)loadLatestDeletedBackup;
+ @end
+ 
+ @implementation XFATCDirectory
+@@ -590,7 +594,7 @@
+        ![target.stringByDeletingLastPathComponent isEqual:[@"/" stringByAppendingString:journal[@"tail"]]]||
+        !XFATCComponent(target.lastPathComponent)||
+        [target componentsSeparatedByString:@"/"].count<8)return NO;
+-    if(![@[@"read",@"replace"] containsObject:file[@"operation"]])return NO;
++    if(![@[@"read",@"replace",@"delete"] containsObject:file[@"operation"]])return NO;
+     for(NSString *pair in @[@"Original",@"Incoming",@"Verify"])
+         if(![file[pair] isEqual:[backup stringByAppendingPathComponent:[@"File" stringByAppendingString:pair]]])return NO;
+     if(![file[@"snapshot"] isEqual:[token stringByAppendingString:@"-original.bin"]])return NO;
+@@ -604,7 +608,17 @@
+     if([file[@"newVerified"] boolValue]&&(!XFATCHash(file[@"newDigest"])||
+        ![file[@"newSize"] isKindOfClass:NSNumber.class]||[file[@"newSize"] unsignedLongLongValue]>64u*1024u*1024u))return NO;
+     if([file[@"originalReturned"] boolValue]&&![file[@"returnOriginalIntent"] boolValue])return NO;
+-    if([file[@"committed"] boolValue]&&(![file[@"newVerified"] boolValue]||![file[@"returnNewIntent"] boolValue]))return NO;
++    if([file[@"operation"] isEqual:@"delete"]) {
++        if(![file[@"targetAbsenceConfirmed"] isKindOfClass:NSNumber.class]||
++           ![file[@"deleteReceiptWritten"] isKindOfClass:NSNumber.class]||
++           [file[@"incomingPlaceIntent"] boolValue]||[file[@"verifyMoveIntent"] boolValue]||
++           [file[@"newVerified"] boolValue]||[file[@"returnNewIntent"] boolValue]||file[@"newDigest"]||file[@"newSize"])return NO;
++        if([file[@"committed"] boolValue]&&(![file[@"originalMoveIntent"] boolValue]||
++           ![file[@"originalObserved"] boolValue]||![file[@"originalCaptured"] boolValue]||
++           [file[@"returnOriginalIntent"] boolValue]||[file[@"originalReturned"] boolValue]||
++           ![file[@"deletedAt"] isKindOfClass:NSDate.class]))return NO;
++        if([file[@"deleteReceiptWritten"] boolValue]&&![file[@"committed"] boolValue])return NO;
++    } else if([file[@"committed"] boolValue]&&(![file[@"newVerified"] boolValue]||![file[@"returnNewIntent"] boolValue]))return NO;
+     NSDictionary *manifest=[journal[@"fileManifest"] isKindOfClass:NSDictionary.class]?journal[@"fileManifest"]:nil;
+     NSArray *ids=[self knownFileAssetIDs:journal];
+     if(ids.count!=5)return NO;
+@@ -719,6 +733,91 @@
+     file[@"originalCaptured"]=@YES;
+     return [self saveJournal:@"durable original file captured" error:error];
+ }
++- (NSData *)validatedLocalOriginal:(NSDictionary *)record error:(NSError **)error {
++    NSString *snapshot=record[@"snapshot"];
++    NSNumber *size=record[@"originalSize"];
++    if(![snapshot isKindOfClass:NSString.class]||!XFATCComponent(snapshot)||
++       ![size isKindOfClass:NSNumber.class]||size.unsignedLongLongValue>64u*1024u*1024u||
++       !XFATCHash(record[@"originalDigest"])) {
++        if(error)*error=XFATCError(2222,@"La copia original no tiene un registro válido.");return nil;
++    }
++    NSURL *url=[self.journalURL URLByAppendingPathComponent:snapshot];
++    NSDictionary *attributes=[NSFileManager.defaultManager attributesOfItemAtPath:url.path error:error];
++    if(![attributes[NSFileType] isEqual:NSFileTypeRegular]||
++       [attributes[NSFileSize] unsignedLongLongValue]!=size.unsignedLongLongValue) {
++        if(error&&!*error)*error=XFATCError(2222,@"La copia original no es legible o cambió de tamaño.");return nil;
++    }
++    NSData *bytes=[NSData dataWithContentsOfURL:url options:0 error:error];
++    if(!bytes||bytes.length!=size.unsignedLongLongValue||![XFATCDigest(bytes) isEqual:record[@"originalDigest"]]) {
++        if(error&&!*error)*error=XFATCError(2222,@"La copia original no coincide con los bytes conservados.");return nil;
++    }
++    return bytes;
++}
++- (BOOL)validDeleteReceipt:(NSDictionary *)receipt name:(NSString *)name {
++    if(![receipt isKindOfClass:NSDictionary.class]||receipt.count!=12||
++       ![receipt[@"module"] isEqual:@"XitForgeATCFileDelete"]||![receipt[@"version"] isEqual:@1]||
++       ![receipt[@"operation"] isEqual:@"delete"]||![receipt[@"namespace"] isEqual:self.journalURL.lastPathComponent])return NO;
++    NSString *token=[receipt[@"token"] isKindOfClass:NSString.class]?receipt[@"token"]:nil;
++    NSString *target=[receipt[@"target"] isKindOfClass:NSString.class]?receipt[@"target"]:nil;
++    if(!token||![[NSUUID alloc] initWithUUIDString:token]||
++       ![name isEqual:[NSString stringWithFormat:@"deleted-%@.plist",token]]||
++       !target.UTF8String||![target isEqual:XFATCPath(target)]||[target componentsSeparatedByString:@"/"].count<8||
++       ![receipt[@"snapshot"] isEqual:[token stringByAppendingString:@"-original.bin"]]||
++       ![receipt[@"remoteOriginal"] isEqual:[NSString stringWithFormat:@"xf_atc_state_%@/FileOriginal",token]]||
++       !XFATCHash(receipt[@"originalDigest"])||![receipt[@"originalSize"] isKindOfClass:NSNumber.class]||
++       [receipt[@"originalSize"] unsignedLongLongValue]>64u*1024u*1024u||
++       ![receipt[@"targetAbsenceConfirmed"] isKindOfClass:NSNumber.class]||![receipt[@"deletedAt"] isKindOfClass:NSDate.class])return NO;
++    return YES;
++}
++- (BOOL)publishDeleteReceipt:(NSError **)error {
++    NSDictionary *file=self.journal[@"knownFile"];
++    if(![file[@"operation"] isEqual:@"delete"]||![file[@"committed"] boolValue]||
++       ![self validJournal:self.journal]||![self validatedLocalOriginal:file error:error]) {
++        if(error&&!*error)*error=XFATCError(2222,@"No se pudo verificar la copia del archivo retirado.");return NO;
++    }
++    NSString *name=[NSString stringWithFormat:@"deleted-%@.plist",self.journal[@"token"]];
++    NSDictionary *receipt=@{@"module":@"XitForgeATCFileDelete",@"version":@1,@"operation":@"delete",
++        @"token":self.journal[@"token"],@"namespace":self.journal[@"namespace"],@"target":file[@"target"],
++        @"snapshot":file[@"snapshot"],@"remoteOriginal":file[@"Original"],@"originalDigest":file[@"originalDigest"],
++        @"originalSize":file[@"originalSize"],@"targetAbsenceConfirmed":file[@"targetAbsenceConfirmed"],@"deletedAt":file[@"deletedAt"]};
++    if(![self validDeleteReceipt:receipt name:name])return NO;
++    NSURL *url=[self.journalURL URLByAppendingPathComponent:name];
++    if([NSFileManager.defaultManager fileExistsAtPath:url.path]) {
++        NSDictionary *attributes=[NSFileManager.defaultManager attributesOfItemAtPath:url.path error:error];
++        if(![attributes[NSFileType] isEqual:NSFileTypeRegular]||[attributes[NSFileSize] unsignedLongLongValue]>32768)return NO;
++        NSData *prior=[NSData dataWithContentsOfURL:url options:0 error:error];
++        id value=prior?[NSPropertyListSerialization propertyListWithData:prior options:NSPropertyListImmutable format:NULL error:error]:nil;
++        if(![value isEqual:receipt]){if(error&&!*error)*error=XFATCError(2223,@"El comprobante existente no coincide; se conservó la copia sin reemplazarlo.");return NO;}
++    } else {
++        NSData *encoded=XFATCPlist(receipt,error);
++        if(!encoded||![encoded writeToURL:url options:NSDataWritingWithoutOverwriting|NSDataWritingFileProtectionCompleteUntilFirstUserAuthentication error:error])return NO;
++        chmod(url.fileSystemRepresentation,0600);
++    }
++    if(!XFATCSyncURL(url,error)||!XFATCSyncURL(self.journalURL,error))return NO;
++    self.deletedFileBackupURL=[self.journalURL URLByAppendingPathComponent:file[@"snapshot"]];
++    self.deletionAbsenceConfirmed=[file[@"targetAbsenceConfirmed"] boolValue];
++    self.journal[@"knownFile"][@"deleteReceiptWritten"]=@YES;
++    return [self saveJournal:@"committed deletion receipt and original retained durably" error:error];
++}
++- (void)loadLatestDeletedBackup {
++    self.deletedFileBackupURL=nil;self.deletionAbsenceConfirmed=NO;
++    NSArray<NSURL *> *files=[NSFileManager.defaultManager contentsOfDirectoryAtURL:self.journalURL includingPropertiesForKeys:nil
++        options:NSDirectoryEnumerationSkipsHiddenFiles error:NULL];
++    NSDictionary *latest=nil;
++    for(NSURL *url in files) {
++        if(![url.lastPathComponent hasPrefix:@"deleted-"]||![url.pathExtension isEqual:@"plist"])continue;
++        NSDictionary *attributes=[NSFileManager.defaultManager attributesOfItemAtPath:url.path error:NULL];
++        if(![attributes[NSFileType] isEqual:NSFileTypeRegular]||[attributes[NSFileSize] unsignedLongLongValue]>32768)continue;
++        NSData *data=[NSData dataWithContentsOfURL:url options:0 error:NULL];
++        id value=data?[NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:NULL error:NULL]:nil;
++        if(![self validDeleteReceipt:value name:url.lastPathComponent])continue;
++        if(!latest||[value[@"deletedAt"] compare:latest[@"deletedAt"]]==NSOrderedDescending)latest=value;
++    }
++    if(latest&&[self validatedLocalOriginal:latest error:NULL]) {
++        self.deletedFileBackupURL=[self.journalURL URLByAppendingPathComponent:latest[@"snapshot"]];
++        self.deletionAbsenceConfirmed=[latest[@"targetAbsenceConfirmed"] boolValue];
++    }
++}
+ - (BOOL)returnKnownOriginal:(NSError **)error {
+     NSMutableDictionary *file=self.journal[@"knownFile"];
+     file[@"returnOriginalIntent"]=@YES;
+@@ -743,11 +842,16 @@
+     self.fileOperationDiagnostics=@{@"operation":file[@"operation"]?:@"Unknown",@"stage":stage,
+         @"code":@(error.code),@"originalCaptured":file[@"originalCaptured"]?:@NO,
+         @"originalReturned":file[@"originalReturned"]?:@NO,@"replacementVerified":file[@"newVerified"]?:@NO,
+-        @"committed":file[@"committed"]?:@NO};
++        @"committed":file[@"committed"]?:@NO,
++        @"targetAbsenceConfirmed":file[@"targetAbsenceConfirmed"]?:@NO};
+ }
+ - (NSError *)knownFilePending:(NSString *)message {
++    NSDictionary *file=self.journal[@"knownFile"];
++    BOOL committedDelete=[self validKnownFileJournal:self.journal]&&
++        [file[@"operation"] isEqual:@"delete"]&&[file[@"committed"] boolValue];
+     return [NSError errorWithDomain:@"XitForge.ATCDirectory" code:2210
+-        userInfo:@{NSLocalizedDescriptionKey:message,@"KnownFileRecoveryPending":@YES}];
++        userInfo:@{NSLocalizedDescriptionKey:message,@"KnownFileRecoveryPending":@YES,
++            @"KnownFileDeleteCommitted":@(committedDelete)}];
+ }
+ - (BOOL)prepareKnownFile:(NSString *)target operation:(NSString *)operation error:(NSError **)error {
+     self.protocolEvents=[NSMutableArray new];self.protocolPhase=@"KnownFileRecovery";
+@@ -771,6 +875,9 @@
+         @"Verify":[backup stringByAppendingPathComponent:@"FileVerify"],
+         @"originalMoveIntent":@NO,@"originalObserved":@NO,@"originalCaptured":@NO,@"returnOriginalIntent":@NO,@"originalReturned":@NO,
+         @"incomingPlaceIntent":@NO,@"verifyMoveIntent":@NO,@"newVerified":@NO,@"returnNewIntent":@NO,@"committed":@NO}];
++    if([operation isEqual:@"delete"]) {
++        file[@"targetAbsenceConfirmed"]=@NO;file[@"deleteReceiptWritten"]=@NO;
++    }
+     self.journal=[NSMutableDictionary dictionaryWithDictionary:@{
+         @"version":@1,@"archiveProfile":@"3105-directory-v1",@"token":token,@"namespace":self.journalURL.lastPathComponent,
+         @"rsdUUID":self.deviceID,@"source":source,@"link":link,@"backup":backup,@"tail":tail,
+@@ -850,6 +957,10 @@
+     if(!file)return YES;
+     if(![file[@"originalMoveIntent"] boolValue])return YES; // No app-file movement was authorized.
+     if(![self validKnownFileJournal:self.journal])return NO;
++    BOOL committedDelete=[file[@"operation"] isEqual:@"delete"]&&[file[@"committed"] boolValue];
++    if(committedDelete&&explicitRestore) {
++        if(error)*error=XFATCError(2224,@"Este archivo se retiró intencionalmente. Su copia sigue conservada; esta acción no volverá a crearlo en la app.");return NO;
++    }
+     BOOL originalMissing=NO,verifyMissing=NO,incomingMissing=NO;
+     NSDictionary *original=[self info:file[@"Original"] missing:&originalMissing error:error];
+     if(!original&&!originalMissing)return NO;
+@@ -857,6 +968,22 @@
+     if(!verify&&!verifyMissing)return NO;
+     NSDictionary *incoming=[self info:file[@"Incoming"] missing:&incomingMissing error:error];
+     if(!incoming&&!incomingMissing)return NO;
++    if(committedDelete) {
++        NSData *local=[self validatedLocalOriginal:file error:error];
++        NSData *remote=original?[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:error]:nil;
++        XFATCFileRecoveryObservation observation={
++            .operation=XFATCFileRecoveryDelete,
++            .original=remote&&[XFATCDigest(remote) isEqual:file[@"originalDigest"]]?XFATCFilePresencePresent:XFATCFilePresenceUnknown,
++            .incoming=incomingMissing?XFATCFilePresenceMissing:XFATCFilePresenceUnknown,
++            .verify=verifyMissing?XFATCFilePresenceMissing:XFATCFilePresenceUnknown,
++            .target=XFATCFilePresenceUnknown,.originalCaptured=local!=nil,.committed=true};
++        if(XFATCClassifyFileRecovery(observation)!=XFATCFileRecoveryDeleteCommitted) {
++            if(error&&!*error)*error=[self knownFilePending:@"El retiro ya se confirmó, pero su respaldo requiere revisión. Se conservaron los datos y no se restaurará el archivo automáticamente."];return NO;
++        }
++        // Retained deletion deliberately keeps both originals and never sends
++        // a FileComplete return, even during reconnect or explicit recovery.
++        return [self publishDeleteReceipt:error];
++    }
+     if([file[@"originalReturned"] boolValue]&&originalMissing){
+         if([file[@"operation"] isEqual:@"read"]&&[file[@"originalCaptured"] boolValue]){
+             XFATCFileRecoveryObservation observation={
+@@ -991,6 +1118,103 @@
+     if(!ok&&error)*error=failure?:XFATCError(2216,@"El reemplazo no se completó. Usa Restaurar original pendiente antes de continuar.");
+     return ok;
+ }
++- (BOOL)verifyKnownTargetLink:(NSError **)error {
++    BOOL missing=NO;
++    NSDictionary *info=[self info:self.journal[@"link"] missing:&missing error:error];
++    NSString *expected=[@"../../../" stringByAppendingString:self.journal[@"tail"]];
++    if(!info||missing||![info[@"kind"] isEqual:@"S_IFLNK"]||![info[@"linkTarget"] isEqual:expected]) {
++        if(error&&!*error)*error=XFATCError(2228,@"No se pudo comprobar el enlace hacia la app. No se declarará que el archivo esté ausente.");return NO;
++    }
++    return YES;
++}
++- (BOOL)knownTargetAbsenceAfterMove:(BOOL *)confirmed error:(NSError **)error {
++    if(confirmed)*confirmed=NO;
++    if(![self verifyKnownTargetLink:error])return NO;
++    AfcFileInfo info={0};
++    IdeviceFfiError *failure=afc_get_file_info(_afc,[self knownFileDestination].UTF8String,&info);
++    @try {
++        if(failure&&failure->code==106&&(failure->sub_code==8||failure->sub_code==10)) {
++            BOOL targetMissing=failure->sub_code==8;
++            // A missing generated link can produce the same AFC 106/8 as a
++            // missing file. Verify its exact target on both sides of the probe.
++            if(![self verifyKnownTargetLink:error])return NO;
++            if(confirmed)*confirmed=targetMissing;
++            return YES; // Permission denial remains Unknown, never absence.
++        }
++        if(failure) {
++            IdeviceFfiError *consumed=failure;failure=NULL;
++            return XFATCConsume(consumed,@"Comprobar la ruta después del traslado",error);
++        }
++        if(error)*error=XFATCError(2225,@"iOS todavía informa un objeto en el destino. No se confirmó el retiro; se conservó el original para recuperación.");
++        return NO;
++    } @finally {
++        afc_file_info_free(&info);
++        if(failure)idevice_error_free(failure);
++    }
++}
++- (BOOL)deleteAbsoluteFile:(NSString *)path error:(NSError **)error {
++    self.deletedFileBackupURL=nil;self.deletionAbsenceConfirmed=NO;
++    NSString *target=XFATCPath(path);
++    if(!target||!XFATCKnownFilePath(target)||!target.UTF8String||[target lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>4096) {
++        if(error)*error=XFATCError(2213,@"Elige la ruta de un archivo dentro de la app. No se pueden eliminar carpetas.");return NO;
++    }
++    NSError *failure=nil;BOOL ok=NO,committedCurrent=NO,currentAbsence=NO;
++    NSURL *currentBackupURL=nil;
++    NSDictionary *currentOriginalRecord=nil;
++    do {
++        if(![self prepareKnownFile:target operation:@"delete" error:&failure])break;
++        // Preparation can load a historical receipt during automatic recovery.
++        // It must never become the backup reported for this new destination.
++        self.deletedFileBackupURL=nil;self.deletionAbsenceConfirmed=NO;
++        if(![self observeKnownOriginal:&failure])break;
++        NSMutableDictionary *file=self.journal[@"knownFile"];
++        NSData *original=[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:&failure];
++        if(!original||![self persistKnownOriginal:original error:&failure])break;
++        BOOL absence=NO;
++        if(![self knownTargetAbsenceAfterMove:&absence error:&failure])break;
++        BOOL incomingMissing=NO,verifyMissing=NO;
++        [self info:file[@"Incoming"] missing:&incomingMissing error:&failure];
++        if(!incomingMissing)break;
++        [self info:file[@"Verify"] missing:&verifyMissing error:&failure];
++        if(!verifyMissing)break;
++        // Recheck the staged original after the durable snapshot and target
++        // probes. A changed backup must remain pending, never committed.
++        NSData *freshOriginal=[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:&failure];
++        if(!freshOriginal)break;
++        if(freshOriginal.length!=[file[@"originalSize"] unsignedLongLongValue]||
++           ![XFATCDigest(freshOriginal) isEqual:file[@"originalDigest"]]) {
++            failure=XFATCError(2229,@"El original cambió antes de confirmar el retiro. Se conservaron los respaldos para recuperación.");break;
++        }
++        XFATCFileRecoveryObservation observation={.operation=XFATCFileRecoveryDelete,
++            .original=XFATCFilePresencePresent,.incoming=XFATCFilePresenceMissing,.verify=XFATCFilePresenceMissing,
++            .target=absence?XFATCFilePresenceMissing:XFATCFilePresenceUnknown,.originalCaptured=true,.committed=true};
++        if(XFATCClassifyFileRecovery(observation)!=XFATCFileRecoveryDeleteCommitted) {
++            failure=XFATCError(2226,@"No se pudo validar el estado del retiro. Se conserva el original para recuperar.");break;
++        }
++        file[@"targetAbsenceConfirmed"]=@(absence);file[@"deletedAt"]=[NSDate date];file[@"committed"]=@YES;
++        if(![self saveJournal:@"intentional retained deletion committed after durable original capture" error:&failure]) {
++            // The durable write may be ambiguous. Never authorize an automatic
++            // return from this in-memory committed state; recovery reloads disk.
++            break;
++        }
++        self.deletedFileBackupURL=[self.journalURL URLByAppendingPathComponent:file[@"snapshot"]];
++        self.deletionAbsenceConfirmed=absence;
++        committedCurrent=YES;currentBackupURL=[self.deletedFileBackupURL copy];currentAbsence=absence;
++        currentOriginalRecord=@{@"snapshot":file[@"snapshot"],@"originalSize":file[@"originalSize"],@"originalDigest":file[@"originalDigest"]};
++        [self recordKnownFileStage:absence?@"DeleteAbsentConfirmed":@"DeleteRelocationRetained" error:nil];
++        ok=YES;
++    } while(0);
++    if(![self finishKnownFileWithError:&failure])ok=NO;
++    BOOL verifiedCurrentBackup=committedCurrent&&[self validatedLocalOriginal:currentOriginalRecord error:NULL]!=nil;
++    if(committedCurrent&&!verifiedCurrentBackup) {
++        ok=NO;
++        if(!failure)failure=XFATCError(2230,@"El retiro se confirmó, pero no se pudo validar la copia local. Se conservó el respaldo remoto para revisión.");
++    }
++    self.deletedFileBackupURL=verifiedCurrentBackup?currentBackupURL:nil;
++    self.deletionAbsenceConfirmed=verifiedCurrentBackup&&currentAbsence;
++    if(!ok&&error)*error=failure?:XFATCError(2227,@"El retiro no se completó. Se conserva el estado para recuperación; no se ha declarado que el archivo esté ausente.");
++    return ok;
++}
+ - (BOOL)recoverPendingKnownFileAtPath:(NSString *)path error:(NSError **)error {
+     NSString *target=XFATCPath(path);
+     if(!target){if(error)*error=XFATCError(2213,@"El destino de recuperación no es una ruta válida de app.");return NO;}
+@@ -1003,7 +1227,10 @@
+     if(![self openAFC:error]||![self verifyRemoteOwner:error]){[self closeAFC];return NO;}
+     if([value[@"knownFile"][@"committed"] boolValue]){
+         [self closeAFC];
+-        if(error)*error=XFATCError(2222,@"El reemplazo ya se verificó. El original está respaldado; la recuperación pendiente corresponde al estado temporal de sincronización, no a un original trasladado.");return NO;}
++        NSString *message=[value[@"knownFile"][@"operation"] isEqual:@"delete"]?
++            @"El archivo ya se retiró intencionalmente y se conservó una copia. Volver a conectar completa la limpieza pendiente sin restaurarlo en la app.":
++            @"El reemplazo ya se verificó. El original está respaldado; la recuperación pendiente corresponde al estado temporal de sincronización, no a un original trasladado.";
++        if(error)*error=XFATCError(2222,message);return NO;}
+     BOOL ok=[self recoverKnownFile:YES error:error];
+     [self closeAFC];
+     if(ok)ok=[self recoverPendingTransaction:error];
+@@ -1022,7 +1249,7 @@
+     if(![journal[@"identifier"] isEqual:[NSString stringWithFormat:@"../../%@/p0/p1/p2/link",journal[@"source"]]])return NO;
+     if(journal[@"knownFile"]&&![self validKnownFileJournal:journal])return NO;
+     for(NSString *key in @[@"booksOriginallyPresent",@"booksRestored",@"cleanupComplete"])if(![journal[key] isKindOfClass:NSNumber.class])return NO;
+-    for(NSString *key in @[@"booksIsolationStarted",@"temporaryBooksQuarantined",@"originalRestoredWithChanges"])if(journal[key]&&![journal[key] isKindOfClass:NSNumber.class])return NO;
++    for(NSString *key in @[@"booksIsolationStarted",@"temporaryBooksQuarantined",@"originalRestoredWithChanges",@"deleteBackupRetained"])if(journal[key]&&![journal[key] isKindOfClass:NSNumber.class])return NO;
+     if(![journal[@"booksOriginalInfo"] isKindOfClass:NSDictionary.class])return NO;
+     if([journal[@"booksOriginallyPresent"] boolValue]&&![journal[@"booksOriginalInfo"][@"kind"] isEqual:@"S_IFDIR"])return NO;
+     if([journal[@"booksOriginallyPresent"] boolValue])for(NSString *key in @[@"size",@"creation",@"mtimeNS"])if(![journal[@"booksOriginalInfo"][key] isKindOfClass:NSNumber.class])return NO;
+@@ -1253,6 +1480,8 @@
+ - (BOOL)finishRecovery:(NSError **)error {
+     if(![self verifyRemoteOwner:error])return NO;
+     if(self.journal[@"knownFile"]&&![self recoverKnownFile:NO error:error])return NO;
++    BOOL committedDelete=[self.journal[@"knownFile"][@"operation"] isEqual:@"delete"]&&
++        [self.journal[@"knownFile"][@"committed"] boolValue];
+     if(![self restoreBooks:error])return NO;
+     NSError *stageError=nil,*booksError=nil;
+     BOOL stageClean=[self cleanGeneratedStage:&stageError];
+@@ -1262,7 +1491,7 @@
+     BOOL workingClean=[self cleanExactTemporaryBooks:working error:&booksError];
+     BOOL airlockClean=[self cleanCreatedAirlock:&stageError];
+     BOOL cleanupComplete=stageClean&&booksClean&&workingClean&&airlockClean;
+-    if(cleanupComplete) {
++    if(cleanupComplete&&!committedDelete) {
+         BOOL absent=NO;NSDictionary *backupInfo=[self info:self.journal[@"backup"] missing:&absent error:&stageError];
+         NSArray *remaining=backupInfo?[self names:self.journal[@"backup"] error:&stageError]:nil;
+         if(!absent&&(!remaining||remaining.count>1||(remaining.count==1&&![remaining.firstObject isEqual:@"owner.plist"])))cleanupComplete=NO;
+@@ -1271,6 +1500,7 @@
+             cleanupComplete=[self removeOwned:owner expectedKind:@"S_IFREG" error:&stageError]&&[self removeOwned:self.journal[@"backup"] expectedKind:@"S_IFDIR" error:&stageError];
+         }
+     }
++    if(committedDelete)self.journal[@"deleteBackupRetained"]=@YES;
+     self.journal[@"cleanupComplete"]=@(cleanupComplete);
+     if(!cleanupComplete) {
+         self.lastWarning=@"Books se restauró y verificó. Se conservaron archivos temporales de sincronización para no descartar cambios del iPhone.";
+@@ -1300,6 +1530,7 @@
+         if(!XFATCSyncURL(url,error)||!XFATCSyncURL(self.journalURL,error))return NO;
+     }
+     if(![[NSFileManager defaultManager] removeItemAtURL:self.activeURL error:error])return NO;
++    if(committedDelete&&!XFATCSyncURL(self.journalURL,error))return NO;
+     if(cleanupComplete)for(NSString *path in XFATCTrackedFiles()){
+         NSDictionary *row=self.journal[@"trackedPreimage"][path];
+         if([row[@"exists"] boolValue]&&row[@"snapshot"])[[NSFileManager defaultManager] removeItemAtURL:[self.journalURL URLByAppendingPathComponent:row[@"snapshot"]] error:NULL];
+@@ -1309,7 +1540,7 @@
+ }
+ - (BOOL)recoverPendingTransaction:(NSError **)error {
+     self.lastWarning=nil;
+-    if(![[NSFileManager defaultManager] fileExistsAtPath:self.activeURL.path])return YES;
++    if(![[NSFileManager defaultManager] fileExistsAtPath:self.activeURL.path]){[self loadLatestDeletedBackup];return YES;}
+     NSData *data=[NSData dataWithContentsOfURL:self.activeURL options:0 error:error];if(!data)return NO;
+     id value=[NSPropertyListSerialization propertyListWithData:data options:NSPropertyListMutableContainersAndLeaves format:NULL error:error];
+     if(![value isKindOfClass:NSMutableDictionary.class]||![self validJournal:value]){
+--- 1.3.0/XFATCFileRecovery.h
++++ 1.3.1/XFATCFileRecovery.h
+@@ -14,7 +14,8 @@
+ 
+ typedef enum {
+     XFATCFileRecoveryRead = 0,
+-    XFATCFileRecoveryReplace = 1
++    XFATCFileRecoveryReplace = 1,
++    XFATCFileRecoveryDelete = 2
+ } XFATCFileRecoveryOperation;
+ 
+ typedef struct {
+@@ -38,7 +39,8 @@
+     XFATCFileRecoveryPending = 0,
+     XFATCFileRecoveryReadReturnConfirmed = 1,
+     XFATCFileRecoveryWriteCommitted = 2,
+-    XFATCFileRecoveryOriginalRestoreCandidate = 3
++    XFATCFileRecoveryOriginalRestoreCandidate = 3,
++    XFATCFileRecoveryDeleteCommitted = 4
+ } XFATCFileRecoveryDecision;
+ 
+ static inline bool XFATCFileRecoveryPresenceValid(XFATCFilePresence presence) {
+@@ -51,11 +53,20 @@
+    atomic no-clobber placement or that the app has not changed the destination.
+    RestoreCandidate still needs a caller-controlled return operation; without
+    an atomic no-clobber facility, target absence alone cannot prevent races.
+-   Pending retains original/local backup and journal; never claim rollback. */
++   Pending retains original/local backup and journal; never claim rollback.
++   DeleteCommitted means a durable delete decision with the validated original
++   retained in staging. Target Unknown proves only that relocation was retained;
++   only a fresh Target Missing observation confirms destination absence. Neither
++   result grants permission to remove the staged original or its local backup.
++   A delete decision must never trigger automatic restoration, including when
++   later observations are Pending; the caller must preserve the durable commit
++   flag. Before that flag is durable, an exact, explicitly authorized restoration
++   remains a separate operation controlled by the caller. */
+ static inline XFATCFileRecoveryDecision XFATCClassifyFileRecovery(
+     XFATCFileRecoveryObservation state) {
+     if ((state.operation != XFATCFileRecoveryRead &&
+-         state.operation != XFATCFileRecoveryReplace) ||
++         state.operation != XFATCFileRecoveryReplace &&
++         state.operation != XFATCFileRecoveryDelete) ||
+         !XFATCFileRecoveryPresenceValid(state.original) ||
+         !XFATCFileRecoveryPresenceValid(state.incoming) ||
+         !XFATCFileRecoveryPresenceValid(state.verify) ||
+@@ -64,6 +75,19 @@
+         state.incoming == XFATCFilePresenceUnknown ||
+         state.verify == XFATCFilePresenceUnknown ||
+         !state.originalCaptured) {
++        return XFATCFileRecoveryPending;
++    }
++
++    if (state.operation == XFATCFileRecoveryDelete) {
++        if (state.committed &&
++            state.original == XFATCFilePresencePresent &&
++            state.incoming == XFATCFilePresenceMissing &&
++            state.verify == XFATCFilePresenceMissing &&
++            state.target != XFATCFilePresencePresent &&
++            !state.returnOriginalIntent && !state.placementIntent &&
++            !state.returnReplacementIntent && !state.replacementVerified) {
++            return XFATCFileRecoveryDeleteCommitted;
++        }
+         return XFATCFileRecoveryPending;
+     }
+ 
+--- 1.3.0/XFATCFileRecoveryFixtures.c
++++ 1.3.1/XFATCFileRecoveryFixtures.c
+@@ -7,10 +7,12 @@
+ #define P XFATCFilePresencePresent
+ #define R XFATCFileRecoveryRead
+ #define W XFATCFileRecoveryReplace
++#define D XFATCFileRecoveryDelete
+ #define WAIT XFATCFileRecoveryPending
+ #define READ_OK XFATCFileRecoveryReadReturnConfirmed
+ #define WRITE_OK XFATCFileRecoveryWriteCommitted
+ #define RESTORE XFATCFileRecoveryOriginalRestoreCandidate
++#define DELETE_OK XFATCFileRecoveryDeleteCommitted
+ 
+ /* Independent crash/conflict fixtures. Field order after four presences is:
+    captured, verified, returnOriginalIntent, placementIntent,
+@@ -50,7 +52,27 @@
+     {"write mutually conflicting return intents", {W,P,M,M,U,1,1,1,1,1,1}, WAIT},
+     {"write unknown original must be retained", {W,U,M,M,U,1,1,0,1,1,1}, WAIT},
+     {"journal invalid presence discriminant", {W,P,M,M,99,1,1,0,1,1,1}, WAIT},
+-    {"journal invalid operation discriminant", {99,P,M,M,U,1,1,0,1,1,1}, WAIT}
++    {"journal invalid operation discriminant", {99,P,M,M,U,1,1,0,1,1,1}, WAIT},
++    {"delete before original capture stays pending", {D,P,M,M,M,0,0,0,0,0,0}, WAIT},
++    {"delete captured original before commit stays pending", {D,P,M,M,M,1,0,0,0,0,0}, WAIT},
++    {"delete interrupted before commit with uninspectable target", {D,P,M,M,U,1,0,0,0,0,0}, WAIT},
++    {"delete explicitly returning original before commit is caller controlled", {D,P,M,M,M,1,0,1,0,0,0}, WAIT},
++    {"delete committed relocation with uninspectable target", {D,P,M,M,U,1,0,0,0,0,1}, DELETE_OK},
++    {"delete committed and destination positively absent", {D,P,M,M,M,1,0,0,0,0,1}, DELETE_OK},
++    {"delete destination recreated after commit stays pending", {D,P,M,M,P,1,0,0,0,0,1}, WAIT},
++    {"delete original missing is not committed proof while active", {D,M,M,M,U,1,0,0,0,0,1}, WAIT},
++    {"delete original stat failure cannot be disappearance", {D,U,M,M,U,1,0,0,0,0,1}, WAIT},
++    {"delete incoming stat failure retains recovery", {D,P,U,M,U,1,0,0,0,0,1}, WAIT},
++    {"delete verify stat failure retains recovery", {D,P,M,U,U,1,0,0,0,0,1}, WAIT},
++    {"delete unexpected incoming file contradicts commit", {D,P,P,M,U,1,0,0,0,0,1}, WAIT},
++    {"delete unexpected verify file contradicts commit", {D,P,M,P,U,1,0,0,0,0,1}, WAIT},
++    {"delete missing durable original snapshot blocks commit", {D,P,M,M,U,0,0,0,0,0,1}, WAIT},
++    {"delete original return intent conflicts with commit", {D,P,M,M,U,1,0,1,0,0,1}, WAIT},
++    {"delete placement intent conflicts with commit", {D,P,M,M,U,1,0,0,1,0,1}, WAIT},
++    {"delete replacement return intent conflicts with commit", {D,P,M,M,U,1,0,0,0,1,1}, WAIT},
++    {"delete replacement verification conflicts with commit", {D,P,M,M,U,1,1,0,0,0,1}, WAIT},
++    {"delete invalid target discriminant fails closed", {D,P,M,M,99,1,0,0,0,0,1}, WAIT},
++    {"delete invalid original discriminant fails closed", {D,99,M,M,U,1,0,0,0,0,1}, WAIT}
+ };
+ 
+ int main(void) {
+@@ -71,6 +93,24 @@
+         XFATCFileRecoveryObservation committed = {W,o,i,v,d,1,1,0,1,1,1};
+         decision = XFATCClassifyFileRecovery(committed);
+         if (o == U || i != M || v != M || d == M) assert(decision != WRITE_OK);
++
++        /* Delete covers every presence and all six durable flag combinations.
++           A Pending delete never grants restore authority, even after commit. */
++        for (unsigned flags=0; flags<64; ++flags) {
++            XFATCFileRecoveryObservation deletion = {
++                D,o,i,v,d,
++                (flags & 1u) != 0, (flags & 2u) != 0,
++                (flags & 4u) != 0, (flags & 8u) != 0,
++                (flags & 16u) != 0, (flags & 32u) != 0
++            };
++            decision = XFATCClassifyFileRecovery(deletion);
++            bool expectedCommit = o == P && i == M && v == M && d != P &&
++                deletion.originalCaptured && deletion.committed &&
++                !deletion.replacementVerified && !deletion.returnOriginalIntent &&
++                !deletion.placementIntent && !deletion.returnReplacementIntent;
++            assert(decision == (expectedCommit ? DELETE_OK : WAIT));
++            assert(decision != RESTORE && decision != READ_OK && decision != WRITE_OK);
++        }
+     }
+     return 0;
+ }
