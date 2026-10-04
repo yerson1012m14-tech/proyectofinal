@@ -1,0 +1,8 @@
+_OBJC_CLASS_$_XFAirLiftBackend
+_OBJC_METACLASS_$_XFAirLiftBackend
+_OBJC_CLASS_$_XFAirLiftViewController
+_OBJC_METACLASS_$_XFAirLiftViewController
+_OBJC_CLASS_$_XFAirLiftInstaller
+_OBJC_METACLASS_$_XFAirLiftInstaller
+_OBJC_CLASS_$_XFOnDevicePairing
+_OBJC_METACLASS_$_XFOnDevicePairing

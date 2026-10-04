@@ -1,0 +1,48 @@
+XitForge: archivos por tunel
+
+Este modulo utiliza idevice v0.1.68 con extensiones locales para transporte binario, deteccion RSD y recuperacion AFC. Incluye acceso nativo MHA-C2 de solo lectura, CoreDevice FileService, HouseArrest y enumeracion de directorios mediante AirTraffic/ATAirlock. La lectura de archivos mediante AirTraffic no esta incluida.
+
+Referencia de interfaces y comportamiento MHA-C2: MobileHouseArrest-PoC (https://github.com/0xjohnnydev/MobileHouseArrest-PoC) e inspeccion del IPA 3105 suministrado. XFMHAContainerAccess es una implementacion independiente; no incorpora codigo GPL del proyecto 3105. La concesion alternativa BadQuery se limita a los cuatro builds beta reconocidos por ese ejecutable; XFContainerGrant es un puente independiente y solo se usa para lectura de contenedores de apps/grupos validados. Referencia primaria: https://github.com/forcequitOS/bad_query. Los cambios locales de FileService acotan sus operaciones y limitan la reserva de memoria de las descargas.
+
+Copyright 2026 Jackson Coxson
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Referencia del emparejamiento en el dispositivo y adaptacion de GrappaHelper: AirCard-iOS (https://github.com/Mak5er/AirCard-iOS).
+
+Compatibilidad del intercambio AirTraffic: inspeccion del IPA 3105 proporcionado por el usuario. Los 84 bytes de peticion fija CoreFP se usan como datos del protocolo; el modulo y su transporte tienen implementacion propia.
+
+MIT License
+
+Copyright (c) 2026 Johnny Franks
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+XitForge known-file module revision 1.3.1
+The known-file read/replacement/deletion transactions and recovery classifier are
+independently implemented. Protocol interfaces were checked against the
+user-supplied 3105 executable and public AirLift research. No 3105 executable
+code is copied into this module. Reads temporarily relocate existing files.
+Deletion retains a durable local original. The source picker imports a copy,
+with a cancellable, bounded background read after the picker returns.
+
