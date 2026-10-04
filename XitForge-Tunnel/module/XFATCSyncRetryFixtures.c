@@ -10,6 +10,21 @@ static unsigned attempts(const Outcome *outcomes, unsigned count, bool fresh) {
     return 0;
 }
 int main(void) {
+    CHECK(XFATCPreparationTransportFailure(true,109,0));
+    CHECK(XFATCPreparationTransportFailure(true,1,0));
+    CHECK(!XFATCPreparationTransportFailure(false,109,0));
+    CHECK(!XFATCPreparationTransportFailure(false,1,0));
+    CHECK(!XFATCPreparationTransportFailure(true,109,10));
+    CHECK(!XFATCPreparationTransportFailure(true,106,10));
+    CHECK(!XFATCPreparationTransportFailure(true,106,8));
+    CHECK(!XFATCPreparationTransportFailure(true,2116,0));
+    bool timeout=XFATCPreparationTransportFailure(true,109,0);
+    const Outcome timedOut[]={{false,timeout,false},{true,false,true}};
+    const Outcome repeatedTimeout[]={{false,timeout,false},{false,timeout,false},{false,timeout,false},{true,false,true}};
+    const Outcome timeoutAfterMove[]={{false,timeout,true},{true,false,true}};
+    CHECK(attempts(timedOut,2,true)==2);
+    CHECK(attempts(repeatedTimeout,4,true)==3);
+    CHECK(attempts(timeoutAfterMove,2,true)==1);
     const Outcome interrupted[]={{false,true,false},{true,false,true}};
     const Outcome repeated[]={{false,true,false},{false,true,false},{false,true,false},{true,false,true}};
     const Outcome partialSend[]={{false,true,true},{true,false,true}};

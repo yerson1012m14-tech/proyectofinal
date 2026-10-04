@@ -31,7 +31,7 @@ def main():
         binary = build / 'sync-retry'
         subprocess.run([args.cc, *flags, str(source), '-o', str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
-    print('PASS: 6 transport scenarios, retry delays and 48 policy combinations; no iPhone I/O.')
+    print('PASS: 9 transport scenarios, 8 native-error cases, retry delays and 48 policy combinations; no iPhone I/O.')
 
 if __name__ == '__main__':
     main()

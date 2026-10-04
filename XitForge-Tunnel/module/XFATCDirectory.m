@@ -544,9 +544,11 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
             @"code":@(failure.code),@"completed":@(ok),@"fileMoveAttempted":@(self.atcMoveAttempted)}];
         if(self.syncAttempts.count>24)[self.syncAttempts removeObjectAtIndex:0];
         if(ok)return YES;
-        BOOL socketFailure=[failure.domain isEqual:@"XitForge.ATCDirectory"]&&failure.code==1&&
+        BOOL nativeError=[failure.domain isEqual:@"XitForge.ATCDirectory"]&&
             [failure.userInfo[@"NativeSubcode"] isKindOfClass:NSNumber.class];
-        if(!XFATCShouldRetryPreparation((unsigned)attempt,self.tunnelFactory!=nil,socketFailure,self.atcMoveAttempted))break;
+        BOOL transportFailure=XFATCPreparationTransportFailure(nativeError,failure.code,
+            [failure.userInfo[@"NativeSubcode"] longValue]);
+        if(!XFATCShouldRetryPreparation((unsigned)attempt,self.tunnelFactory!=nil,transportFailure,self.atcMoveAttempted))break;
         [self recordProtocolEvent:@"ReconnectBeforeFileMove" command:self.protocolPhase code:failure.code];
         [NSThread sleepForTimeInterval:XFATCSyncRetryDelayMS((unsigned)attempt)/1000.0];
     }
