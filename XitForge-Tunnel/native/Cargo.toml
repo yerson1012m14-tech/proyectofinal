@@ -1,0 +1,15 @@
+[workspace]
+
+resolver = "2"
+members = ["ffi", "idevice", "tests", "tools"]
+
+[profile.release]
+opt-level = "z"
+codegen-units = 1
+lto = true
+panic = "abort"
+
+[patch.crates-io]
+# Only the header-generation build script is disabled in this exact 0.1.6 copy.
+# Its Rust C-ABI implementation remains byte-for-byte original source.
+plist_ffi = { path = "plist_ffi_local" }
