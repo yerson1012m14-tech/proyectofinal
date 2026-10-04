@@ -1,0 +1,9 @@
+module/build/
+native/target/
+native/vendor/
+.test-build/
+__pycache__/
+*.pyc
+*.p12
+*.mobileprovision
+pairing-records/
