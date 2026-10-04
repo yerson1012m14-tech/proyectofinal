@@ -107,7 +107,9 @@ jobs:
           bash XitForge-Tunnel/module/build-module.sh
 
           test -f XitForge-Tunnel/module/build/XFAirLift.dylib
-          xcrun lipo -verify_arch arm64 XitForge-Tunnel/module/build/XFAirLift.dylib
+
+          # Correcto para Xcode 26.x: archivo primero, operación después.
+          xcrun lipo XitForge-Tunnel/module/build/XFAirLift.dylib -verify_arch arm64
 
           echo "=== Dependencias del módulo actualizado ==="
           otool -L XitForge-Tunnel/module/build/XFAirLift.dylib
