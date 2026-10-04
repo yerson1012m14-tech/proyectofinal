@@ -1,29 +1,17 @@
 #import <Foundation/Foundation.h>
 
 /*
- XITFORGE V14 — USAR RUTA BOOKS/AIRTRAFFIC EXACTA
+ XITFORGE V15 — NO FORZAR HOUSE ARREST/AFC
 
- Este archivo reemplaza XFAirLiftFastReplace.m de V10/V11/V12/V13.
+ Este archivo reemplaza XFAirLiftFastReplace.m.
 
- IMPORTANTE:
- - V10/V11/V12/V13 interceptaban replaceFileForApplication y forzaban House Arrest/AFC.
- - En tu iPhone House Arrest/AFC falla para com.dts.freefireth.
- - La prueba manual mostró que el método Books/AirTraffic sí puede eliminar/reemplazar por ruta exacta.
-
- Por eso esta V14 NO instala ningún hook.
- Al no enganchar replaceFileForApplication:, se usa el método original de XFAirLiftBackend.m:
-
-   - (BOOL)replaceFileForApplication:relativePath:data:error:
-
-Ese método usa:
-   AirTraffic / Books / ruta exacta / archivo exacto
-
-No navega carpetas.
-No usa House Arrest/AFC para activar.
-No usa el bypass rápido que estaba fallando.
+ V10/V11/V12/V13 forzaban House Arrest/AFC y en tu caso esa ruta falla.
+ V14 volvió al replace original por Books/AirTraffic.
+ V15 mantiene ese flujo, pero agrega XFAirTrafficFastTimeout.m para que AirTraffic
+ no haga 3 intentos largos ni espere demasiado SyncAllowed.
 */
 
 __attribute__((constructor))
-static void XITForgeV14UseOriginalAirTrafficReplace(void) {
-    NSLog(@"XITFORGE V14: FastReplace desactivado. ACTIVAR usará XFAirLiftBackend original por Books/AirTraffic.");
+static void XITForgeV15UseOriginalAirTrafficReplace(void) {
+    NSLog(@"XITFORGE V15: FastReplace desactivado. Replace usará Books/AirTraffic con timeout rápido.");
 }

@@ -22,6 +22,7 @@ objects=()
 for source in \
   XFAirLiftBackend.m \
   XFAirLiftFastReplace.m \
+  XFAirTrafficFastTimeout.m \
   XFOnDevicePairing.m \
   XFAirLiftViewController.m \
   XFAirLiftInstaller.m \
