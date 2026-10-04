@@ -1,29 +1,27 @@
-XITFORGE — TÚNEL PROFESIONAL
+XITFORGE V7 — VERIFICADO EN EL REPO
 
-SUBE EXACTAMENTE ESTOS 3 ARCHIVOS:
+Lo verificado:
+1. El repo actual todavía tiene el applyOption original en HomeViewController.m.
+2. Ese applyOption todavía llama a destinationURLForOption y puede mostrar el error MCM:
+   "mcm object contained no sandbox token".
+3. El archivo XITForgeForceTunnelFallback.m del repo todavía es la versión vieja: solo intenta hookear una vez en +load.
 
-1) NUEVO
-XitForge-Tunnel/module/XFAirLiftProfessionalUI.m
+Qué trae este ZIP:
+- MiApp/XITForgeForceTunnelFallback.m  -> versión robusta que reintenta el hook.
+- patch_home_direct_v7.py              -> corrige HomeViewController.m directamente para que MCM no aborte antes del Túnel.
 
-2) REEMPLAZAR
-XitForge-Tunnel/module/build-module.sh
+Cómo aplicarlo:
+1. Reemplaza en GitHub:
+   MiApp/XITForgeForceTunnelFallback.m
 
-3) REEMPLAZAR
-.github/workflows/build.yml
+2. En una copia local del repo, pon patch_home_direct_v7.py en la raíz y corre:
+   python3 patch_home_direct_v7.py
 
-NO tienes que reemplazar XFAirLiftViewController.m.
-El archivo nuevo aplica los cambios encima del módulo actual y así evitamos tocar
-el archivo grande que ya contiene todo el sistema de lectura/reemplazo/eliminación.
+3. Sube el HomeViewController.m modificado a GitHub.
 
-CAMBIOS INCLUIDOS:
-- Inicio primero, Túnel segundo, Ajustes tercero.
-- Túnel con estilo negro/rojo XITFORGE.
-- “Túnel: conectado” en rojo en vez de verde.
-- Pairing guardado también en rojo.
-- Catálogo de apps y buscador ocultos.
-- Botón “Conectar túnel”.
-- Botón “Abrir archivos por identificador” para conservar acceso a archivos sin mostrar catálogo.
-- Solicitud de permiso de notificaciones.
-- El PIN de emparejamiento aparece en una notificación cuando se recibe.
-- Ayuda del túnel reescrita más limpia.
-- GitHub Actions recompila el módulo nuevo; ya no empaqueta el prebuilt viejo sin tus cambios.
+4. Corre GitHub Actions otra vez e instala el IPA nuevo.
+
+Comprobación:
+Si después de esto sigue saliendo exactamente:
+"No se pudo abrir el contenedor... mcm object contained no sandbox token"
+entonces el IPA instalado no es el nuevo, porque Home ya no debe abortar con ese error antes de intentar Túnel.
