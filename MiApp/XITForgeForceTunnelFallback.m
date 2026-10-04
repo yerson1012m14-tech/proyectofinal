@@ -6,6 +6,8 @@
 #import "XITForgeFileEngine.h"
 
 static IMP XFOriginalApplyOptionIMP = NULL;
+static BOOL XFHookInstalled = NO;
+static NSInteger XFHookAttempts = 0;
 
 static NSString *XFStringValue(id value) {
     return [value isKindOfClass:NSString.class] ? value : nil;
@@ -103,19 +105,59 @@ static void XFForceTunnelApplyOption(id self, SEL _cmd, id option) {
     }];
 }
 
+static BOOL XFInstallForceTunnelHook(void) {
+    if (XFHookInstalled) return YES;
+
+    Class cls = NSClassFromString(@"XITForgeOptionsViewController");
+    SEL selector = NSSelectorFromString(@"applyOption:");
+    Method method = cls ? class_getInstanceMethod(cls, selector) : NULL;
+    if (!method) return NO;
+
+    IMP current = method_getImplementation(method);
+    if (current == (IMP)XFForceTunnelApplyOption) {
+        XFHookInstalled = YES;
+        return YES;
+    }
+
+    XFOriginalApplyOptionIMP = current;
+    method_setImplementation(method, (IMP)XFForceTunnelApplyOption);
+    XFHookInstalled = YES;
+    NSLog(@"XITFORGE: applyOption: redirigido por Túnel");
+    return YES;
+}
+
+static void XFScheduleHookRetry(void) {
+    if (XFHookInstalled) return;
+    XFHookAttempts += 1;
+    if (XFHookAttempts > 60) return;
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!XFInstallForceTunnelHook()) XFScheduleHookRetry();
+    });
+}
+
 @interface XITForgeForceTunnelFallback : NSObject
 @end
 
 @implementation XITForgeForceTunnelFallback
+
 + (void)load {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        Class cls = NSClassFromString(@"XITForgeOptionsViewController");
-        SEL selector = NSSelectorFromString(@"applyOption:");
-        Method method = cls ? class_getInstanceMethod(cls, selector) : NULL;
-        if (!method) return;
-        XFOriginalApplyOptionIMP = method_getImplementation(method);
-        method_setImplementation(method, (IMP)XFForceTunnelApplyOption);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!XFInstallForceTunnelHook()) XFScheduleHookRetry();
+        [NSNotificationCenter.defaultCenter addObserver:self
+                                               selector:@selector(xfApplicationReady:)
+                                                   name:UIApplicationDidFinishLaunchingNotification
+                                                 object:nil];
+        [NSNotificationCenter.defaultCenter addObserver:self
+                                               selector:@selector(xfApplicationReady:)
+                                                   name:UIApplicationDidBecomeActiveNotification
+                                                 object:nil];
     });
 }
+
++ (void)xfApplicationReady:(NSNotification *)notification {
+    (void)notification;
+    if (!XFInstallForceTunnelHook()) XFScheduleHookRetry();
+}
+
 @end
