@@ -3,7 +3,7 @@
 #import <objc/message.h>
 
 /*
- XITFORGE V10 — ACTIVACIÓN RÁPIDA SIN AIRTRAFFIC
+ XITFORGE V10/V11 — ACTIVACIÓN RÁPIDA SIN AIRTRAFFIC
 
  Este archivo se compila dentro de XFAirLift.dylib.
 
@@ -189,7 +189,7 @@ static void XFInstallFastReplaceHook(void) {
     if (current == (IMP)XFFastReplaceFileForApplication) return;
 
     method_setImplementation(method, (IMP)XFFastReplaceFileForApplication);
-    NSLog(@"XITFORGE V10: replaceFileForApplication ahora usa ruta rápida y omite AirTraffic.");
+    NSLog(@"XITFORGE V11: replaceFileForApplication ahora usa ruta rápida y omite AirTraffic.");
 }
 
 __attribute__((constructor))
