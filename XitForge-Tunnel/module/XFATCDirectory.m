@@ -3,6 +3,7 @@
 #import "XFATCZip.h"
 #import "XFGrappaHelper.h"
 #import "XFATCProtocolState.h"
+#import "XFATCSyncRetry.h"
 #import "XFATCFileRecovery.h"
 #import "XFFileCreationProbe.h"
 #import "XFFileCreationProbePolicy.h"
@@ -128,6 +129,9 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
 @property (nonatomic, copy) NSDictionary *temporaryDirectoryFailure;
 @property (nonatomic, copy) NSDictionary *generatedAppLinkProbe;
 @property (nonatomic, copy) NSDictionary *fileOperationDiagnostics;
+@property (nonatomic) BOOL atcMoveAttempted;
+@property (nonatomic) NSUInteger atcSyncAttempt;
+@property (nonatomic, strong) NSMutableArray<NSDictionary *> *syncAttempts;
 @property (nonatomic, readwrite, nullable) NSURL *deletedFileBackupURL;
 @property (nonatomic, readwrite) BOOL deletionAbsenceConfirmed;
 - (BOOL)validKnownFileJournal:(NSDictionary *)journal;
@@ -167,8 +171,8 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
                      @"SyncFailed",@"SyncStopped",@"SyncFinished"];
     NSString *name=[command isKindOfClass:NSString.class]&&[known containsObject:command]?command:@"Other";
     [self.protocolEvents addObject:@{@"event":event,@"command":name,
-        @"phase":self.protocolPhase?:@"NotStarted",@"code":@(code)}];
-    if(self.protocolEvents.count>32)[self.protocolEvents removeObjectAtIndex:0];
+        @"phase":self.protocolPhase?:@"NotStarted",@"code":@(code),@"syncAttempt":@(self.atcSyncAttempt)}];
+    if(self.protocolEvents.count>96)[self.protocolEvents removeObjectAtIndex:0];
 }
 - (NSDictionary *)protocolDiagnostics {
     return @{@"phase":self.protocolPhase?:@"NotStarted",@"events":[self.protocolEvents copy]?:@[],
@@ -178,7 +182,8 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
              @"appDirectoryFailure":self.appDirectoryFailure?:@{},
              @"temporaryDirectoryFailure":self.temporaryDirectoryFailure?:@{},
              @"generatedAppLinkProbe":self.generatedAppLinkProbe?:@{},
-             @"knownFileOperation":self.fileOperationDiagnostics?:@{}};
+             @"knownFileOperation":self.fileOperationDiagnostics?:@{},
+             @"syncAttempts":[self.syncAttempts copy]?:@[]};
 }
 - (void)recordServicePort:(const char *)name tunnel:(XFATCServiceTunnel *)tunnel {
     CRsdService *service=NULL;
@@ -492,7 +497,11 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
         NSDictionary *message=[self receiveDictionary:stream littleEndian:YES timeout:ms error:&readError];
         if(!message){
             [self recordProtocolEvent:@"ReceiveFailed" command:wanted code:readError.code?:1];
-            if(error)*error=XFATCError(readError.code?:1,[NSString stringWithFormat:@"AirTraffic, esperando %@: %@",wanted,readError.localizedDescription?:@"conexión cerrada"]);
+            if(error){
+                NSMutableDictionary *details=[readError.userInfo mutableCopy]?:[NSMutableDictionary new];
+                details[NSLocalizedDescriptionKey]=[NSString stringWithFormat:@"AirTraffic, esperando %@: %@",wanted,readError.localizedDescription?:@"conexión cerrada"];
+                *error=[NSError errorWithDomain:readError.domain?:@"XitForge.ATCDirectory" code:readError.code?:1 userInfo:details];
+            }
             return nil;
         }
         NSString *name=[self nameOfMessage:message];
@@ -524,7 +533,38 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
     }
     if(error)*error=XFATCError(2118,[NSString stringWithFormat:@"AirTraffic no envió %@ dentro del tiempo de espera.",wanted]);return nil;
 }
+- (BOOL)retryATCPreparation:(BOOL (^)(NSError **))operation error:(NSError **)error {
+    NSError *failure=nil;
+    for(NSUInteger attempt=1;attempt<=3;attempt++) {
+        self.atcMoveAttempted=NO;self.atcSyncAttempt=attempt;
+        failure=nil;
+        BOOL ok=operation(&failure); // Each attempt closes its stream and tunnel.
+        if(!self.syncAttempts)self.syncAttempts=[NSMutableArray new];
+        [self.syncAttempts addObject:@{@"attempt":@(attempt),@"phase":self.protocolPhase?:@"ConnectATC",
+            @"code":@(failure.code),@"completed":@(ok),@"fileMoveAttempted":@(self.atcMoveAttempted)}];
+        if(self.syncAttempts.count>24)[self.syncAttempts removeObjectAtIndex:0];
+        if(ok)return YES;
+        BOOL socketFailure=[failure.domain isEqual:@"XitForge.ATCDirectory"]&&failure.code==1&&
+            [failure.userInfo[@"NativeSubcode"] isKindOfClass:NSNumber.class];
+        if(!XFATCShouldRetryPreparation((unsigned)attempt,self.tunnelFactory!=nil,socketFailure,self.atcMoveAttempted))break;
+        [self recordProtocolEvent:@"ReconnectBeforeFileMove" command:self.protocolPhase code:failure.code];
+        [NSThread sleepForTimeInterval:XFATCSyncRetryDelayMS((unsigned)attempt)/1000.0];
+    }
+    if(error) {
+        NSMutableDictionary *details=[failure.userInfo mutableCopy]?:[NSMutableDictionary new];
+        details[@"ATCSyncAttempts"]=@(self.atcSyncAttempt);
+        details[@"ATCFileMoveAttempted"]=@(self.atcMoveAttempted);
+        details[NSLocalizedDescriptionKey]=[NSString stringWithFormat:@"%@\nPreparación de AirTraffic: %lu intento(s).%@",
+            failure.localizedDescription?:@"El servicio no confirmó la operación.",(unsigned long)self.atcSyncAttempt,
+            self.atcMoveAttempted?@"":@" No se envió ningún movimiento de archivo en esta sesión."];
+        *error=[NSError errorWithDomain:failure.domain?:@"XitForge.ATCDirectory" code:failure.code?:2118 userInfo:details];
+    }
+    return NO;
+}
 - (BOOL)runATC:(NSError **)error {
+    return [self retryATCPreparation:^BOOL(NSError **attemptError){return [self runATCOnce:attemptError];} error:error];
+}
+- (BOOL)runATCOnce:(NSError **)error {
     self.protocolPhase=@"ConnectATC";
     XFATCServiceTunnel *tunnel=[self openServiceTunnel:error];if(!tunnel)return NO;
     [self recordServicePort:"com.apple.atc.shim.remote" tunnel:tunnel];
@@ -564,6 +604,7 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
         self.protocolPhase=@"FileComplete";
         if(![self saveJournal:@"move generated symlink inside Media" error:error])break;
         NSDictionary *params=@{@"AssetID":self.journal[@"identifier"],@"Dataclass":@"Book",@"AssetPath":self.journal[@"link"]};
+        self.atcMoveAttempted=YES; // Set before send, including a partial/failed send.
         if(![self sendDictionary:[self message:@"FileComplete" session:@1 params:params] stream:stream littleEndian:YES error:error])break;
         // The supplied 3105 lets ATC process FileComplete before closing its channel.
         self.protocolPhase=@"FileCompleteSettle";
@@ -658,6 +699,10 @@ closeATC:;
     return [self.journal[@"link"] stringByAppendingPathComponent:target.lastPathComponent];
 }
 - (BOOL)runKnownFilePairs:(NSArray<NSDictionary *> *)pairs error:(NSError **)error {
+    return [self retryATCPreparation:^BOOL(NSError **attemptError){return [self runKnownFilePairsOnce:pairs error:attemptError];} error:error];
+}
+- (BOOL)runKnownFilePairsOnce:(NSArray<NSDictionary *> *)pairs error:(NSError **)error {
+    self.protocolPhase=@"ConnectATC";
     NSSet *allowed=[NSSet setWithArray:[self knownFileAssetIDs:self.journal]];
     NSDictionary *file=self.journal[@"knownFile"];
     NSSet *destinations=[NSSet setWithArray:@[file[@"Original"],file[@"Incoming"],file[@"Verify"],[self knownFileDestination]]];
@@ -696,8 +741,10 @@ closeATC:;
                     if(error&&!*error)*error=XFATCError(2220,@"El enlace de retorno cambió o desapareció. Se conservaron el original y la recuperación, sin enviarlo a otro destino.");goto closeKnownFile;}
                 if([file[@"operation"] isEqual:@"createProbe"]&&![self requireProbeDestinationAbsent:error])goto closeKnownFile;
             }
-            if(![self saveJournal:@"send persisted known-file move" error:error]||
-               ![self sendDictionary:[self message:@"FileComplete" session:@1 params:pair] stream:stream littleEndian:YES error:error])goto closeKnownFile;
+            if(![self saveJournal:@"send persisted known-file move" error:error])goto closeKnownFile;
+            self.protocolPhase=@"FileComplete";
+            self.atcMoveAttempted=YES;
+            if(![self sendDictionary:[self message:@"FileComplete" session:@1 params:pair] stream:stream littleEndian:YES error:error])goto closeKnownFile;
         }
         [NSThread sleepForTimeInterval:0.15];ok=YES;
     }while(0);
@@ -866,6 +913,7 @@ closeKnownFile:;
 }
 - (BOOL)prepareKnownFile:(NSString *)target operation:(NSString *)operation error:(NSError **)error {
     self.protocolEvents=[NSMutableArray new];self.protocolPhase=@"KnownFileRecovery";
+    self.syncAttempts=[NSMutableArray new];self.atcSyncAttempt=0;self.atcMoveAttempted=NO;
     self.fileOperationDiagnostics=nil;self.grappaParameters=nil;self.servicePorts=[NSMutableDictionary new];
     self.appDirectoryFailure=nil;self.temporaryDirectoryFailure=nil;self.generatedAppLinkProbe=nil;
     if(![self recoverPendingTransaction:error]||![self openAFC:error])return NO;

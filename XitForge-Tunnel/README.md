@@ -1,4 +1,4 @@
-# Prueba de creación 1.3.2-probe1
+# Prueba de creación 1.3.2-probe2
 
 Consulta [PRUEBA_CREACION.md](../PRUEBA_CREACION.md). El módulo precompilado incluye esta prueba; la IPA de `releases/` es la versión histórica 1.3.1 y no la incluye. La nueva IPA se genera con el workflow del proyecto.
 
