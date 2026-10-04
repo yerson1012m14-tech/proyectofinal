@@ -1,5 +1,4 @@
 #import "XFAirLiftBackend.h"
-#import "XFFileCreationProbe.h"
 #import "XFIDeviceABI.h"
 #import "XFStreamBridge.h"
 #import "XFATCDirectory.h"
@@ -116,6 +115,17 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
     NSInteger _connectionRemotePort;
 }
 @property (nonatomic, strong) NSURL *pairingURL;
+- (BOOL)writeAFC:(AfcClientHandle *)afc
+            path:(NSString *)path
+            data:(NSData *)data
+           error:(NSError **)error;
+- (BOOL)replaceViaHouseArrestForApplication:(NSString *)identifier
+                               relativePath:(NSString *)relative
+                                       data:(NSData *)data
+                                      error:(NSError **)error;
+- (BOOL)deleteViaHouseArrestForApplication:(NSString *)identifier
+                              relativePath:(NSString *)relative
+                                     error:(NSError **)error;
 @end
 
 @implementation XFAirLiftBackend
@@ -1085,6 +1095,205 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
     }
     return ok ? data : nil;
 }
+- (BOOL)writeAFC:(AfcClientHandle *)afc
+            path:(NSString *)path
+            data:(NSData *)data
+           error:(NSError **)error {
+    if (!afc || !path.length || ![data isKindOfClass:NSData.class]) {
+        if (error) *error = XFError(1035, @"No se pudo preparar la escritura del archivo por el túnel.");
+        return NO;
+    }
+    if (data.length > XFMaximumKnownFileSize) {
+        if (error) *error = XFError(1033, @"El archivo elegido supera el límite de reemplazo de 64 MiB.");
+        return NO;
+    }
+
+    AfcFileHandle *file = NULL;
+    if (!XFConsume(afc_file_open(afc, path.UTF8String, AfcWrOnly, &file),
+                   @"Abrir destino para escritura", error) || !file) {
+        return NO;
+    }
+
+    BOOL ok = YES;
+    const uint8_t *bytes = data.bytes;
+    NSUInteger offset = 0;
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:60.0];
+
+    while (offset < data.length) {
+        if (deadline.timeIntervalSinceNow <= 0) {
+            if (error) *error = XFError(1036, @"La escritura por el túnel superó el tiempo de espera.");
+            ok = NO;
+            break;
+        }
+
+        NSUInteger count = MIN((NSUInteger)(1024 * 1024), data.length - offset);
+        if (!XFConsume(afc_file_write(file, bytes + offset, count),
+                       @"Escribir archivo en la app", error)) {
+            ok = NO;
+            break;
+        }
+        offset += count;
+    }
+
+    NSError *closeFailure = nil;
+    if (!XFConsume(afc_file_close(file), @"Cerrar archivo escrito", &closeFailure)) {
+        if (ok && error) *error = closeFailure;
+        ok = NO;
+    }
+    file = NULL;
+    if (!ok) return NO;
+
+    // Confirm the exact bytes before reporting success to Home.
+    NSError *verifyError = nil;
+    NSData *observed = [self readAFC:afc path:path error:&verifyError];
+    if (!observed || ![observed isEqualToData:data]) {
+        if (error) {
+            *error = verifyError ?: XFError(1037, @"El archivo se escribió, pero la verificación no coincide.");
+        }
+        return NO;
+    }
+
+    return YES;
+}
+
+- (BOOL)replaceViaHouseArrestForApplication:(NSString *)identifier
+                               relativePath:(NSString *)relative
+                                       data:(NSData *)data
+                                      error:(NSError **)error {
+    NSString *normalized = [self normalizedApplicationPath:relative];
+    if (!normalized.length) {
+        if (error) *error = XFError(1008, @"La ruta del archivo dentro de la app está vacía.");
+        return NO;
+    }
+
+    NSMutableArray<NSString *> *failures = [NSMutableArray new];
+
+    // Try the complete app container first. If iOS only exposes Documents,
+    // fall back to VendDocuments when the requested route is inside Documents.
+    for (NSNumber *documentsMode in @[@NO, @YES]) {
+        BOOL documentsOnly = documentsMode.boolValue;
+
+        if (documentsOnly &&
+            !([normalized isEqualToString:@"Documents"] ||
+              [normalized hasPrefix:@"Documents/"])) {
+            continue;
+        }
+
+        NSError *failure = nil;
+        AfcClientHandle *afc =
+            [self openHouseArrestForApplication:identifier
+                                   documentsOnly:documentsOnly
+                                          error:&failure];
+
+        BOOL written = NO;
+        if (afc) {
+            NSString *afcPath = [@"/" stringByAppendingString:normalized];
+            written = [self writeAFC:afc path:afcPath data:data error:&failure];
+            afc_client_free(afc);
+            afc = NULL;
+        }
+
+        if (written) return YES;
+
+        [failures addObject:
+            [NSString stringWithFormat:@"%@: %@",
+                documentsOnly ? @"Documents" : @"Contenedor",
+                failure.localizedDescription ?: @"iOS no concedió escritura."]];
+    }
+
+    if (error) {
+        *error = XFError(1038,
+            failures.count
+                ? [failures componentsJoinedByString:@"\n\n"]
+                : @"El contenedor no expone una ruta de escritura por House Arrest.");
+    }
+    return NO;
+}
+
+- (BOOL)deleteViaHouseArrestForApplication:(NSString *)identifier
+                              relativePath:(NSString *)relative
+                                     error:(NSError **)error {
+    NSString *normalized = [self normalizedApplicationPath:relative];
+    if (!normalized.length) {
+        if (error) *error = XFError(1008, @"La ruta del archivo dentro de la app está vacía.");
+        return NO;
+    }
+
+    NSMutableArray<NSString *> *failures = [NSMutableArray new];
+
+    for (NSNumber *documentsMode in @[@NO, @YES]) {
+        BOOL documentsOnly = documentsMode.boolValue;
+
+        if (documentsOnly &&
+            !([normalized isEqualToString:@"Documents"] ||
+              [normalized hasPrefix:@"Documents/"])) {
+            continue;
+        }
+
+        NSError *failure = nil;
+        AfcClientHandle *afc =
+            [self openHouseArrestForApplication:identifier
+                                   documentsOnly:documentsOnly
+                                          error:&failure];
+
+        BOOL removed = NO;
+        if (afc) {
+            NSString *afcPath = [@"/" stringByAppendingString:normalized];
+
+            // If the file is already absent, DESACTIVAR has already reached
+            // the requested state and should be treated as success.
+            AfcFileInfo info = {0};
+            IdeviceFfiError *statFailure =
+                afc_get_file_info(afc, afcPath.UTF8String, &info);
+
+            if (statFailure && statFailure->code == 106 && statFailure->sub_code == 8) {
+                idevice_error_free(statFailure);
+                statFailure = NULL;
+                removed = YES;
+            } else {
+                if (statFailure) {
+                    failure = XFError(statFailure->code,
+                        [NSString stringWithFormat:
+                            @"Consultar archivo antes de borrar: error %d/%d.",
+                            statFailure->code, statFailure->sub_code]);
+                    idevice_error_free(statFailure);
+                    statFailure = NULL;
+                } else {
+                    BOOL regular = info.st_ifmt && strcmp(info.st_ifmt, "S_IFREG") == 0;
+                    afc_file_info_free(&info);
+                    if (!regular) {
+                        failure = XFError(1039, @"La ruta configurada no corresponde a un archivo normal.");
+                    } else {
+                        removed = XFConsume(
+                            afc_remove_path(afc, afcPath.UTF8String),
+                            @"Borrar archivo de la app",
+                            &failure);
+                    }
+                }
+            }
+
+            afc_file_info_free(&info);
+            afc_client_free(afc);
+            afc = NULL;
+        }
+
+        if (removed) return YES;
+
+        [failures addObject:
+            [NSString stringWithFormat:@"%@: %@",
+                documentsOnly ? @"Documents" : @"Contenedor",
+                failure.localizedDescription ?: @"iOS no concedió borrado."]];
+    }
+
+    if (error) {
+        *error = XFError(1040,
+            failures.count
+                ? [failures componentsJoinedByString:@"\n\n"]
+                : @"El contenedor no expone una ruta de borrado por House Arrest.");
+    }
+    return NO;
+}
+
 - (id)accessHouseArrestApplication:(NSString *)identifier path:(NSString *)relative readFile:(BOOL)readFile error:(NSError **)error {
     NSString *normalized = [self normalizedApplicationPath:relative];
     NSMutableArray<NSString *> *failures = [NSMutableArray new];
@@ -1154,63 +1363,93 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
     return result;
 }
 - (BOOL)replaceFileForApplication:(NSString *)identifier relativePath:(NSString *)path data:(NSData *)data error:(NSError **)error {
-    __block BOOL replaced = NO; __block NSError *failure = nil;
+    __block BOOL replaced = NO;
+    __block NSError *failure = nil;
+
     if (![data isKindOfClass:NSData.class] || data.length > XFMaximumKnownFileSize) {
-        if (error) *error = XFError(1033, @"El archivo elegido supera el límite de reemplazo de 64 MiB."); return NO;
+        if (error) *error = XFError(1033, @"El archivo elegido supera el límite de reemplazo de 64 MiB.");
+        return NO;
     }
+
     NSData *replacement = [data copy];
+
     [_worker perform:^{
         self->_directoryWarning = @"";
         self->_fileServiceAttempt = @{};
-        const char *identifierBytes = [identifier isKindOfClass:NSString.class] ? identifier.UTF8String : NULL;
-        if (!identifier.length || !identifierBytes || strlen(identifierBytes) != [identifier lengthOfBytesUsingEncoding:NSUTF8StringEncoding]) {
-            failure = XFError(1009, @"Falta un identificador válido de la app."); return;
+
+        const char *identifierBytes =
+            [identifier isKindOfClass:NSString.class] ? identifier.UTF8String : NULL;
+
+        if (!identifier.length || !identifierBytes ||
+            strlen(identifierBytes) !=
+                [identifier lengthOfBytesUsingEncoding:NSUTF8StringEncoding]) {
+            failure = XFError(1009, @"Falta un identificador válido de la app.");
+            return;
         }
-        NSString *relative = [self validatedKnownFileRelativePath:path error:&failure];
-        NSString *absolute = relative ? [self atcAbsolutePathForIdentifier:identifier shared:NO path:relative error:&failure] : nil;
-        XFATCDirectory *directory = absolute ? [self atcDirectoryNativeWithError:&failure] : nil;
+
+        NSString *relative =
+            [self validatedKnownFileRelativePath:path error:&failure];
+        if (!relative) return;
+
+        if (![self requireConnection:&failure]) return;
+
+        // Route 1: full app-container AFC over the already-connected tunnel.
+        // This can create or truncate a file, matching Home's local writer.
+        NSError *houseFailure = nil;
+        replaced =
+            [self replaceViaHouseArrestForApplication:identifier
+                                         relativePath:relative
+                                                 data:replacement
+                                                error:&houseFailure];
+
+        self->_routeResultCodes[@"HouseArrestWrite"] =
+            @(replaced ? 0 : houseFailure.code ?: -1);
+
+        if (replaced) {
+            self->_directoryWarning = @"Archivo escrito y verificado por House Arrest/AFC.";
+            return;
+        }
+
+        // Route 2: existing AirTraffic/ATC transaction. This route is useful
+        // when House Arrest is denied, but it requires an existing target and
+        // the ATC/streaming_zip/AFC service trio.
+        NSError *atcFailure = nil;
+        NSString *absolute =
+            [self atcAbsolutePathForIdentifier:identifier
+                                        shared:NO
+                                          path:relative
+                                         error:&atcFailure];
+
+        XFATCDirectory *directory =
+            absolute ? [self atcDirectoryNativeWithError:&atcFailure] : nil;
+
         if (directory) {
-            replaced = [directory replaceAbsoluteFile:absolute data:replacement error:&failure];
-            self->_directoryWarning = [directory.lastWarning copy] ?: @"";
+            replaced =
+                [directory replaceAbsoluteFile:absolute
+                                          data:replacement
+                                         error:&atcFailure];
+
+            self->_directoryWarning =
+                [directory.lastWarning copy] ?: @"";
         }
-        self->_routeResultCodes[@"AirTrafficReplace"] = @(replaced ? 0 : failure.code ?: -1);
+
+        self->_routeResultCodes[@"AirTrafficReplace"] =
+            @(replaced ? 0 : atcFailure.code ?: -1);
+
+        if (!replaced) {
+            failure = XFError(
+                1041,
+                [NSString stringWithFormat:
+                    @"El Túnel está conectado, pero ninguna ruta pudo escribir el archivo.\n\n"
+                     "House Arrest/AFC: %@\n\n"
+                     "AirTraffic/ATC: %@",
+                    houseFailure.localizedDescription ?: @"No disponible.",
+                    atcFailure.localizedDescription ?: @"No disponible."]);
+        }
     }];
+
     if (!replaced && error) *error = failure;
     return replaced;
-}
-- (BOOL)performCreationProbeForApplication:(NSString *)identifier relativePath:(NSString *)path deleting:(BOOL)deleting error:(NSError **)error {
-    __block BOOL ok=NO;__block NSError *failure=nil;
-    [_worker perform:^{
-        self->_directoryWarning=@"";
-        self->_lastDeletedFileBackupURL=nil;self->_lastDeletionAbsenceConfirmed=NO;
-        if(![identifier isKindOfClass:NSString.class]||!identifier.length||!identifier.UTF8String||
-           strlen(identifier.UTF8String)!=[identifier lengthOfBytesUsingEncoding:NSUTF8StringEncoding]) {
-            failure=XFError(1009,@"Falta un identificador válido de la app.");return;
-        }
-        NSString *relative=[self validatedKnownFileRelativePath:path error:&failure];
-        if(!relative||!XFProbeContents(relative)) {
-            if(!failure)failure=XFError(1035,@"Solo se admite el archivo de prueba generado por XitForge.");return;
-        }
-        NSString *absolute=[self atcAbsolutePathForIdentifier:identifier shared:NO path:relative error:&failure];
-        XFATCDirectory *directory=absolute?[self atcDirectoryNativeWithError:&failure]:nil;
-        if(directory) {
-            ok=deleting?[directory deleteTestAbsoluteFile:absolute error:&failure]:[directory createTestAbsoluteFile:absolute error:&failure];
-            self->_directoryWarning=[directory.lastWarning copy]?:@"";
-            if(deleting) {
-                self->_lastDeletedFileBackupURL=[directory.deletedFileBackupURL copy];
-                self->_lastDeletionAbsenceConfirmed=directory.deletionAbsenceConfirmed;
-            }
-        }
-        self->_routeResultCodes[deleting?@"AirTrafficDeleteProbe":@"AirTrafficCreateProbe"]=@(ok?0:failure.code?:-1);
-    }];
-    if(!ok&&error)*error=failure?:XFError(1036,@"No se pudo completar la prueba.");
-    return ok;
-}
-- (BOOL)createTestFileForApplication:(NSString *)identifier relativePath:(NSString *)path error:(NSError **)error {
-    return [self performCreationProbeForApplication:identifier relativePath:path deleting:NO error:error];
-}
-- (BOOL)deleteTestFileForApplication:(NSString *)identifier relativePath:(NSString *)path error:(NSError **)error {
-    return [self performCreationProbeForApplication:identifier relativePath:path deleting:YES error:error];
 }
 - (BOOL)restorePendingFileForApplication:(NSString *)identifier relativePath:(NSString *)path error:(NSError **)error {
     __block BOOL restored = NO; __block NSError *failure = nil;
@@ -1234,30 +1473,91 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
     return restored;
 }
 - (BOOL)deleteFileForApplication:(NSString *)identifier relativePath:(NSString *)path error:(NSError **)error {
-    __block BOOL deleted = NO; __block NSError *failure = nil;
+    __block BOOL deleted = NO;
+    __block NSError *failure = nil;
+
     [_worker perform:^{
         self->_directoryWarning = @"";
         self->_fileServiceAttempt = @{};
         self->_lastDeletedFileBackupURL = nil;
         self->_lastDeletionAbsenceConfirmed = NO;
-        const char *identifierBytes = [identifier isKindOfClass:NSString.class] ? identifier.UTF8String : NULL;
-        if (!identifier.length || !identifierBytes || strlen(identifierBytes) != [identifier lengthOfBytesUsingEncoding:NSUTF8StringEncoding]) {
-            failure = XFError(1009, @"Falta un identificador válido de la app."); return;
+
+        const char *identifierBytes =
+            [identifier isKindOfClass:NSString.class] ? identifier.UTF8String : NULL;
+
+        if (!identifier.length || !identifierBytes ||
+            strlen(identifierBytes) !=
+                [identifier lengthOfBytesUsingEncoding:NSUTF8StringEncoding]) {
+            failure = XFError(1009, @"Falta un identificador válido de la app.");
+            return;
         }
-        NSString *relative = [self validatedKnownFileRelativePath:path error:&failure];
-        if ([@[@"Documents", @"Library", @"SystemData", @"tmp"] containsObject:relative]) {
-            failure = XFError(1034, @"La ruta corresponde a una carpeta de la app. Elige un archivo dentro de ella."); return;
+
+        NSString *relative =
+            [self validatedKnownFileRelativePath:path error:&failure];
+        if (!relative) return;
+
+        if ([@[@"Documents", @"Library", @"SystemData", @"tmp"]
+                containsObject:relative]) {
+            failure = XFError(
+                1034,
+                @"La ruta corresponde a una carpeta de la app. Elige un archivo dentro de ella.");
+            return;
         }
-        NSString *absolute = relative ? [self atcAbsolutePathForIdentifier:identifier shared:NO path:relative error:&failure] : nil;
-        XFATCDirectory *directory = absolute ? [self atcDirectoryNativeWithError:&failure] : nil;
+
+        if (![self requireConnection:&failure]) return;
+
+        // Route 1: direct AFC delete through House Arrest.
+        NSError *houseFailure = nil;
+        deleted =
+            [self deleteViaHouseArrestForApplication:identifier
+                                        relativePath:relative
+                                               error:&houseFailure];
+
+        self->_routeResultCodes[@"HouseArrestDelete"] =
+            @(deleted ? 0 : houseFailure.code ?: -1);
+
+        if (deleted) {
+            self->_lastDeletionAbsenceConfirmed = YES;
+            self->_directoryWarning = @"Archivo eliminado por House Arrest/AFC.";
+            return;
+        }
+
+        // Route 2: retained-deletion AirTraffic transaction.
+        NSError *atcFailure = nil;
+        NSString *absolute =
+            [self atcAbsolutePathForIdentifier:identifier
+                                        shared:NO
+                                          path:relative
+                                         error:&atcFailure];
+
+        XFATCDirectory *directory =
+            absolute ? [self atcDirectoryNativeWithError:&atcFailure] : nil;
+
         if (directory) {
-            deleted = [directory deleteAbsoluteFile:absolute error:&failure];
-            self->_directoryWarning = [directory.lastWarning copy] ?: @"";
-            self->_lastDeletedFileBackupURL = [directory.deletedFileBackupURL copy];
-            self->_lastDeletionAbsenceConfirmed = directory.deletionAbsenceConfirmed;
+            deleted = [directory deleteAbsoluteFile:absolute error:&atcFailure];
+            self->_directoryWarning =
+                [directory.lastWarning copy] ?: @"";
+            self->_lastDeletedFileBackupURL =
+                [directory.deletedFileBackupURL copy];
+            self->_lastDeletionAbsenceConfirmed =
+                directory.deletionAbsenceConfirmed;
         }
-        self->_routeResultCodes[@"AirTrafficDelete"] = @(deleted ? 0 : failure.code ?: -1);
+
+        self->_routeResultCodes[@"AirTrafficDelete"] =
+            @(deleted ? 0 : atcFailure.code ?: -1);
+
+        if (!deleted) {
+            failure = XFError(
+                1042,
+                [NSString stringWithFormat:
+                    @"El Túnel está conectado, pero ninguna ruta pudo borrar el archivo.\n\n"
+                     "House Arrest/AFC: %@\n\n"
+                     "AirTraffic/ATC: %@",
+                    houseFailure.localizedDescription ?: @"No disponible.",
+                    atcFailure.localizedDescription ?: @"No disponible."]);
+        }
     }];
+
     if (!deleted && error) *error = failure;
     return deleted;
 }
