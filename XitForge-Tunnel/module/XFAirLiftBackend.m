@@ -1440,12 +1440,8 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
             failure = XFError(
                 1041,
                 [NSString stringWithFormat:
-                    @"El Túnel está conectado, pero ninguna ruta pudo escribir el archivo.
-
-"
-                     "House Arrest/AFC: %@
-
-"
+                    @"El Túnel está conectado, pero ninguna ruta pudo escribir el archivo.\n\n"
+                     "House Arrest/AFC: %@\n\n"
                      "AirTraffic/ATC: %@",
                     houseFailure.localizedDescription ?: @"No disponible.",
                     atcFailure.localizedDescription ?: @"No disponible."]);
@@ -1554,12 +1550,8 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
             failure = XFError(
                 1042,
                 [NSString stringWithFormat:
-                    @"El Túnel está conectado, pero ninguna ruta pudo borrar el archivo.
-
-"
-                     "House Arrest/AFC: %@
-
-"
+                    @"El Túnel está conectado, pero ninguna ruta pudo borrar el archivo.\n\n"
+                     "House Arrest/AFC: %@\n\n"
                      "AirTraffic/ATC: %@",
                     houseFailure.localizedDescription ?: @"No disponible.",
                     atcFailure.localizedDescription ?: @"No disponible."]);
