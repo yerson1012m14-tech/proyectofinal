@@ -1,0 +1,3 @@
+# Portable build: dependencies are pinned by Cargo.lock and fetched from crates.io.
+[net]
+retry = 3
