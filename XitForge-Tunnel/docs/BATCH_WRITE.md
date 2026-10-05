@@ -17,6 +17,6 @@ El diagnóstico `batchWrite.events` registra, en orden, estas etapas:
 11. move-back FileComplete sent
 12. BATCH WRITE COMPLETE
 
-La sesión agrupada publica tres mensajes `FileComplete`: el enlace temporal hacia su zona de enlace, el archivo nuevo hacia la ruta seleccionada y la copia protegida hacia `FileVerify`. Después se comprueba el contenido, se envía el cuarto movimiento para devolver el archivo verificado a la ruta de la app y se restaura el manifiesto normal de la aplicación. Si una etapa falla, el registro y la copia original permanecen disponibles para recuperación.
+La sesión agrupada publica tres mensajes `FileComplete`: el enlace temporal hacia su zona de enlace, el archivo nuevo hacia la ruta seleccionada y la copia protegida hacia `FileVerify`. Después se comprueba el contenido, se envía el cuarto movimiento para devolver el archivo verificado a la ruta de la app y se restaura el manifiesto normal de la aplicación. Si una etapa falla antes de colocar el reemplazo y el destino sigue vacío, la recuperación devuelve automáticamente el original; si el destino cambió o hay objetos inesperados, conserva el estado y deja disponible la restauración manual. La activación ya no se bloquea por una copia recuperable sin ambigüedad.
 
 La compilación local genera `module/build/XFAirLift.dylib` para arm64. La IPA final debe volver a empaquetarse y firmarse con el flujo habitual del proyecto; este cambio no inventa una firma ni elimina las protecciones de recuperación.
