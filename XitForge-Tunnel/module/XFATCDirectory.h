@@ -12,6 +12,8 @@ typedef BOOL (^XFATCTunnelFactory)(AdapterHandle * _Nullable * _Nonnull adapter,
    by one metadata query after app-directory AFC 106/8 or 106/10, before recovery.
    A matching link target does not prove target resolution or directory access. */
 @property (nonatomic, readonly) NSDictionary *protocolDiagnostics;
+/* Fixed phase numbers only; called by the backend after real tunnel milestones. */
+- (void)recordBatchSetupPhase:(NSUInteger)phase;
 /* A durable local copy for an intentionally committed deletion. It is retained
    across reconnects and is never included in copied connection diagnostics. */
 @property (nonatomic, readonly, nullable) NSURL *deletedFileBackupURL;
