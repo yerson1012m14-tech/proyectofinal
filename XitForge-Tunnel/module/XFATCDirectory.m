@@ -979,8 +979,16 @@ closeKnownFile:;
         self.deletionAbsenceConfirmed=[latest[@"targetAbsenceConfirmed"] boolValue];
     }
 }
-- (BOOL)returnKnownOriginal:(NSError **)error {
+- (BOOL)returnKnownOriginal:(NSError **)error requireDestinationAbsent:(BOOL)requireDestinationAbsent {
     NSMutableDictionary *file=self.journal[@"knownFile"];
+    if(requireDestinationAbsent) {
+        BOOL destinationMissing=NO;
+        [self info:[self knownFileDestination] missing:&destinationMissing error:error];
+        if(!destinationMissing){
+            if(error&&!*error)*error=XFATCError(2225,@"La ruta de la app ya contiene un objeto; no se restaurará encima de contenido nuevo.");
+            return NO;
+        }
+    }
     file[@"returnOriginalIntent"]=@YES;
     if(![self saveJournal:@"return original file to application" error:error]||
        ![self runKnownFilePairs:[self knownFilePair:2 destination:[self knownFileDestination]] error:error]||
@@ -1154,6 +1162,25 @@ closeKnownFile:;
     if(!verify&&!verifyMissing)return NO;
     NSDictionary *incoming=[self info:file[@"Incoming"] missing:&incomingMissing error:error];
     if(!incoming&&!incomingMissing)return NO;
+    XFATCFilePresence targetPresence=XFATCFilePresenceUnknown;
+    if(![file[@"operation"] isEqual:@"delete"]) {
+        BOOL targetMissing=NO;NSDictionary *targetInfo=[self info:[self knownFileDestination] missing:&targetMissing error:error];
+        if(!targetInfo&&!targetMissing)return NO;
+        targetPresence=targetMissing?XFATCFilePresenceMissing:XFATCFilePresencePresent;
+        BOOL safeOriginalReturn=[file[@"operation"] isEqual:@"read"]||[file[@"operation"] isEqual:@"replace"];
+        safeOriginalReturn=safeOriginalReturn&&[file[@"originalCaptured"] boolValue]&&
+            [file[@"originalMoveIntent"] boolValue]&&![file[@"originalReturned"] boolValue]&&
+            original&&[original[@"kind"] isEqual:@"S_IFREG"]&&
+            incomingMissing&&verifyMissing&&targetMissing&&
+            ![file[@"placementIntent"] boolValue]&&! [file[@"incomingPlaceIntent"] boolValue]&&
+            ![file[@"verifyMoveIntent"] boolValue]&&! [file[@"newVerified"] boolValue]&&
+            ![file[@"returnNewIntent"] boolValue]&&! [file[@"committed"] boolValue];
+        if(safeOriginalReturn) {
+            if(![self returnKnownOriginal:error requireDestinationAbsent:YES])return NO;
+            [self recordKnownFileStage:@"OriginalAutoRestored" error:nil];
+            return YES;
+        }
+    }
     if(committedDelete) {
         NSData *local=[self validatedLocalOriginal:file error:error];
         NSData *remote=original?[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:error]:nil;
@@ -1176,7 +1203,7 @@ closeKnownFile:;
                 .operation=XFATCFileRecoveryRead,.original=XFATCFilePresenceMissing,
                 .incoming=incomingMissing?XFATCFilePresenceMissing:XFATCFilePresenceUnknown,
                 .verify=verifyMissing?XFATCFilePresenceMissing:XFATCFilePresenceUnknown,
-                .target=XFATCFilePresenceUnknown,.originalCaptured=true,.returnOriginalIntent=true};
+                .target=targetPresence,.originalCaptured=true,.returnOriginalIntent=true};
             if(XFATCClassifyFileRecovery(observation)!=XFATCFileRecoveryReadReturnConfirmed){
                 if(error)*error=[self knownFilePending:@"El retorno del original requiere revisión: se conservaron los objetos de recuperación."];return NO;}
         }
@@ -1207,7 +1234,7 @@ closeKnownFile:;
             .original=originalMissing?XFATCFilePresenceMissing:XFATCFilePresencePresent,
             .incoming=incomingMissing?XFATCFilePresenceMissing:XFATCFilePresenceUnknown,
             .verify=verifyMissing?XFATCFilePresenceMissing:XFATCFilePresenceUnknown,
-            .target=XFATCFilePresenceUnknown,.originalCaptured=true,
+            .target=targetPresence,.originalCaptured=true,
             .replacementVerified=[file[@"newVerified"] boolValue],.placementIntent=[file[@"incomingPlaceIntent"] boolValue],
             .returnReplacementIntent=[file[@"returnNewIntent"] boolValue],.committed=true};
         if(XFATCClassifyFileRecovery(observation)!=XFATCFileRecoveryWriteCommitted){
@@ -1228,7 +1255,7 @@ closeKnownFile:;
         }
         // This path is reached only by the dedicated, user-confirmed restore
         // action, whose UI identifies the destination and requires its app closed.
-        return [self returnKnownOriginal:error];
+        return [self returnKnownOriginal:error requireDestinationAbsent:NO];
     }
     self.lastWarning=@"Hay un archivo pendiente de recuperar. Cierra la app de destino y usa Abrir ruta → Restaurar original pendiente. La copia y el estado se conservaron.";
     [self recordKnownFileStage:@"RecoveryPending" error:nil];
@@ -1260,7 +1287,7 @@ closeKnownFile:;
         data=[self readKnownStage:self.journal[@"knownFile"][@"Original"] limit:maximumBytes error:&failure];
         if(data&&![self persistKnownOriginal:data error:&failure])data=nil;
         NSError *returnError=nil;
-        if(![self returnKnownOriginal:&returnError]){data=nil;failure=returnError;break;}
+        if(![self returnKnownOriginal:&returnError requireDestinationAbsent:YES]){data=nil;failure=returnError;break;}
         [self recordKnownFileStage:data?@"ReadReturned":@"ReadFailedOriginalReturned" error:failure];
     }while(0);
     NSString *snapshot=self.journal[@"knownFile"][@"snapshot"];

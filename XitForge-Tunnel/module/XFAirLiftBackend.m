@@ -473,9 +473,12 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
                     // the ATC module blocks new moves until recovery resolves it.
                     id deletionCommitted=failure.userInfo[@"KnownFileDeleteCommitted"];
                     BOOL retainedDelete=[deletionCommitted isKindOfClass:NSNumber.class]&&[deletionCommitted boolValue];
-                    self->_directoryWarning = retainedDelete?
-                        [NSString stringWithFormat:@"El retiro ya se confirmó y se conservó la copia. Vuelve a conectar para reintentar la recuperación del estado temporal; el archivo no se restaurará en la app. %@",failure.localizedDescription?:@""]:
-                        [NSString stringWithFormat:@"Hay un original pendiente de recuperar. En XitForge, selecciona la app correspondiente y usa «Abrir ruta» → «Restaurar original pendiente» con la misma ruta. %@", failure.localizedDescription ?: @""];
+                    NSString *recoveryMessage = retainedDelete?
+                        @"El retiro ya se confirmó y se conservó la copia. El archivo no se restaurará automáticamente.":
+                        @"Hay un original pendiente de recuperar. XitForge intentará restaurarlo automáticamente cuando la ruta esté vacía; si el contenido cambió, la recuperación manual seguirá disponible.";
+                    NSString *detail = failure.localizedDescription ?: @"";
+                    self->_directoryWarning = [detail isEqualToString:recoveryMessage] || !detail.length
+                        ? recoveryMessage : [NSString stringWithFormat:@"%@ %@", recoveryMessage, detail];
                     self->_routeResultCodes[@"AirTrafficRecovery"] = @(2210);
                 } else {
                     success = NO;
