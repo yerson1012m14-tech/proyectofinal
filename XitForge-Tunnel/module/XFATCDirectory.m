@@ -762,7 +762,8 @@ closeKnownFile:;
         if(wantMissing?missing:info!=nil)return YES;
         [NSThread sleepForTimeInterval:0.125];
         }while(deadline.timeIntervalSinceNow>0);
-    if(error)*error=XFATCError(2203,[NSString stringWithFormat:@"V24: waitKnownFile no confirmó el temporal. path=%@ missing=%@", path ?: @"nil", wantMissing ? @"YES" : @"NO"]);
+    NSDictionary *file=[self.journal[@"knownFile"] isKindOfClass:NSDictionary.class]?self.journal[@"knownFile"]:nil;
+if(error)*error=XFATCError(2203,[NSString stringWithFormat:@"V25: waitKnownFile falló. path=%@ missing=%@ op=%@ incoming=%@ verifyIntent=%@ newVerified=%@ returnNew=%@ committed=%@", path ?: @"nil", wantMissing ? @"YES" : @"NO", file[@"operation"] ?: @"nil", file[@"incomingPlaceIntent"] ?: @"nil", file[@"verifyMoveIntent"] ?: @"nil", file[@"newVerified"] ?: @"nil", file[@"returnNewIntent"] ?: @"nil", file[@"committed"] ?: @"nil"]);
     return NO;
 }
 - (NSData *)readKnownStage:(NSString *)path limit:(NSUInteger)limit error:(NSError **)error {
