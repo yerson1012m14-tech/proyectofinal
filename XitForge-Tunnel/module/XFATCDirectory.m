@@ -762,7 +762,7 @@ closeKnownFile:;
         if(wantMissing?missing:info!=nil)return YES;
         [NSThread sleepForTimeInterval:0.125];
     }while(deadline.timeIntervalSinceNow>0);
-    if(error)*error=XFATCError(2203,@"No se confirmó el traslado del archivo. Se conserva la recuperación pendiente.");
+        if(error)*error=XFATCError(2203,@"V24: waitKnownFile no confirmó el temporal.");
     return NO;
 }
 - (NSData *)readKnownStage:(NSString *)path limit:(NSUInteger)limit error:(NSError **)error {
