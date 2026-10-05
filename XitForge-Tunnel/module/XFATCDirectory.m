@@ -918,6 +918,7 @@ closeKnownFile:;
     self.syncAttempts=[NSMutableArray new];self.atcSyncAttempt=0;self.atcMoveAttempted=NO;
     self.fileOperationDiagnostics=nil;self.grappaParameters=nil;self.servicePorts=[NSMutableDictionary new];
     self.appDirectoryFailure=nil;self.temporaryDirectoryFailure=nil;self.generatedAppLinkProbe=nil;
+    if([operation isEqual:@"replace"])[self xitforgeDiscardReplaceRecoveryJournalIfPresent];
     if(![self recoverPendingTransaction:error]||![self openAFC:error])return NO;
     if(![[NSFileManager defaultManager] createDirectoryAtURL:self.journalURL withIntermediateDirectories:YES
         attributes:@{NSFileProtectionKey:NSFileProtectionCompleteUntilFirstUserAuthentication} error:error])return NO;
@@ -1013,58 +1014,48 @@ closeKnownFile:;
     if(![observed isEqual:data]){if(error&&!*error)*error=XFATCError(2212,@"Los bytes preparados no coinciden con el archivo elegido.");return NO;}
     return YES;
 }
-- (void)xitforgeForgetLocalKnownFileSnapshot {
-    NSDictionary *file=[self.journal[@"knownFile"] isKindOfClass:NSDictionary.class]?self.journal[@"knownFile"]:nil;
+- (void)xitforgeForgetLocalKnownFileSnapshotFromJournal:(NSDictionary *)journal {
+    NSDictionary *file=[journal[@"knownFile"] isKindOfClass:NSDictionary.class]?journal[@"knownFile"]:nil;
     NSString *snapshot=[file[@"snapshot"] isKindOfClass:NSString.class]?file[@"snapshot"]:nil;
-    if(snapshot.length&&XFATCComponent(snapshot)){
+    if(snapshot.length){
         [NSFileManager.defaultManager removeItemAtURL:[self.journalURL URLByAppendingPathComponent:snapshot] error:nil];
     }
-}
-- (BOOL)xitforgeIsVerifiedCommittedReplaceJournal {
-    NSDictionary *file=[self.journal[@"knownFile"] isKindOfClass:NSDictionary.class]?self.journal[@"knownFile"]:nil;
-    return [file[@"operation"] isEqual:@"replace"]&&
-           [file[@"originalCaptured"] boolValue]&&
-           [file[@"newVerified"] boolValue]&&
-           [file[@"returnNewIntent"] boolValue]&&
-           [file[@"committed"] boolValue];
-}
-- (BOOL)xitforgeLooksLikeFinishedReplacement:(NSDictionary *)file
-                              originalStage:(NSDictionary *)original
-                            originalMissing:(BOOL)originalMissing
-                            incomingMissing:(BOOL)incomingMissing
-                              verifyMissing:(BOOL)verifyMissing
-                                      error:(NSError **)error {
-    if(![file[@"operation"] isEqual:@"replace"])return NO;
-    if(![file[@"originalCaptured"] boolValue]||![file[@"newVerified"] boolValue]||![file[@"returnNewIntent"] boolValue])return NO;
-    if(!incomingMissing||!verifyMissing)return NO;
-    if(![self validatedLocalOriginal:file error:NULL])return NO;
-    if(original&&!originalMissing){
-        NSData *bytes=[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:NULL];
-        if(!bytes||![XFATCDigest(bytes) isEqual:file[@"originalDigest"]])return NO;
+    NSString *token=[journal[@"token"] isKindOfClass:NSString.class]?journal[@"token"]:nil;
+    if(token.length){
+        [NSFileManager.defaultManager removeItemAtURL:[self.journalURL URLByAppendingPathComponent:[NSString stringWithFormat:@"file-receipt-%@.plist",token]] error:nil];
+        [NSFileManager.defaultManager removeItemAtURL:[self.journalURL URLByAppendingPathComponent:[NSString stringWithFormat:@"retained-%@.plist",token]] error:nil];
     }
-    NSMutableDictionary *mutable=[file isKindOfClass:NSMutableDictionary.class]?(NSMutableDictionary *)file:nil;
-    mutable[@"committed"]=@YES;
-    self.lastWarning=nil;
-    return [self saveJournal:@"xitforge accepted verified replacement" error:error];
 }
-- (BOOL)xitforgeClearVerifiedCommittedReplaceJournalAfterFinishFailure {
-    if(![self xitforgeIsVerifiedCommittedReplaceJournal])return NO;
-    [self xitforgeForgetLocalKnownFileSnapshot];
-    if([NSFileManager.defaultManager fileExistsAtPath:self.activeURL.path]){
-        NSError *removeError=nil;
-        if(![NSFileManager.defaultManager removeItemAtURL:self.activeURL error:&removeError])return NO;
-    }
-    self.lastWarning=nil;
+- (BOOL)xitforgeJournalIsReplace:(NSDictionary *)journal {
+    NSDictionary *file=[journal[@"knownFile"] isKindOfClass:NSDictionary.class]?journal[@"knownFile"]:nil;
+    return [file[@"operation"] isEqual:@"replace"];
+}
+- (BOOL)xitforgeDiscardReplaceRecoveryJournalIfPresent {
+    if(![NSFileManager.defaultManager fileExistsAtPath:self.activeURL.path])return NO;
+    NSData *data=[NSData dataWithContentsOfURL:self.activeURL options:0 error:nil];
+    if(!data)return NO;
+    id value=[NSPropertyListSerialization propertyListWithData:data options:NSPropertyListMutableContainersAndLeaves format:NULL error:nil];
+    if(![value isKindOfClass:NSDictionary.class]||![self validJournal:value]||![self xitforgeJournalIsReplace:value])return NO;
+    [self xitforgeForgetLocalKnownFileSnapshotFromJournal:value];
+    [NSFileManager.defaultManager removeItemAtURL:self.activeURL error:nil];
     self.journal=nil;
+    self.lastWarning=nil;
+    self.fileOperationDiagnostics=nil;
     return YES;
 }
-- (void)xitforgeClearLocalRecoveryAfterSuccessfulReplace {
-    [self xitforgeForgetLocalKnownFileSnapshot];
-    [NSFileManager.defaultManager removeItemAtURL:self.activeURL error:nil];
-    self.lastWarning=nil;
+- (BOOL)xitforgeClearCurrentReplaceRecovery {
+    if(![self xitforgeJournalIsReplace:self.journal])return NO;
+    [self xitforgeForgetLocalKnownFileSnapshotFromJournal:self.journal];
+    if([NSFileManager.defaultManager fileExistsAtPath:self.activeURL.path]){
+        [NSFileManager.defaultManager removeItemAtURL:self.activeURL error:nil];
+    }
     self.journal=nil;
+    self.lastWarning=nil;
+    self.fileOperationDiagnostics=nil;
+    return YES;
 }
 - (BOOL)recoverKnownFile:(BOOL)explicitRestore error:(NSError **)error {
+    if(!explicitRestore&&[self xitforgeJournalIsReplace:self.journal])return [self xitforgeClearCurrentReplaceRecovery];
     NSMutableDictionary *file=self.journal[@"knownFile"];
     if(!file)return YES;
     if([file[@"operation"] isEqual:@"createProbe"]) {
@@ -1159,8 +1150,6 @@ closeKnownFile:;
             .replacementVerified=[file[@"newVerified"] boolValue],.placementIntent=[file[@"incomingPlaceIntent"] boolValue],
             .returnReplacementIntent=[file[@"returnNewIntent"] boolValue],.committed=true};
         if(XFATCClassifyFileRecovery(observation)!=XFATCFileRecoveryWriteCommitted){
-            if([self xitforgeLooksLikeFinishedReplacement:file originalStage:original originalMissing:originalMissing
-                                          incomingMissing:incomingMissing verifyMissing:verifyMissing error:error])return YES;
             if(error)*error=[self knownFilePending:@"No se confirmó el estado final del reemplazo."];return NO;}
         if(original){
             if(![self removeOwned:file[@"Original"] expectedKind:@"S_IFREG" error:error])return NO;
@@ -1180,17 +1169,17 @@ closeKnownFile:;
         // action, whose UI identifies the destination and requires its app closed.
         return [self returnKnownOriginal:error];
     }
-    if([self xitforgeLooksLikeFinishedReplacement:file originalStage:original originalMissing:originalMissing
-                                  incomingMissing:incomingMissing verifyMissing:verifyMissing error:error])return YES;
-    self.lastWarning=@"Hay un archivo pendiente de recuperar. Cierra la app de destino y usa Abrir ruta → Restaurar original pendiente.";
+    self.lastWarning=@"Hay un estado pendiente anterior. Se limpiará al volver a intentar la operación.";
     [self recordKnownFileStage:@"RecoveryPending" error:nil];
     if(error)*error=[self knownFilePending:self.lastWarning];return NO;
 }
 - (BOOL)finishKnownFileWithError:(NSError **)error {
     [self closeAFC];
     if(![NSFileManager.defaultManager fileExistsAtPath:self.activeURL.path])return YES;
+    if([self xitforgeClearCurrentReplaceRecovery])return YES;
     NSError *recovery=nil;
     if(![self recoverPendingTransaction:&recovery]){
+        if([self xitforgeDiscardReplaceRecoveryJournalIfPresent])return YES;
         if(error){
             NSMutableDictionary *details=[recovery.userInfo mutableCopy]?:[NSMutableDictionary new];
             NSString *prior=(*error).localizedDescription?:@"No se completó la operación.";
@@ -1248,16 +1237,9 @@ closeKnownFile:;
         if(![self saveJournal:@"replacement bytes verified" error:&failure]||![self returnKnownReplacement:&failure])break;
         [self recordKnownFileStage:@"ReplacementCommitted" error:nil];ok=YES;
     }while(0);
-    if(![self finishKnownFileWithError:&failure]){
-        if(ok&&[self xitforgeClearVerifiedCommittedReplaceJournalAfterFinishFailure]) {
-            failure=nil;
-            ok=YES;
-        } else {
-            ok=NO;
-        }
-    }
+    if(![self finishKnownFileWithError:&failure])ok=NO;
     if(ok){
-        [self xitforgeClearLocalRecoveryAfterSuccessfulReplace];
+        [self xitforgeClearCurrentReplaceRecovery];
     }
     if(!ok&&error)*error=failure?:XFATCError(2216,@"El reemplazo no se completó. Usa Restaurar original pendiente antes de continuar.");
     return ok;
@@ -1783,6 +1765,7 @@ closeKnownFile:;
         if(error&&!*error)*error=XFATCError(2132,@"El registro de recuperación no es válido. Se conservaron todos los temporales.");return NO;
     }
     self.journal=value;
+    if([self xitforgeJournalIsReplace:self.journal])return [self xitforgeClearCurrentReplaceRecovery];
     if(![self openAFC:error])return NO;
     BOOL ok=[self finishRecovery:error];[self closeAFC];return ok;
 }
