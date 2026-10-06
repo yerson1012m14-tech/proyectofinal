@@ -1,4 +1,4 @@
-name: Compilar Mi App con Motor Filza
+name: Compilar XITFORGE-UNIVERSAL
 on: [push, pull_request, workflow_dispatch]
 
 jobs:
@@ -104,8 +104,8 @@ jobs:
           otool -L Payload/MiApp.app/MiApp
 
           FECHA=$(date +%Y%m%d_%H%M%S)
-          zip -qr MiApp_${FECHA}.ipa Payload/
-          echo "IPA base generada: MiApp_${FECHA}.ipa"
+          zip -qr XITFORGE-UNIVERSAL-base_${FECHA}.ipa Payload/
+          echo "IPA base generada: XITFORGE-UNIVERSAL-base_${FECHA}.ipa"
 
       - name: Comprobar archivos del túnel
         run: |
@@ -137,7 +137,7 @@ jobs:
           import subprocess
           import sys
 
-          base = list(Path('.').glob('MiApp_*.ipa'))
+          base = list(Path('.').glob('XITFORGE-UNIVERSAL-base_*.ipa'))
           if len(base) != 1:
               raise SystemExit(
                   f'Se esperaba exactamente una IPA base de esta compilación y se encontraron {len(base)}'
@@ -152,24 +152,25 @@ jobs:
               'XitForge-Tunnel/module/package_ipa.py',
               str(base[0]),
               str(module),
-              'XitForge-1.7.0-panel-actions-unsigned.ipa',
+              'XITFORGE-UNIVERSAL.ipa',
               'XitForge-Tunnel/module/Notices.txt'
           ], check=True)
           PY
 
       - name: Verificar IPA final
         run: |
-          test -f XitForge-1.7.0-panel-actions-unsigned.ipa
-          test -f XitForge-1.7.0-panel-actions-unsigned.validation.json
+          test -f XITFORGE-UNIVERSAL.ipa
+          test -f XITFORGE-UNIVERSAL.validation.json
 
-          unzip -t XitForge-1.7.0-panel-actions-unsigned.ipa
+          unzip -t XITFORGE-UNIVERSAL.ipa
           echo "IPA final creada correctamente"
 
       - name: Subir IPA final
         uses: actions/upload-artifact@v4
         with:
-          name: Mi-App-XitForge-1.7.0-panel-actions
+          name: XITFORGE-UNIVERSAL
           path: |
-            XitForge-1.7.0-panel-actions-unsigned.ipa
-            XitForge-1.7.0-panel-actions-unsigned.validation.json
+            XITFORGE-UNIVERSAL.ipa
+            XITFORGE-UNIVERSAL.validation.json
           if-no-files-found: error
+
