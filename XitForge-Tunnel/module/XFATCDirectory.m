@@ -655,7 +655,7 @@ closeATC:;
        ![target.stringByDeletingLastPathComponent isEqual:[@"/" stringByAppendingString:journal[@"tail"]]]||
        !XFATCComponent(target.lastPathComponent)||
        [target componentsSeparatedByString:@"/"].count<8)return NO;
-    if(![@[@"read",@"replace",@"delete",@"createProbe"] containsObject:file[@"operation"]])return NO;
+    if(![@[@"read",@"replace",@"delete",@"createProbe",@"create"] containsObject:file[@"operation"]])return NO;
     for(NSString *pair in @[@"Original",@"Incoming",@"Verify"])
         if(![file[pair] isEqual:[backup stringByAppendingPathComponent:[@"File" stringByAppendingString:pair]]])return NO;
     if(![file[@"snapshot"] isEqual:[token stringByAppendingString:@"-original.bin"]])return NO;
@@ -669,6 +669,12 @@ closeATC:;
     if([file[@"newVerified"] boolValue]&&(!XFATCHash(file[@"newDigest"])||
        ![file[@"newSize"] isKindOfClass:NSNumber.class]||[file[@"newSize"] unsignedLongLongValue]>64u*1024u*1024u))return NO;
     if([file[@"originalReturned"] boolValue]&&![file[@"returnOriginalIntent"] boolValue])return NO;
+    if([file[@"operation"] isEqual:@"create"]) {
+        if ([file[@"originalMoveIntent"] boolValue] || [file[@"originalCaptured"] boolValue] ||
+            [file[@"returnOriginalIntent"] boolValue] || [file[@"originalReturned"] boolValue]) return NO;
+        if(file[@"newDigest"] && (!XFATCHash(file[@"newDigest"]) ||
+            ![file[@"newSize"] isKindOfClass:NSNumber.class] || [file[@"newSize"] unsignedLongLongValue]>64u*1024u*1024u)) return NO;
+    }
     if([file[@"operation"] isEqual:@"createProbe"]) {
         NSData *marker=XFProbeContents(target);
         if(!marker || [file[@"originalMoveIntent"] boolValue] || [file[@"originalObserved"] boolValue] ||
@@ -839,7 +845,7 @@ closeATC:;
                 if(!link||missing||![link[@"kind"] isEqual:@"S_IFLNK"]||
                    ![link[@"linkTarget"] isEqual:[@"../../../" stringByAppendingString:self.journal[@"tail"]]]){
                     if(error&&!*error)*error=XFATCError(2220,@"El enlace de retorno cambió o desapareció. Se conservaron el original y la recuperación, sin enviarlo a otro destino.");goto closeKnownFile;}
-                if([file[@"operation"] isEqual:@"createProbe"]&&![self requireProbeDestinationAbsent:error])goto closeKnownFile;
+                if(([@[@"createProbe",@"create"] containsObject:file[@"operation"]])&&![self requireProbeDestinationAbsent:error])goto closeKnownFile;
             }
             if(![self saveJournal:@"send persisted known-file move" error:error])goto closeKnownFile;
             self.protocolPhase=@"FileComplete";
@@ -1163,6 +1169,39 @@ closeKnownFile:;
 - (BOOL)recoverKnownFile:(BOOL)explicitRestore error:(NSError **)error {
     NSMutableDictionary *file=self.journal[@"knownFile"];
     if(!file)return YES;
+    if([file[@"operation"] isEqual:@"create"]) {
+        if(![self validKnownFileJournal:self.journal]) return NO;
+        if([file[@"committed"] boolValue]) return YES;
+        BOOL missing=NO;
+        NSDictionary *info=[self info:file[@"Verify"] missing:&missing error:error];
+        if(!info && !missing) return NO;
+        if(info) {
+            NSData *bytes=[self readKnownStage:file[@"Verify"] limit:64u*1024u*1024u error:error];
+            if(!bytes || ![XFATCDigest(bytes) isEqual:file[@"newDigest"]]) return NO;
+            file[@"newVerified"]=@YES;
+            if(![self saveJournal:@"resume verified created file" error:error]) return NO;
+            return [self returnKnownReplacement:error];
+        }
+        if([file[@"newVerified"] boolValue] && [file[@"returnNewIntent"] boolValue]) {
+            BOOL incomingMissing=NO;
+            [self info:file[@"Incoming"] missing:&incomingMissing error:error];
+            if(!incomingMissing)return NO;
+            file[@"committed"]=@YES;
+            return [self saveJournal:@"created file return confirmed after reconnect" error:error];
+        }
+        if([file[@"incomingPlaceIntent"] boolValue]) {
+            if(error)*error=[self knownFilePending:@"La creación quedó sin confirmar. Se conservaron los datos para recuperación; no se sobrescribirá la ruta."];
+            return NO;
+        }
+        NSDictionary *incoming=[self info:file[@"Incoming"] missing:&missing error:error];
+        if(!incoming && !missing) return NO;
+        if(incoming) {
+            NSData *bytes=[self readKnownStage:file[@"Incoming"] limit:64u*1024u*1024u error:error];
+            if(!bytes || ![XFATCDigest(bytes) isEqual:file[@"newDigest"]]) return NO;
+            if(![self removeOwned:file[@"Incoming"] expectedKind:@"S_IFREG" error:error]) return NO;
+        }
+        return YES;
+    }
     if([file[@"operation"] isEqual:@"createProbe"]) {
         if(![self validKnownFileJournal:self.journal])return NO;
         // Recovery never writes to or deletes the app target. Only staged bytes
@@ -1198,11 +1237,29 @@ closeKnownFile:;
     if(!verify&&!verifyMissing)return NO;
     NSDictionary *incoming=[self info:file[@"Incoming"] missing:&incomingMissing error:error];
     if(!incoming&&!incomingMissing)return NO;
+    if([file[@"operation"] isEqual:@"replace"] && ![file[@"committed"] boolValue] &&
+       [file[@"newVerified"] boolValue] && verify && incomingMissing) {
+        NSData *bytes=[self readKnownStage:file[@"Verify"] limit:64u*1024u*1024u error:error];
+        if(!bytes || ![XFATCDigest(bytes) isEqual:file[@"newDigest"]])return NO;
+        if(![self restoreBatchLinkForAutomaticRecovery:error] ||
+           ![self publishKnownManifestForBatch:NO error:error] ||
+           ![self returnKnownReplacement:error])return NO;
+        verify=nil;verifyMissing=YES;
+    }
     XFATCFilePresence targetPresence=XFATCFilePresenceUnknown;
     if(![file[@"operation"] isEqual:@"delete"]) {
-        BOOL targetMissing=NO;NSDictionary *targetInfo=[self info:[self knownFileDestination] missing:&targetMissing error:error];
-        if(!targetInfo&&!targetMissing)return NO;
-        targetPresence=targetMissing?XFATCFilePresenceMissing:XFATCFilePresencePresent;
+        if(![self restoreBatchLinkForAutomaticRecovery:error] || ![self verifyKnownTargetLink:error])return NO;
+        BOOL targetMissing=NO;NSError *targetError=nil;
+        NSDictionary *targetInfo=[self info:[self knownFileDestination] missing:&targetMissing error:&targetError];
+        if(!targetInfo && !targetMissing &&
+           !(targetError.code==106 && [targetError.userInfo[@"NativeSubcode"] integerValue]==10)) {
+            if(error)*error=targetError;return NO;
+        }
+        // PermDenied leaves the protected destination Unknown. A verified
+        // return plus missing owned sources still permits closing a committed
+        // transaction; it never permits treating this destination as absent.
+        targetPresence=targetMissing?XFATCFilePresenceMissing:
+            (targetInfo?XFATCFilePresencePresent:XFATCFilePresenceUnknown);
         BOOL safeOriginalReturn=[file[@"operation"] isEqual:@"read"]||[file[@"operation"] isEqual:@"replace"];
         safeOriginalReturn=safeOriginalReturn&&[file[@"originalCaptured"] boolValue]&&
             [file[@"originalMoveIntent"] boolValue]&&![file[@"originalReturned"] boolValue]&&
@@ -1344,7 +1401,18 @@ closeKnownFile:;
     self.batchActive=YES;self.batchLastPhase=0;self.batchEvents=[NSMutableArray new];
     NSError *failure=nil;BOOL ok=NO;
     do {
-        if(![self prepareKnownFile:target operation:@"replace" error:&failure]||![self observeKnownOriginal:&failure])break;
+        if(![self prepareKnownFile:target operation:@"replace" error:&failure])break;
+        NSError *absenceError=nil;
+        if([self requireProbeDestinationAbsent:&absenceError]) {
+            NSMutableDictionary *created=self.journal[@"knownFile"];
+            created[@"operation"]=@"create";
+            if(![self saveJournal:@"select creation at confirmed missing file" error:&failure])break;
+            ok=[self createPreparedFileWithData:data error:&failure];
+            break;
+        }
+        // A denied metadata query is not absence. The existing-file route can
+        // still retrieve the original through ATC and verify its replacement.
+        if(![self observeKnownOriginal:&failure])break;
         NSMutableDictionary *file=self.journal[@"knownFile"];
         NSData *original=[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:&failure];
         if(!original||![self persistKnownOriginal:original error:&failure])break;
@@ -1405,6 +1473,28 @@ closeKnownFile:;
     }
     return XFProbeAFCConfirmsAbsence(returnedError,code,subcode,YES,[self verifyKnownTargetLink:error]);
 }
+- (BOOL)createPreparedFileWithData:(NSData *)data error:(NSError **)error {
+    NSMutableDictionary *file=self.journal[@"knownFile"];
+    file[@"newDigest"]=XFATCDigest(data);file[@"newSize"]=@(data.length);
+    if(![self saveJournal:@"identify Home payload before creation" error:error] ||
+       ![self writeKnownIncoming:data error:error])return NO;
+    file[@"incomingPlaceIntent"]=@YES;
+    if(![self saveJournal:@"place payload at absent application destination" error:error] ||
+       ![self runKnownFilePairs:[self knownFilePair:3 destination:[self knownFileDestination]] error:error] ||
+       ![self waitKnownFile:file[@"Incoming"] missing:YES error:error])return NO;
+    file[@"verifyMoveIntent"]=@YES;
+    if(![self saveJournal:@"read back created application file" error:error] ||
+       ![self runKnownFilePairs:[self knownFilePair:1 destination:file[@"Verify"]] error:error] ||
+       ![self waitKnownFile:file[@"Verify"] missing:NO error:error])return NO;
+    NSData *observed=[self readKnownStage:file[@"Verify"] limit:64u*1024u*1024u error:error];
+    if(![observed isEqual:data]) {
+        if(error&&!*error)*error=XFATCError(2244,@"La lectura de verificación no coincide con el archivo del panel.");return NO;
+    }
+    file[@"newVerified"]=@YES;
+    if(![self saveJournal:@"created Home file verified byte for byte" error:error])return NO;
+    return [self returnKnownReplacement:error];
+}
+
 - (BOOL)createTestAbsoluteFile:(NSString *)path error:(NSError **)error {
     NSString *target=XFATCPath(path);
     NSData *marker=XFProbeContents(target);

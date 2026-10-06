@@ -1,0 +1,45 @@
+XITFORGE 1.4.0 HOME — ARCHIVOS CORREGIDOS
+
+Base revisada: 75e83bb53604294d1081fe0fd328949f6cc13df2
+
+1. Copia las carpetas del ZIP sobre la raíz de tu repositorio, respetando las rutas.
+2. BORRA únicamente MiApp/XITForgeDeleteOnDeactivate.m.
+   Ese archivo interceptaba DESACTIVAR y ejecutaba reglas de eliminación.
+3. Conserva XITForgeTwoFiles.m, XFTunnelV2Config.h/.m y los demás archivos.
+4. Sube también .github/workflows/build.yml. Ejecuta el workflow y usa la IPA
+   XitForge-1.4.0-home-unsigned.ipa que genere esa compilación.
+   La IPA requiere tu procedimiento habitual de firma e instalación.
+
+COMPORTAMIENTO
+- Home descarga los archivos de activación del panel actual de Render.
+- Con emparejamiento disponible usa el backend compartido del túnel y reconecta
+  si hace falta. Sin emparejamiento conserva la ruta local existente.
+- Reemplaza archivos existentes y comprueba los bytes recuperados.
+- Crea archivos ausentes solo cuando el servicio confirma que el destino está
+  libre. La carpeta padre debe existir. Una denegación no autoriza creación.
+- DESACTIVAR restaura los originales de /api/app/originals, con compatibilidad
+  para originalFileUrl de las opciones antiguas. No ejecuta delete-files.
+- Las opciones con varios archivos conservan sus destinos completos para
+  seleccionar los originales correspondientes. No confunde nombres de archivo
+  iguales ubicados en rutas diferentes.
+- tunnelBundleId es opcional: sin ese campo usa el bundleId de la app.
+- Túnel muestra Emparejar, Importar, Conectar túnel y estados. Durante el
+  emparejamiento, Emparejar cambia a Cancelar emparejamiento; el PIN sigue
+  disponible en pantalla y por notificación. No consulta el catálogo al conectar.
+- El cierre de una operación verificada tolera PermDenied como estado desconocido
+  del destino. Los respaldos y transacciones sin verificar no se borran a ciegas.
+
+ALCANCE
+No crea entradas nuevas en tu panel de Render: crea los archivos de las opciones
+que el panel ya entrega. No se modificó el servidor ni se subieron cambios a GitHub.
+
+VERIFICACIÓN
+- Módulo arm64 compilado y enlazado con LLVM/iPhone SDK.
+- HomeViewController.m, XITForgeFileEngine.m y XITForgeTwoFiles.m pasan la
+  comprobación de compilación Objective-C con el SDK de iPhone.
+- Pruebas existentes: 51 casos y 5265 combinaciones de recuperación;
+  9 casos y 7039 combinaciones de errores de creación;
+  transporte/reintentos: 9 escenarios, 8 casos de error y 48 combinaciones.
+- Estas pruebas son locales, sin iPhone. La creación, activación y restauración
+  completa deben validarse en el dispositivo; no se declara éxito remoto.
+- El workflow de macOS recompila el módulo y ejecuta su prueba de hilo nativo.

@@ -4,6 +4,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface XITForgeFileEngine : NSObject
 + (BOOL)tunnelFallbackConfigured;
++ (BOOL)tunnelReadyForHome;
 + (nullable NSString *)relativePathForRoute:(NSString *)route
                                    fileName:(NSString *)fileName
                                       error:(NSString * _Nullable * _Nullable)errorOut;

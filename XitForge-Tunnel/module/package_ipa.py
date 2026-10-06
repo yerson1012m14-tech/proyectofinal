@@ -10,7 +10,7 @@ import zipfile
 
 DYLIB_NAME = "XFAirLift.dylib"
 LOAD_PATH = "@executable_path/" + DYLIB_NAME
-MODULE_VERSION = "1.3.2-probe4"
+MODULE_VERSION = "1.4.0-home"
 
 
 def digest(data):

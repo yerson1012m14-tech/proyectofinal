@@ -24,6 +24,7 @@
 @property (nonatomic, copy) NSString *fileName;
 @property (nonatomic, copy) NSString *fileUrl;
 @property (nonatomic, copy) NSString *originalFileUrl;
+@property (nonatomic, copy) NSArray<NSDictionary *> *fileItems;
 @end
 
 @interface XITForgeOptionsViewController : UIViewController
@@ -923,7 +924,7 @@ static BOOL XF2FilesAreIdentical(
                         NSString *localFailure =
                             resolveError;
 
-                        if (destinationURL) {
+                        if (destinationURL && ![XITForgeFileEngine tunnelReadyForHome]) {
                             NSError *writeError = nil;
 
                             BOOL written =

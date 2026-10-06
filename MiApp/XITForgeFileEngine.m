@@ -92,6 +92,11 @@
     return [self sharedTunnelBackend] != nil;
 }
 
+ + (BOOL)tunnelReadyForHome {
+    id backend = [self sharedTunnelBackend];
+    return [self boolGetter:NSSelectorFromString(@"hasPairingRecord") object:backend];
+}
+
 + (BOOL)isSafeComponent:(NSString *)component {
     if (![component isKindOfClass:NSString.class] ||
         component.length == 0) {
@@ -553,14 +558,8 @@
     }
 
     if (index >= games.count) {
-        if (completion) {
-            completion(nil,
-                [NSString stringWithFormat:
-                    @"El servidor no devolvió tunnelBundleId para %@. "
-                     "Verifica que Render esté desplegando la rama que contiene "
-                     "tunnel_bundle_id y que la opción tenga ese campo guardado.",
-                    bundleID ?: @"la opción"]);
-        }
+        // tunnelBundleId is optional. A legacy bundleId is a real app identifier.
+        if (completion) completion(bundleID, nil);
         return;
     }
 
@@ -616,25 +615,10 @@
         return;
     }
 
-    NSMutableArray<NSString *> *games = [NSMutableArray array];
-
-    if ([bundleID isEqualToString:@"com.dts.freefireth"]) {
-        [games addObject:@"freefire_normal"];
-        [games addObject:@"freefire_max"];
-    } else if ([bundleID isEqualToString:@"com.dts.freefiremax"]) {
-        [games addObject:@"freefire_max"];
-        [games addObject:@"freefire_normal"];
-    } else {
-        [games addObject:@"freefire_normal"];
-        [games addObject:@"freefire_max"];
-    }
-
-    [self resolveTunnelBundleIDForInput:bundleID
-                                  route:route
-                               fileName:fileName
-                                 games:games
-                                 index:0
-                            completion:completion];
+    NSString *mapped = [self cachedTunnelBundleIDForInput:bundleID];
+    // Home already downloaded the panel manifest. Do not fetch both games again
+    // for every file; a missing optional mapping uses the supplied app identifier.
+    if (completion) completion(mapped.length ? mapped : bundleID, nil);
 }
 
 + (void)replaceFileViaTunnelFromURL:(NSURL *)sourceURL

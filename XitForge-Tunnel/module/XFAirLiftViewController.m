@@ -844,20 +844,19 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Conexión"
-        style:UIBarButtonItemStylePlain target:self action:@selector(configureEndpoint)];
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Diagnóstico"
-        style:UIBarButtonItemStylePlain target:self action:@selector(showConnectionDiagnostics)];
+    self.navigationItem.leftBarButtonItem = nil;
+    self.navigationItem.rightBarButtonItem = nil;
+    self.view.tintColor = [UIColor colorWithRed:0.93 green:0.12 blue:0.19 alpha:1];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 64;
     self.headerStack = [[UIStackView alloc] init];
     self.headerStack.axis = UILayoutConstraintAxisVertical;
     self.headerStack.spacing = 12;
     self.headerStack.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.headerStack addArrangedSubview:XFLabel(@"Archivos por túnel", UIFontTextStyleTitle2, UIColor.labelColor)];
+    [self.headerStack addArrangedSubview:XFLabel(@"Conecta tu iPhone", UIFontTextStyleTitle2, UIColor.labelColor)];
     self.connectionStatus = [[XFConnectionStatusView alloc] init];
     [self.headerStack addArrangedSubview:self.connectionStatus];
-    [self.headerStack addArrangedSubview:XFLabel(@"1. Con el Wi-Fi encendido, empareja este iPhone o importa su registro.\n2. Activa LocalDevVPN.\n3. Conecta para consultar el catálogo de apps.", UIFontTextStyleSubheadline, UIColor.secondaryLabelColor)];
+    [self.headerStack addArrangedSubview:XFLabel(@"1. Con el Wi-Fi encendido, empareja este iPhone o importa su registro.\n2. Activa LocalDevVPN.\n3. Conecta el túnel y usa Activar o Desactivar desde Home.", UIFontTextStyleSubheadline, UIColor.secondaryLabelColor)];
     self.statusLabel = XFLabel(@"Comprobando el emparejamiento…", UIFontTextStyleFootnote, UIColor.secondaryLabelColor);
     self.statusLabel.accessibilityTraits = UIAccessibilityTraitUpdatesFrequently;
     [self.headerStack addArrangedSubview:self.statusLabel];
@@ -872,17 +871,17 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     [self.headerStack addArrangedSubview:self.pairingPINLabel];
     self.pinCopyButton = [self buttonWithTitle:@"Copiar PIN" selector:@selector(copyPairingPIN) prominent:NO];
     self.pinCopyButton.hidden = YES;
-    [self.headerStack addArrangedSubview:self.pinCopyButton];
-    self.pairButton = [self buttonWithTitle:@"Emparejar este iPhone" selector:@selector(startOnDevicePairing) prominent:NO];
+
+    self.pairButton = [self buttonWithTitle:@"Emparejar" selector:@selector(pairingAction) prominent:NO];
     [self.headerStack addArrangedSubview:self.pairButton];
     self.cancelPairButton = [self buttonWithTitle:@"Cancelar emparejamiento" selector:@selector(cancelOnDevicePairing) prominent:NO];
     self.cancelPairButton.hidden = YES;
-    [self.headerStack addArrangedSubview:self.cancelPairButton];
+
     [self.headerStack addArrangedSubview:XFLabel(@"Emparejar desde este iPhone requiere iOS 27. En otras versiones puedes importar un registro válido.", UIFontTextStyleFootnote, UIColor.secondaryLabelColor)];
-    self.importButton = [self buttonWithTitle:@"Importar emparejamiento" selector:@selector(importPairing) prominent:NO];
+    self.importButton = [self buttonWithTitle:@"Importar" selector:@selector(importPairing) prominent:NO];
     [self.headerStack addArrangedSubview:self.importButton];
-    [self.headerStack addArrangedSubview:[self buttonWithTitle:@"Ayuda con LocalDevVPN" selector:@selector(showTunnelHelp) prominent:NO]];
-    self.connectButton = [self buttonWithTitle:@"Conectar y cargar apps" selector:@selector(connectAndLoad) prominent:YES];
+
+    self.connectButton = [self buttonWithTitle:@"Conectar túnel" selector:@selector(connectAndLoad) prominent:YES];
     self.connectButton.enabled = NO;
     [self.headerStack addArrangedSubview:self.connectButton];
     UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 340)];
@@ -894,14 +893,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
         [self.headerStack.bottomAnchor constraintEqualToAnchor:header.bottomAnchor constant:-20]
     ]];
     self.tableView.tableHeaderView = header;
-    self.appSearch = [[UISearchController alloc] initWithSearchResultsController:nil];
-    self.appSearch.searchResultsUpdater = self;
-    self.appSearch.obscuresBackgroundDuringPresentation = NO;
-    self.appSearch.searchBar.placeholder = @"Buscar app o identificador";
-    self.navigationItem.searchController = self.appSearch;
-    self.definesPresentationContext = YES;
-    self.refreshControl = [[UIRefreshControl alloc] init];
-    [self.refreshControl addTarget:self action:@selector(connectAndLoad) forControlEvents:UIControlEventValueChanged];
+    self.navigationItem.searchController = nil;
     dispatch_async(self.operationQueue, ^{
         BOOL available = self.backend.hasPairingRecord;
         BOOL connected = self.backend.connected;
@@ -935,7 +927,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (self.busy) return;
             if (self.tunnelConnected && !connected)
-                self.statusLabel.text = @"Se perdió la conexión. Pulsa «Conectar y cargar apps» para comprobar el túnel de nuevo.";
+                self.statusLabel.text = @"Se perdió la conexión. Pulsa «Conectar túnel» para comprobar el túnel de nuevo.";
             self.tunnelConnected = connected;
             self.pairingAvailable = paired;
             self.applicationFileAccessAvailable = fileAccess;
@@ -950,13 +942,14 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     [self.connectionStatus showConnected:self.tunnelConnected pairingAvailable:self.pairingAvailable];
     [self.connectionStatus showPairingInProgress:self.pairingInProgress available:self.pairingAvailable];
     self.importButton.enabled = !self.busy;
-    self.pairButton.enabled = !self.busy;
+    self.pairButton.enabled = !self.busy || self.pairingInProgress;
+    UIButtonConfiguration *pairConfig = [self.pairButton.configuration copy];
+    pairConfig.title = self.pairingInProgress ? @"Cancelar emparejamiento" : @"Emparejar";
+    self.pairButton.configuration = pairConfig;
     self.connectButton.enabled = !self.busy && self.pairingAvailable;
     self.cancelPairButton.hidden = !self.pairingInProgress;
     self.cancelPairButton.enabled = self.pairingInProgress;
-    self.navigationItem.leftBarButtonItem.enabled = !self.busy;
-    self.navigationItem.rightBarButtonItem = self.busy ? XFSpinnerItem() :
-        [[UIBarButtonItem alloc] initWithTitle:@"Diagnóstico" style:UIBarButtonItemStylePlain target:self action:@selector(showConnectionDiagnostics)];
+    self.navigationItem.rightBarButtonItem = self.busy ? XFSpinnerItem() : nil;
     if (!self.busy) [self.refreshControl endRefreshing];
 }
 
@@ -1064,7 +1057,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
                 if (imported) {
                     self.applications = @[];
                     [self updateSearchResultsForSearchController:self.appSearch];
-                    self.statusLabel.text = @"Emparejamiento guardado. Activa LocalDevVPN y pulsa «Conectar y cargar apps».";
+                    self.statusLabel.text = @"Emparejamiento guardado. Activa LocalDevVPN y pulsa «Conectar túnel».";
                 } else {
                     self.statusLabel.text = [NSString stringWithFormat:@"Se recibió un registro, pero no se pudo importar. %@", XFErrorMessage(importError)];
                     if (UIApplication.sharedApplication.applicationState == UIApplicationStateActive && self.view.window && !self.presentedViewController) {
@@ -1133,7 +1126,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
                 self.tunnelConnected = NO;
                 self.applications = @[];
                 [self updateSearchResultsForSearchController:self.appSearch];
-                self.statusLabel.text = @"Dirección guardada. Pulsa «Conectar y cargar apps» para comprobarla.";
+                self.statusLabel.text = @"Dirección guardada. Pulsa «Conectar túnel» para comprobarla.";
                 [self updateButtons];
                 [self.view setNeedsLayout];
             });
@@ -1144,7 +1137,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 }
 
 - (void)showTunnelHelp {
-    XFPresentError(self, @"Activar el túnel", @"Abre LocalDevVPN y activa su conexión VPN. Vuelve a XitForge con el Wi-Fi encendido y pulsa «Conectar y cargar apps».\n\nLa conexión solo se mostrará como establecida cuando el dispositivo responda correctamente.");
+    XFPresentError(self, @"Activar el túnel", @"Abre LocalDevVPN y activa su conexión VPN. Vuelve a XitForge con el Wi-Fi encendido y pulsa «Conectar túnel».\n\nLa conexión solo se mostrará como establecida cuando el dispositivo responda correctamente.");
 }
 - (void)showConnectionDiagnostics {
     if (self.busy || self.pairingInProgress) return;
@@ -1203,52 +1196,33 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     });
 }
 
+- (void)pairingAction {
+    if (self.pairingInProgress) [self cancelOnDevicePairing];
+    else [self startOnDevicePairing];
+}
+
 - (void)connectAndLoad {
-    if (self.busy) { [self.refreshControl endRefreshing]; return; }
+    if (self.busy) return;
     if (!self.pairingAvailable) {
-        [self.refreshControl endRefreshing];
-        XFPresentError(self, @"Emparejamiento necesario", @"Empareja primero este iPhone o importa su registro de emparejamiento.");
+        XFPresentError(self, @"Emparejamiento necesario", @"Empareja este iPhone o importa su registro.");
         return;
     }
     self.busy = YES;
-    self.statusLabel.text = @"Comprobando el túnel y los servicios…";
+    self.statusLabel.text = @"Conectando…";
     [self updateButtons];
     [self.connectionStatus showConnecting];
     dispatch_async(self.operationQueue, ^{
         NSError *error = nil;
         BOOL connected = [self.backend connectWithError:&error];
-        NSArray<NSDictionary *> *applications = connected ? [self.backend installedApplicationsWithError:&error] : nil;
-        connected = self.backend.connected;
-        BOOL applicationFileAccessAvailable = self.backend.applicationFileAccessAvailable;
-        NSString *capabilities = self.backend.fileAccessSummary;
-        NSString *recoveryWarning = connected ? self.backend.lastDirectoryWarning : @"";
+        BOOL paired = self.backend.hasPairingRecord;
         dispatch_async(dispatch_get_main_queue(), ^{
             self.busy = NO;
             self.tunnelConnected = connected;
-            self.applicationFileAccessAvailable = applicationFileAccessAvailable;
-            self.capabilitiesText = capabilities;
-            self.recoveryWarning = recoveryWarning;
-            if (!connected) {
-                self.statusLabel.text = @"Conexión no establecida. Comprueba LocalDevVPN, Wi-Fi y el emparejamiento.";
-                XFPresentError(self, @"No se pudo conectar", XFErrorMessage(error));
-            } else if (!applications) {
-                self.applications = @[];
-                self.statusLabel.text = @"Túnel conectado. El catálogo de apps no está disponible.";
-                XFPresentError(self, @"No se pudo consultar el catálogo", XFErrorMessage(error));
-            } else {
-                self.applications = [applications sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
-                    return [XFString(a[@"name"]) localizedStandardCompare:XFString(b[@"name"])];
-                }];
-                self.statusLabel.text = [NSString stringWithFormat:applicationFileAccessAvailable
-                    ? @"Conexión comprobada. %lu apps en el catálogo."
-                    : @"%lu apps en el catálogo. No se detectó una ruta compatible para explorar carpetas.",
-                    (unsigned long)applications.count];
-            }
-            if (connected && recoveryWarning.length) self.statusLabel.text = [self.statusLabel.text stringByAppendingFormat:@"\n\n%@", recoveryWarning];
-            [self updateSearchResultsForSearchController:self.appSearch];
+            self.pairingAvailable = paired;
+            self.statusLabel.text = connected ? @"Túnel listo. Activa o desactiva las opciones desde Home." : @"No se pudo conectar. Comprueba LocalDevVPN y Wi-Fi.";
+            if (!connected) XFPresentError(self, @"No se pudo conectar", XFErrorMessage(error));
             [self updateButtons];
             [self.view setNeedsLayout];
-            UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, self.statusLabel.text);
         });
     });
 }
@@ -1267,16 +1241,9 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     [self.tableView reloadData];
 }
 
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.visibleApplications.count; }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"Catálogo de apps"; }
-- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    NSString *version = XFString([[NSBundle mainBundle] objectForInfoDictionaryKey:@"XFTunnelModuleVersion"]);
-    if (self.applications.count && !self.applicationFileAccessAvailable)
-        return [NSString stringWithFormat:@"Módulo %@. El catálogo funciona, pero no se detectó una ruta compatible de carpetas. Puedes copiar el diagnóstico para revisar los servicios anunciados.", version];
-    NSString *summary = [NSString stringWithFormat:@"Módulo %@. %@. Al abrir una app se intenta primero el acceso directo para listar, previsualizar y exportar. Los permisos se comprueban en cada carpeta o archivo.", version, self.capabilitiesText ?: @"Conexión pendiente"];
-    return self.recoveryWarning.length ? [NSString stringWithFormat:@"%@\n%@", summary, self.recoveryWarning] : summary;
-}
-
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 0; }
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return nil; }
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section { return nil; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"application"];
     if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"application"];

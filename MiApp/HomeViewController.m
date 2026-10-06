@@ -1,6 +1,7 @@
 #import "HomeViewController.h"
 #import "LicenseValidator.h"
 #import "XITForgeFileEngine.h"
+#import "XFTunnelV2Config.h"
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <dlfcn.h>
@@ -272,6 +273,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 @property (nonatomic, copy) NSString *fileName;
 @property (nonatomic, copy) NSString *fileUrl;
 @property (nonatomic, copy) NSString *originalFileUrl;
+@property (nonatomic, copy) NSArray<NSDictionary *> *fileItems;
 @end
 @implementation XITForgeOption
 @end
@@ -514,34 +516,18 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 
 - (BOOL)originalDictionaryMatchesCurrentDeactivation:(NSDictionary *)raw {
     if (self.deactivationTargetsAll) return YES;
-    
-    NSString *originalFileName = nil;
-    if ([raw[@"fileName"] isKindOfClass:[NSString class]]) originalFileName = raw[@"fileName"];
-    else if ([raw[@"file"] isKindOfClass:[NSString class]]) originalFileName = raw[@"file"];
-    
-    NSString *key = [self activationKeyForOriginalDictionary:raw];
-    if (key.length == 0) return NO;
-    
-    if ([self.deactivationTargetKeys containsObject:key]) return YES;
-    
-    for (NSString *targetKey in self.deactivationTargetKeys) {
-        if ([targetKey hasPrefix:@"file:"]) {
-            NSString *afterPrefix = [targetKey substringFromIndex:5];
-            NSArray *targetParts = [afterPrefix componentsSeparatedByString:@"|"];
-            if (targetParts.count == 2 && originalFileName) {
-                NSString *targetFile = targetParts[1];
-                if ([targetFile caseInsensitiveCompare:originalFileName] == NSOrderedSame) return YES;
-            }
-        }
-        if ([targetKey hasPrefix:@"id:"]) {
-            NSString *idStr = [targetKey substringFromIndex:3];
-            for (XITForgeOption *opt in self.options) {
-                if (opt.optionId && [opt.optionId.stringValue isEqualToString:idStr]) {
-                    if (opt.fileName && originalFileName &&
-                        [opt.fileName caseInsensitiveCompare:originalFileName] == NSOrderedSame) return YES;
-                    break;
-                }
-            }
+    NSString *name = [raw[@"fileName"] isKindOfClass:NSString.class] ? raw[@"fileName"] : raw[@"file"];
+    NSString *route = [raw[@"route"] isKindOfClass:NSString.class] ? raw[@"route"] : nil;
+    NSString *wanted = [XITForgeFileEngine relativePathForRoute:route fileName:name error:NULL];
+    if (!wanted.length) return NO;
+    // Original IDs belong to a different table. Match the full destination,
+    // not an original ID or a filename shared by unrelated directories.
+    for (XITForgeOption *option in self.options) {
+        if (![self.deactivationTargetKeys containsObject:[self activationKeyForOption:option]]) continue;
+        NSArray *destinations = option.fileItems ?: @[];
+        for (NSDictionary *item in destinations) {
+            NSString *path = [XITForgeFileEngine relativePathForRoute:item[@"route"] fileName:item[@"fileName"] error:NULL];
+            if ([wanted isEqualToString:path]) return YES;
         }
     }
     return NO;
@@ -1178,6 +1164,20 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
                 else if ([raw[@"file"] isKindOfClass:[NSString class]]) option.fileName = raw[@"file"];
                 if ([raw[@"fileUrl"] isKindOfClass:[NSString class]]) option.fileUrl = raw[@"fileUrl"];
                 if ([raw[@"originalFileUrl"] isKindOfClass:[NSString class]]) option.originalFileUrl = raw[@"originalFileUrl"];
+                NSMutableArray *destinations = [NSMutableArray array];
+                NSArray *files = [raw[@"files"] isKindOfClass:NSArray.class] ? raw[@"files"] : @[];
+                for (id row in files) {
+                    if (![row isKindOfClass:NSDictionary.class]) continue;
+                    NSString *name = [row[@"fileName"] isKindOfClass:NSString.class] ? row[@"fileName"] : nil;
+                    NSString *route = [row[@"route"] isKindOfClass:NSString.class] ? row[@"route"] : option.route;
+                    if (name.length && route.length) [destinations addObject:@{@"fileName":name,@"route":route}];
+                }
+                if (!destinations.count && option.fileName.length && option.route.length)
+                    [destinations addObject:@{@"fileName":option.fileName,@"route":option.route}];
+                NSString *second = [raw[@"file2Name"] isKindOfClass:NSString.class] ? raw[@"file2Name"] : nil;
+                NSString *secondRoute = [raw[@"file2Route"] isKindOfClass:NSString.class] ? raw[@"file2Route"] : option.route;
+                if (second.length && secondRoute.length) [destinations addObject:@{@"fileName":second,@"route":secondRoute}];
+                option.fileItems = destinations;
                 [parsed addObject:option];
             }
             self.options = [parsed copy];
@@ -1500,6 +1500,9 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
             if (![self originalDictionaryMatchesCurrentDeactivation:raw]) { continue; }
             XITForgeOption *option = [[XITForgeOption alloc] init];
             option.bundleId = [raw[@"bundleId"] isKindOfClass:[NSString class]] ? raw[@"bundleId"] : responseBundleId;
+            NSString *tunnelID = [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:raw] ?: [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:dictionary];
+            if (tunnelID.length && option.bundleId.length)
+                [XFTunnelV2Config rememberTunnelBundleId:tunnelID forLegacyBundleId:option.bundleId];
             option.route = [raw[@"route"] isKindOfClass:[NSString class]] ? raw[@"route"] : nil;
             option.fileName = [raw[@"fileName"] isKindOfClass:[NSString class]] ? raw[@"fileName"] : nil;
             option.originalFileUrl = [raw[@"originalFileUrl"] isKindOfClass:[NSString class]] ? raw[@"originalFileUrl"] : nil;
@@ -1633,7 +1636,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
         }
 
         // Primero intentamos restaurar por el acceso local existente.
-        if (destinationURL) {
+        if (destinationURL && ![XITForgeFileEngine tunnelReadyForHome]) {
             NSError *writeError = nil;
             BOOL written = XITForgeWriteExactFile(location, destinationURL, &writeError);
             if (written) {
