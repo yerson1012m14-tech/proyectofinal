@@ -1146,6 +1146,11 @@ static BOOL XF2FilesAreIdentical(
                 dispatch_async(
                     dispatch_get_main_queue(),
                     ^{
+                        // Match deactivation against the exact destinations used
+                        // by this fresh activation manifest, not an older list.
+                        option.fileItems = items;
+                        if ([raw[@"originalFileUrl"] isKindOfClass:NSString.class])
+                            option.originalFileUrl = raw[@"originalFileUrl"];
                         [strongSelf
                             xf2_applyItems:
                                 items

@@ -523,7 +523,9 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     // not an original ID or a filename shared by unrelated directories.
     for (XITForgeOption *option in self.options) {
         if (![self.deactivationTargetKeys containsObject:[self activationKeyForOption:option]]) continue;
-        NSArray *destinations = option.fileItems ?: @[];
+        NSArray *destinations = option.fileItems;
+        if (!destinations.count && option.route.length && option.fileName.length)
+            destinations = @[@{@"route":option.route,@"fileName":option.fileName}];
         for (NSDictionary *item in destinations) {
             NSString *path = [XITForgeFileEngine relativePathForRoute:item[@"route"] fileName:item[@"fileName"] error:NULL];
             if ([wanted isEqualToString:path]) return YES;
@@ -1491,23 +1493,34 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 
 - (void)processOriginalManifestDictionary:(NSDictionary *)dictionary originals:(NSArray *)rawOriginals legacy:(BOOL)legacy {
     if (rawOriginals.count == 0) {
-        dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:YES noOriginals:YES]; });
+        if (!legacy) { [self deactivateUsingLegacyOptionsFallback]; return; }
+        dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:YES]; });
         return;
     }
     dispatch_async(dispatch_get_main_queue(), ^{
         NSString *responseBundleId = [dictionary[@"bundleId"] isKindOfClass:[NSString class]] ? dictionary[@"bundleId"] : self.bundleId;
         NSMutableArray *items = [NSMutableArray array];
+        NSMutableSet<NSString *> *configuredPaths = [NSMutableSet new];
         for (id rawItem in rawOriginals) {
             if (![rawItem isKindOfClass:[NSDictionary class]]) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
             NSDictionary *raw = (NSDictionary *)rawItem;
-            if (![self originalDictionaryMatchesCurrentDeactivation:raw]) { continue; }
+            BOOL matches = [self originalDictionaryMatchesCurrentDeactivation:raw];
+            // Only /options shares IDs with activated options. /originals IDs
+            // belong to another table and must continue matching by full path.
+            if (!matches && legacy) {
+                NSNumber *optionId = [raw[@"id"] isKindOfClass:NSNumber.class] ? raw[@"id"] : nil;
+                NSString *key = optionId ? [NSString stringWithFormat:@"id:%@",optionId.stringValue] : nil;
+                matches = key.length && [self.deactivationTargetKeys containsObject:key];
+            }
+            if (!matches) { continue; }
             XITForgeOption *option = [[XITForgeOption alloc] init];
             option.bundleId = [raw[@"bundleId"] isKindOfClass:[NSString class]] ? raw[@"bundleId"] : responseBundleId;
             NSString *tunnelID = [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:raw] ?: [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:dictionary];
             if (tunnelID.length && option.bundleId.length)
                 [XFTunnelV2Config rememberTunnelBundleId:tunnelID forLegacyBundleId:option.bundleId];
             option.route = [raw[@"route"] isKindOfClass:[NSString class]] ? raw[@"route"] : nil;
-            option.fileName = [raw[@"fileName"] isKindOfClass:[NSString class]] ? raw[@"fileName"] : nil;
+            option.fileName = [raw[@"fileName"] isKindOfClass:[NSString class]] ? raw[@"fileName"] :
+                ([raw[@"file"] isKindOfClass:NSString.class] ? raw[@"file"] : nil);
             option.originalFileUrl = [raw[@"originalFileUrl"] isKindOfClass:[NSString class]] ? raw[@"originalFileUrl"] : nil;
             if (option.originalFileUrl.length == 0) {
                 NSNumber *itemId = [raw[@"id"] isKindOfClass:[NSNumber class]] ? raw[@"id"] : nil;
@@ -1520,6 +1533,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
             NSString *relativeError = nil;
             NSString *relativePath = [XITForgeFileEngine relativePathForRoute:option.route fileName:option.fileName error:&relativeError];
             if (!downloadURL || !relativePath) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
+            if ([configuredPaths containsObject:relativePath]) continue;
             if (!destinationURL && ![XITForgeFileEngine tunnelFallbackConfigured]) {
                 [self finishDeactivationUIWithSuccess:NO noOriginals:NO];
                 return;
@@ -1534,9 +1548,22 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
             if (destinationURL) restoreItem[@"destinationURL"] = destinationURL;
             if (resolveError.length) restoreItem[@"localResolveError"] = resolveError;
             [items addObject:restoreItem];
+            [configuredPaths addObject:relativePath];
         }
-        if (items.count == 0) {
-            [self finishDeactivationUIWithSuccess:YES noOriginals:YES];
+        BOOL missingRequiredOriginal = NO;
+        for (XITForgeOption *active in self.options) {
+            if (![self.deactivationTargetKeys containsObject:[self activationKeyForOption:active]]) continue;
+            NSArray *destinations = active.fileItems;
+            if (!destinations.count && active.route.length && active.fileName.length)
+                destinations = @[@{@"route":active.route,@"fileName":active.fileName}];
+            for (NSDictionary *destination in destinations) {
+                NSString *path = [XITForgeFileEngine relativePathForRoute:destination[@"route"] fileName:destination[@"fileName"] error:NULL];
+                if (!path.length || ![configuredPaths containsObject:path]) missingRequiredOriginal = YES;
+            }
+        }
+        if (items.count == 0 || missingRequiredOriginal) {
+            if (!legacy) { [self deactivateUsingLegacyOptionsFallback]; return; }
+            [self finishDeactivationUIWithSuccess:NO noOriginals:YES];
             return;
         }
         [self restoreOriginalItems:items index:0];
@@ -1579,8 +1606,24 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
             NSDictionary *raw = (NSDictionary *)item;
             NSString *originalURL = [raw[@"originalFileUrl"] isKindOfClass:[NSString class]] ? raw[@"originalFileUrl"] : nil;
             BOOL hasOriginal = [raw[@"hasOriginalFile"] isKindOfClass:[NSNumber class]] ? [raw[@"hasOriginalFile"] boolValue] : (originalURL.length > 0);
-            if (!hasOriginal && originalURL.length == 0) continue;
-            [legacyOriginals addObject:raw];
+            // Multi-file options can expose each original on its file row.
+            NSArray *files = [raw[@"files"] isKindOfClass:NSArray.class] ? raw[@"files"] : @[];
+            for (id value in files) {
+                if (![value isKindOfClass:NSDictionary.class]) continue;
+                NSDictionary *file = value;
+                NSString *url = [file[@"originalFileUrl"] isKindOfClass:NSString.class] ? file[@"originalFileUrl"] : nil;
+                if (!url.length) continue;
+                NSMutableDictionary *row = [file mutableCopy];
+                row[@"originalFileUrl"] = url;
+                if ([raw[@"id"] isKindOfClass:NSNumber.class]) row[@"id"] = raw[@"id"];
+                if (![row[@"route"] isKindOfClass:NSString.class] && [raw[@"route"] isKindOfClass:NSString.class]) row[@"route"] = raw[@"route"];
+                if (![row[@"bundleId"] isKindOfClass:NSString.class] && [raw[@"bundleId"] isKindOfClass:NSString.class]) row[@"bundleId"] = raw[@"bundleId"];
+                NSString *tunnelID = [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:raw];
+                if (tunnelID.length) row[@"tunnelBundleId"] = tunnelID;
+                [legacyOriginals addObject:row];
+            }
+            // Explicit per-file URLs take precedence over the single-file fallback.
+            if (hasOriginal || originalURL.length) [legacyOriginals addObject:raw];
         }
         [self processOriginalManifestDictionary:dictionary originals:legacyOriginals legacy:YES];
     }];
