@@ -106,6 +106,7 @@ jobs:
         run: |
           python3 XitForge-Tunnel/tools/test_native_worker.py
           python3 XitForge-Tunnel/tools/test_sync_retry.py
+          python3 XitForge-Tunnel/tools/test_books_recovery.py
 
       - name: Compilar módulo XitForge actualizado
         run: |
@@ -122,7 +123,7 @@ jobs:
           echo "=== SHA256 del módulo actualizado ==="
           shasum -a 256 XitForge-Tunnel/module/build/XFAirLift.dylib
 
-      - name: Integrar módulo XitForge 1.4.0-home
+      - name: Integrar módulo XitForge 1.4.1-books
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -144,24 +145,24 @@ jobs:
               'XitForge-Tunnel/module/package_ipa.py',
               str(base[0]),
               str(module),
-              'XitForge-1.4.0-home-unsigned.ipa',
+              'XitForge-1.4.1-books-unsigned.ipa',
               'XitForge-Tunnel/module/Notices.txt'
           ], check=True)
           PY
 
       - name: Verificar IPA final
         run: |
-          test -f XitForge-1.4.0-home-unsigned.ipa
-          test -f XitForge-1.4.0-home-unsigned.validation.json
+          test -f XitForge-1.4.1-books-unsigned.ipa
+          test -f XitForge-1.4.1-books-unsigned.validation.json
 
-          unzip -t XitForge-1.4.0-home-unsigned.ipa
+          unzip -t XitForge-1.4.1-books-unsigned.ipa
           echo "IPA final creada correctamente"
 
       - name: Subir IPA final
         uses: actions/upload-artifact@v4
         with:
-          name: Mi-App-XitForge-1.4.0-home
+          name: Mi-App-XitForge-1.4.1-books
           path: |
-            XitForge-1.4.0-home-unsigned.ipa
-            XitForge-1.4.0-home-unsigned.validation.json
+            XitForge-1.4.1-books-unsigned.ipa
+            XitForge-1.4.1-books-unsigned.validation.json
           if-no-files-found: error
