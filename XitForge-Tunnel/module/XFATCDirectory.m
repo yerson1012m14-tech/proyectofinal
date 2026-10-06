@@ -130,6 +130,7 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
 @property (nonatomic, copy) NSDictionary *generatedAppLinkProbe;
 @property (nonatomic, copy) NSDictionary *fileOperationDiagnostics;
 @property (nonatomic, copy) NSDictionary *completedKnownWrite;
+@property (nonatomic, strong) NSMutableDictionary *booksMarkerDiagnostics;
 @property (nonatomic) BOOL atcMoveAttempted;
 @property (nonatomic) NSUInteger atcSyncAttempt;
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *syncAttempts;
@@ -148,6 +149,7 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
 - (void)loadLatestDeletedBackup;
 - (BOOL)validLegacyBooksCopyJournal:(NSDictionary *)journal;
 - (BOOL)restoreLegacyBooksCopy:(NSError **)error;
+- (BOOL)recoverRegisteredBooksMarker:(NSError **)error;
 @end
 
 @implementation XFATCDirectory
@@ -199,6 +201,7 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
              @"temporaryDirectoryFailure":self.temporaryDirectoryFailure?:@{},
              @"generatedAppLinkProbe":self.generatedAppLinkProbe?:@{},
              @"knownFileOperation":self.fileOperationDiagnostics?:@{},
+             @"booksMarker":[self.booksMarkerDiagnostics copy]?:@{},
              @"syncAttempts":[self.syncAttempts copy]?:@[],
              @"batchWrite":@{@"mode":@"replace",@"filesPerBatch":@1,@"events":[self.batchEvents copy]?:@[],
                  @"completed":@(self.batchLastPhase==12),@"originalBackupBeforePlacement":@YES}};
@@ -434,18 +437,24 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
     return YES;
 }
 - (BOOL)beginBooksInPlace:(NSError **)error {
+    BOOL markerMissing=NO;
+    NSDictionary *marker=[self info:@"Books/XitForgeOwner.plist" missing:&markerMissing error:error];
+    if(!marker&&!markerMissing)return NO;
+    BOOL resuming=marker && [self.journal[@"booksInPlace"] boolValue] &&
+        [self booksOwnerMatches:@"Books" error:error];
+    if(marker&&!resuming){
+        if(error&&!*error)*error=XFATCError(2256,@"Books conserva el marcador de otra operación. Su registro debe recuperarse antes de iniciar una nueva.");return NO;
+    }
     BOOL missing=NO;NSDictionary *root=[self info:@"Books" missing:&missing error:error];
     if([self.journal[@"booksOriginallyPresent"] boolValue]) {
-        if(!root||missing||![self preimageMatches:@"Books" error:error])return NO;
-    }else if(!missing)return NO;
-    BOOL markerMissing=NO;
-    [self info:@"Books/XitForgeOwner.plist" missing:&markerMissing error:error];
-    if(!markerMissing){if(error&&!*error)*error=XFATCError(2256,@"Books ya contiene un marcador ajeno. No se modificó.");return NO;}
+        if(!root||missing||![root[@"kind"] isEqual:@"S_IFDIR"]||
+           (!resuming&&![self preimageMatches:@"Books" error:error]))return NO;
+    }else if(!missing&&!resuming)return NO;
     self.journal[@"booksInPlace"]=@YES;
     if(![self saveJournal:@"preserve Books root and use durable file snapshots" error:error])return NO;
     if(missing&&![self makeOwnedDirectory:@"Books" error:error])return NO;
     NSData *owner=XFATCPlist(self.ownerRecord,error);
-    if(!owner||![self writeOwned:owner path:@"Books/XitForgeOwner.plist" error:error])return NO;
+    if(!owner||(!resuming&&![self writeOwned:owner path:@"Books/XitForgeOwner.plist" error:error]))return NO;
     NSDictionary *sync=[self info:@"Books/Sync" missing:&missing error:error];
     if(!sync&&!missing)return NO;
     if(sync&&![sync[@"kind"] isEqual:@"S_IFDIR"])return NO;
@@ -1141,6 +1150,7 @@ closeKnownFile:;
     if(![[NSFileManager defaultManager] createDirectoryAtURL:self.journalURL withIntermediateDirectories:YES
         attributes:@{NSFileProtectionKey:NSFileProtectionCompleteUntilFirstUserAuthentication} error:error])return NO;
     chmod(self.journalURL.fileSystemRepresentation,0700);
+    if(![self recoverRegisteredBooksMarker:error])return NO;
     NSString *token=NSUUID.UUID.UUIDString.lowercaseString;
     NSString *source=[@"xf_atc_src_" stringByAppendingString:token],*link=[@"xf_atc_link_" stringByAppendingString:token],
              *backup=[@"xf_atc_state_" stringByAppendingString:token];
@@ -2170,6 +2180,57 @@ closeKnownFile:;
     self.journal=nil;
     return YES;
 }
+- (BOOL)recoverRegisteredBooksMarker:(NSError **)error {
+    self.booksMarkerDiagnostics=[@{@"present":@NO,@"recognized":@NO,@"samePairing":@NO,
+        @"localRecordFound":@NO,@"recordValidated":@NO,@"recovered":@NO} mutableCopy];
+    BOOL missing=NO;NSString *path=@"Books/XitForgeOwner.plist";
+    NSDictionary *info=[self info:path missing:&missing error:error];
+    if(missing)return YES;
+    if(!info){self.booksMarkerDiagnostics[@"lookupFailed"]=@YES;return NO;}
+    self.booksMarkerDiagnostics[@"present"]=@YES;
+    if(![info[@"kind"] isEqual:@"S_IFREG"]||[info[@"size"] unsignedLongLongValue]>4096){
+        if(error)*error=XFATCError(2256,@"El marcador de Books tiene un tipo o tamaño inesperado. Se conservó.");return NO;
+    }
+    NSData *bytes=[self readSnapshot:path expectedSize:[info[@"size"] unsignedIntegerValue] error:error];
+    if(!bytes)return NO;
+    id owner=[NSPropertyListSerialization propertyListWithData:bytes options:0 format:NULL error:error];
+    NSString *token=[owner isKindOfClass:NSDictionary.class]&&[owner[@"token"] isKindOfClass:NSString.class]?owner[@"token"]:nil;
+    if(![owner isKindOfClass:NSDictionary.class]||[owner count]!=4||
+       ![owner[@"module"] isEqual:@"XitForgeATCDirectory"]||![owner[@"version"] isEqual:@1]||
+       !token||![[NSUUID alloc] initWithUUIDString:token]){
+        if(error)*error=XFATCError(2256,@"El marcador de Books no corresponde a un registro reconocido de XitForge. Se conservó.");return NO;
+    }
+    self.booksMarkerDiagnostics[@"recognized"]=@YES;
+    if(![owner[@"namespace"] isEqual:self.journalURL.lastPathComponent]){
+        if(error)*error=XFATCError(2256,@"Books conserva un marcador de XitForge de otro emparejamiento. Necesita el registro anterior para recuperar sus copias.");return NO;
+    }
+    self.booksMarkerDiagnostics[@"samePairing"]=@YES;
+    // A marker cannot authorize deleting itself. Recover only a durable journal
+    // bound to this pairing and this exact transaction, retaining all backups.
+    if([NSFileManager.defaultManager fileExistsAtPath:self.activeURL.path]){
+        if(error)*error=XFATCError(2256,@"Hay una recuperación activa que debe terminar antes de usar Books.");return NO;
+    }
+    NSURL *archive=[self.journalURL URLByAppendingPathComponent:[NSString stringWithFormat:@"retained-%@.plist",token]];
+    NSDictionary *attributes=[NSFileManager.defaultManager attributesOfItemAtPath:archive.path error:NULL];
+    if(![attributes[NSFileType] isEqual:NSFileTypeRegular]||[attributes[NSFileSize] unsignedLongLongValue]>8u*1024u*1024u){
+        if(error)*error=XFATCError(2259,@"El marcador es de XitForge, pero no está su registro local de recuperación. No se borró el marcador ni el respaldo.");return NO;
+    }
+    self.booksMarkerDiagnostics[@"localRecordFound"]=@YES;
+    NSData *recordBytes=[NSData dataWithContentsOfURL:archive options:0 error:error];
+    id record=recordBytes?[NSPropertyListSerialization propertyListWithData:recordBytes options:NSPropertyListMutableContainersAndLeaves format:NULL error:error]:nil;
+    if(![record isKindOfClass:NSMutableDictionary.class]||![record[@"token"] isEqual:token]||
+       ![record[@"namespace"] isEqual:owner[@"namespace"]]||![self validJournal:record]){
+        if(error&&!*error)*error=XFATCError(2259,@"El registro del marcador de Books no pudo validarse. Se conservaron sus datos.");return NO;
+    }
+    self.booksMarkerDiagnostics[@"recordValidated"]=@YES;
+    self.journal=record;
+    if(![self booksOwnerMatches:@"Books" error:error]||![self verifyRemoteOwner:error]||
+       ![self saveJournal:@"resume registered Books marker before starting a new transaction" error:error]||
+       !XFATCSyncURL(self.activeURL,error)||!XFATCSyncURL(self.journalURL,error))return NO;
+    BOOL recovered=[self finishRecovery:error];
+    self.booksMarkerDiagnostics[@"recovered"]=@(recovered);
+    return recovered;
+}
 - (BOOL)recoverPendingTransaction:(NSError **)error {
     self.lastWarning=nil;
     if(![[NSFileManager defaultManager] fileExistsAtPath:self.activeURL.path]){[self loadLatestDeletedBackup];return YES;}
@@ -2192,6 +2253,7 @@ closeKnownFile:;
     NSString *previousWarning=self.lastWarning;
     if(![[NSFileManager defaultManager] createDirectoryAtURL:self.journalURL withIntermediateDirectories:YES attributes:@{NSFileProtectionKey:NSFileProtectionCompleteUntilFirstUserAuthentication} error:error]){[self closeAFC];return nil;}
     chmod(self.journalURL.fileSystemRepresentation,0700);
+    if(![self recoverRegisteredBooksMarker:error]){[self closeAFC];return nil;}
     NSString *token=NSUUID.UUID.UUIDString.lowercaseString;
     NSString *source=[@"xf_atc_src_" stringByAppendingString:token],*link=[@"xf_atc_link_" stringByAppendingString:token],*backup=[@"xf_atc_state_" stringByAppendingString:token];
     for(NSString *name in @[source,link,backup]){

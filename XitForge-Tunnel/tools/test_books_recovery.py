@@ -20,7 +20,8 @@ helpers = static('static NSArray<NSString *> *XFATCTrackedFiles', 'static BOOL X
 helpers += static('static BOOL XFATCSyncURL', 'static NSArray<NSString *> *XFATCDirectories')
 production = '\n'.join(method(s) for s in [
     '- (BOOL)beginBooksInPlace:', '- (BOOL)isolateBooks:',
-    '- (BOOL)installWorkingBooks:', '- (BOOL)restoreBooksInPlace:'])
+    '- (BOOL)installWorkingBooks:', '- (BOOL)restoreBooksInPlace:',
+    '- (BOOL)recoverRegisteredBooksMarker:(NSError **)error {'])
 fixture = r'''
 #import <Foundation/Foundation.h>
 #import <CommonCrypto/CommonDigest.h>
@@ -41,6 +42,9 @@ __HELPERS__
 @property BOOL failMarkerRemoval;
 @property NSInteger renameSubcode;
 @property NSUInteger renameCalls;
+@property BOOL failMarkerLookup;
+@property BOOL rejectRemoteOwner;
+@property NSMutableDictionary *booksMarkerDiagnostics;
 - (NSDictionary *)ownerRecord;
 - (NSDictionary *)info:(NSString *)path missing:(BOOL *)missing error:(NSError **)error;
 - (BOOL)preimageMatches:(NSString *)path error:(NSError **)error;
@@ -56,10 +60,30 @@ __HELPERS__
 - (BOOL)restoreBooksInPlace:(NSError **)error;
 - (BOOL)isolateBooks:(NSError **)error;
 - (BOOL)installWorkingBooks:(NSString *)working error:(NSError **)error;
+- (BOOL)recoverRegisteredBooksMarker:(NSError **)error;
+- (NSURL *)activeURL;
+- (BOOL)validJournal:(NSDictionary *)journal;
+- (BOOL)verifyRemoteOwner:(NSError **)error;
+- (BOOL)finishRecovery:(NSError **)error;
 @end
 @implementation BooksFixture
-- (NSDictionary *)ownerRecord { return @{@"token":self.journal[@"token"]}; }
+- (NSDictionary *)ownerRecord { return @{@"module":@"XitForgeATCDirectory",@"version":@1,
+    @"token":self.journal[@"token"],@"namespace":self.journalURL.lastPathComponent}; }
+- (NSURL *)activeURL {return [self.journalURL URLByAppendingPathComponent:@"active.plist"];}
+- (BOOL)validJournal:(NSDictionary *)journal {return [journal[@"fixtureValidatedJournal"] boolValue];}
+- (BOOL)verifyRemoteOwner:(NSError **)error {
+    if(self.rejectRemoteOwner&&error)*error=XFATCError(2124,@"Injected backup owner mismatch");
+    return !self.rejectRemoteOwner;
+}
+- (BOOL)finishRecovery:(NSError **)error {
+    if(![self restoreBooksInPlace:error])return NO;
+    if(![NSFileManager.defaultManager removeItemAtURL:self.activeURL error:error])return NO;
+    self.journal=nil;return YES;
+}
 - (NSDictionary *)info:(NSString *)path missing:(BOOL *)missing error:(NSError **)error {
+    if(self.failMarkerLookup&&[path isEqual:@"Books/XitForgeOwner.plist"]){
+        *missing=NO;if(error)*error=XFATCError(106,@"Injected AFC lookup failure");return nil;
+    }
     id value=self.nodes[path];*missing=value==nil;
     if(!value)return nil;
     return @{@"kind":[value isKindOfClass:NSData.class]?@"S_IFREG":@"S_IFDIR",@"size":@([value isKindOfClass:NSData.class]?[value length]:0)};
@@ -68,7 +92,9 @@ __HELPERS__
     for(NSString *key in XFATCTrackedFiles())if(![self.nodes[key] isEqual:self.seed[key]]&&(self.nodes[key]||self.seed[key]))return NO;
     return YES;
 }
-- (BOOL)saveJournal:(NSString *)stage error:(NSError **)error { return YES; }
+- (BOOL)saveJournal:(NSString *)stage error:(NSError **)error {
+    return [XFATCPlist(self.journal,error) writeToURL:self.activeURL options:NSDataWritingAtomic error:error];
+}
 - (BOOL)makeOwnedDirectory:(NSString *)path error:(NSError **)error {
     if(self.nodes[path])return NO;self.nodes[path]=@YES;return YES;
 }
@@ -121,7 +147,13 @@ static BooksFixture *make(BOOL existing) {
         tracked[path]=row;index++;
     }
     f.journal=[@{@"token":NSUUID.UUID.UUIDString,@"booksOriginallyPresent":@(existing),@"booksRestored":@NO,
+        @"namespace":f.journalURL.lastPathComponent,@"fixtureValidatedJournal":@YES,
         @"backup":@"backup",@"trackedPreimage":tracked,@"fileManifest":@{@"Books":@[]}} mutableCopy];return f;
+}
+static void retainRecord(BooksFixture *f) {
+    NSURL *archive=[f.journalURL URLByAppendingPathComponent:[NSString stringWithFormat:@"retained-%@.plist",f.journal[@"token"]]];
+    [XFATCPlist(f.journal,NULL) writeToURL:archive atomically:YES];
+    [NSFileManager.defaultManager removeItemAtURL:f.activeURL error:NULL];
 }
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"Books fixture failed at line %d\n",__LINE__);return 1;}}while(0)
 int main(void){@autoreleasepool{
@@ -148,6 +180,34 @@ int main(void){@autoreleasepool{
     [bytes(@"corrupted snapshot") writeToURL:[f.journalURL URLByAppendingPathComponent:row[@"snapshot"]] atomically:YES];
     CHECK(![f restoreBooksInPlace:NULL]);CHECK(![f.journal[@"booksRestored"] boolValue]);
     CHECK(f.nodes[@"Books/XitForgeOwner.plist"]!=nil);
+    // Re-entering the same durable operation must recognize its own marker.
+    f=make(YES);CHECK([f isolateBooks:NULL]);NSData *owner=f.nodes[@"Books/XitForgeOwner.plist"];
+    CHECK([f beginBooksInPlace:NULL]);CHECK([f.nodes[@"Books/XitForgeOwner.plist"] isEqual:owner]);
+    CHECK([f restoreBooksInPlace:NULL]);CHECK([f.nodes isEqual:f.seed]);
+    // An equal marker without the durable ownership flag is not authority.
+    f=make(YES);f.nodes[@"Books/XitForgeOwner.plist"]=XFATCPlist(f.ownerRecord,NULL);
+    NSDictionary *unchanged=[f.nodes copy];CHECK(![f beginBooksInPlace:NULL]);CHECK([f.nodes isEqual:unchanged]);
+    // Lookup failures preserve the actual AFC error instead of inventing a foreign owner.
+    f=make(YES);f.failMarkerLookup=YES;NSError *lookup=nil;
+    CHECK(![f beginBooksInPlace:&lookup]);CHECK(lookup.code==106);CHECK([f.nodes isEqual:f.seed]);
+    // Recover a matching retained record before a new token/snapshot is created.
+    f=make(YES);CHECK([f isolateBooks:NULL]);f.journal[@"booksRestored"]=@YES;retainRecord(f);
+    CHECK([f recoverRegisteredBooksMarker:NULL]);CHECK([f.nodes isEqual:f.seed]);CHECK(f.journal==nil);
+    CHECK([f.booksMarkerDiagnostics[@"recovered"] boolValue]);
+    // A recognized marker with no journal must remain; it cannot authorize its own deletion.
+    f=make(YES);f.nodes[@"Books/XitForgeOwner.plist"]=XFATCPlist(f.ownerRecord,NULL);unchanged=[f.nodes copy];
+    NSError *missingRecord=nil;CHECK(![f recoverRegisteredBooksMarker:&missingRecord]);
+    CHECK(missingRecord.code==2259);CHECK([f.nodes isEqual:unchanged]);
+    CHECK([f.booksMarkerDiagnostics[@"recognized"] boolValue]);
+    CHECK(![f.booksMarkerDiagnostics[@"localRecordFound"] boolValue]);
+    // Another pairing, invalid journal, and mismatched remote backup retain all bytes.
+    f=make(YES);NSMutableDictionary *other=[f.ownerRecord mutableCopy];other[@"namespace"]=@"different-pairing";
+    f.nodes[@"Books/XitForgeOwner.plist"]=XFATCPlist(other,NULL);unchanged=[f.nodes copy];
+    CHECK(![f recoverRegisteredBooksMarker:NULL]);CHECK([f.nodes isEqual:unchanged]);
+    f=make(YES);CHECK([f isolateBooks:NULL]);f.journal[@"fixtureValidatedJournal"]=@NO;retainRecord(f);unchanged=[f.nodes copy];
+    CHECK(![f recoverRegisteredBooksMarker:NULL]);CHECK([f.nodes isEqual:unchanged]);
+    f=make(YES);CHECK([f isolateBooks:NULL]);retainRecord(f);f.rejectRemoteOwner=YES;unchanged=[f.nodes copy];
+    CHECK(![f recoverRegisteredBooksMarker:NULL]);CHECK([f.nodes isEqual:unchanged]);
 }return 0;}
 '''.replace('__HELPERS__', helpers).replace('__PRODUCTION__', production)
 build=root/'.test-build';build.mkdir(exist_ok=True)
@@ -158,4 +218,4 @@ else:
     binary=build/'books-recovery'
     subprocess.run(['xcrun','clang','-fobjc-arc','-fblocks','-Wall','-Wextra',str(path),'-framework','Foundation','-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True,timeout=30)
-    print('PASS: production Books fallback and recovery, 8 scenarios; mocked AFC, no iPhone I/O.')
+    print('PASS: production Books recovery and marker handling, 16 scenarios; mocked AFC and record validation, no iPhone I/O.')
