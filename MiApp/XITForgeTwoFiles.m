@@ -348,8 +348,141 @@ static BOOL XF2FilesAreIdentical(
 
 @interface XITForgeOptionsViewController (XITForgeTwoFiles)
 
-- (void)xf2_applyOption:(XITForgeOption *)option;
-- (void)xf2_viewDidLoad;
+- (void)xf2_applyOption:(XITForgeOption *)option {
+    if (!option ||
+        !option.optionId ||
+        !self.game.length) {
+        [self
+            xf2_fail:
+                @"No se pudo identificar la opción seleccionada."];
+        return;
+    }
+
+    __weak typeof(self) weakSelf = self;
+
+    [self
+        xf2_fetchManifestWithCompletion:
+            ^(
+                NSDictionary *dictionary,
+                NSError *error
+            ) {
+                __strong typeof(weakSelf) strongSelf =
+                    weakSelf;
+
+                if (!strongSelf) return;
+
+                if (error || !dictionary) {
+                    [strongSelf
+                        xf2_fail:
+                            error.localizedDescription ?:
+                            @"No se pudo cargar la configuración Tunnel V2 desde el panel."];
+                    return;
+                }
+
+                NSArray *rawOptions =
+                    [dictionary[@"options"]
+                        isKindOfClass:NSArray.class]
+                        ? dictionary[@"options"]
+                        : nil;
+
+                NSDictionary *raw =
+                    [strongSelf
+                        xf2_findRawOption:
+                            rawOptions
+                        optionId:
+                            option.optionId];
+
+                if (!raw) {
+                    [strongSelf
+                        xf2_fail:
+                            @"El servidor no devolvió la opción seleccionada."];
+                    return;
+                }
+
+                NSString *legacyBundleID =
+                    [raw[@"bundleId"]
+                        isKindOfClass:NSString.class]
+                        ? raw[@"bundleId"]
+                        : (option.bundleId.length
+                            ? option.bundleId
+                            : strongSelf.bundleId);
+
+                NSString *tunnelBundleID =
+                    [XFTunnelV2Config
+                        tunnelBundleIdFromOptionDictionary:
+                            raw];
+
+                if (!tunnelBundleID.length) {
+                    tunnelBundleID =
+                        [XFTunnelV2Config
+                            tunnelBundleIdFromOptionDictionary:
+                                dictionary];
+                }
+
+                NSLog(
+                    @"XITFORGE PANEL OPTION: id=%@ legacy=%@ tunnel=%@ rawTunnel=%@",
+                    option.optionId,
+                    legacyBundleID ?: @"<nil>",
+                    tunnelBundleID ?: @"<nil>",
+                    [raw[@"tunnelBundleId"] isKindOfClass:NSString.class]
+                        ? raw[@"tunnelBundleId"]
+                        : @"<null>"
+                );
+
+                if (!legacyBundleID.length) {
+                    [strongSelf
+                        xf2_fail:
+                            @"No se pudo determinar el bundleId legacy de la opción."];
+                    return;
+                }
+
+                if (!tunnelBundleID.length) {
+                    [strongSelf
+                        xf2_fail:
+                            @"El servidor devolvió tunnelBundleId vacío. Abre esa opción en el panel, confirma el Bundle ID para Tunnel V2 y pulsa Guardar opción."];
+                    return;
+                }
+
+                [XFTunnelV2Config
+                    rememberTunnelBundleId:
+                        tunnelBundleID
+                    forLegacyBundleId:
+                        legacyBundleID];
+
+                NSString *fallbackRoute =
+                    [raw[@"route"]
+                        isKindOfClass:NSString.class]
+                        ? raw[@"route"]
+                        : option.route;
+
+                NSArray<NSDictionary *> *items =
+                    [strongSelf
+                        xf2_fileItemsFromRawOption:
+                            raw
+                        fallbackRoute:
+                            fallbackRoute];
+
+                if (!items.count) {
+                    [strongSelf
+                        xf2_fail:
+                            @"Esta opción no tiene archivos configurados."];
+                    return;
+                }
+
+                dispatch_async(
+                    dispatch_get_main_queue(),
+                    ^{
+                        [strongSelf
+                            xf2_applyItems:
+                                items
+                            index:0
+                            legacyBundleID:
+                                legacyBundleID
+                            tunnelBundleID:
+                                tunnelBundleID];
+                    });
+            }];
+}
 
 @end
 
@@ -790,7 +923,9 @@ static BOOL XF2FilesAreIdentical(
     index:
     (NSUInteger)index
     legacyBundleID:
-    (NSString *)legacyBundleID {
+    (NSString *)legacyBundleID
+    tunnelBundleID:
+    (NSString *)tunnelBundleID {
 
     if (index >= items.count) {
         NSString *message =
@@ -841,6 +976,7 @@ static BOOL XF2FilesAreIdentical(
     XITForgeOption *destinationOption =
         [[XITForgeOption alloc] init];
 
+    // Acceso local mantiene el bundleId legacy.
     destinationOption.bundleId = legacyBundleID;
     destinationOption.route = route;
     destinationOption.fileName = fileName;
@@ -959,7 +1095,9 @@ static BOOL XF2FilesAreIdentical(
                                                 index:
                                                     index + 1
                                                 legacyBundleID:
-                                                    legacyBundleID];
+                                                    legacyBundleID
+                                                tunnelBundleID:
+                                                    tunnelBundleID];
                                         });
 
                                     return;
@@ -988,11 +1126,31 @@ static BOOL XF2FilesAreIdentical(
                             return;
                         }
 
+                        if (!tunnelBundleID.length) {
+                            [strongSelf
+                                xf2_fail:
+                                    @"La API devolvió tunnelBundleId vacío para esta opción."];
+                            return;
+                        }
+
+                        NSLog(
+                            @"XITFORGE TWO FILES: legacy=%@ tunnel=%@ route=%@ file=%@",
+                            legacyBundleID,
+                            tunnelBundleID,
+                            route,
+                            fileName
+                        );
+
+                        /*
+                         * IMPORTANTE:
+                         * Al Túnel le pasamos DIRECTAMENTE tunnelBundleId.
+                         * Ya no depende de que exista un registro previo.
+                         */
                         [XITForgeFileEngine
                             replaceFileViaTunnelFromURL:
                                 location
                             bundleID:
-                                legacyBundleID
+                                tunnelBundleID
                             route:
                                 route
                             fileName:
@@ -1021,7 +1179,9 @@ static BOOL XF2FilesAreIdentical(
                                         index:
                                             index + 1
                                         legacyBundleID:
-                                            legacyBundleID];
+                                            legacyBundleID
+                                        tunnelBundleID:
+                                            tunnelBundleID];
                                 }];
                     }];
 
