@@ -8,6 +8,12 @@ def method(signature):
     start = source.index(signature)
     end = source.index('\n- (', start + len(signature))
     return source[start:end]
+# Cover the actual Home preparation entry point, not only standalone helpers.
+preparation = method('- (BOOL)prepareKnownFile:(NSString *)target operation:(NSString *)operation error:(NSError **)error {')
+assert '[self isolateBooks:error]' in preparation, 'Home must use the Books fallback during isolation'
+assert '[self installWorkingBooks:working error:error]' in preparation, 'Home must use the Books fallback during installation'
+assert '[self renameOwned:@"Books"' not in preparation, 'Home still bypasses the Books fallback'
+assert '[self renameOwned:working' not in preparation, 'Home still bypasses manifest installation'
 def static(start, end):
     return source[source.index(start):source.index(end, source.index(start))]
 helpers = static('static NSArray<NSString *> *XFATCTrackedFiles', 'static BOOL XFATCHash')

@@ -1231,14 +1231,14 @@ closeKnownFile:;
     }
     self.journal[@"booksIsolationStarted"]=@YES;
     if(![self saveJournal:@"isolate Books for known-file transaction" error:error])return NO;
-    if([self.journal[@"booksOriginallyPresent"] boolValue]&&![self renameOwned:@"Books" to:[backup stringByAppendingPathComponent:@"Books"] error:error])return NO;
+    if(![self isolateBooks:error])return NO;
     NSData *metadata=XFATCPlist(@{@"Version":@2},error);uint8_t *bytes=NULL;size_t length=0;
     if(!metadata||xf_atc_build_directory_zip(tail.UTF8String,metadata.bytes,metadata.length,&bytes,&length)){
         if(error&&!*error)*error=XFATCError(2136,@"No se pudo preparar el enlace del archivo.");return NO;}
     NSData *archive=[[NSData alloc] initWithBytesNoCopy:bytes length:length freeWhenDone:YES];
     if([operation isEqual:@"replace"]&&self.batchActive)[self recordBatchSetupPhase:4];
     if(![self stageZip:archive error:error]||![self makeOwnedDirectory:@"Airlock" error:error]||
-       ![self makeOwnedDirectory:@"Airlock/Book" error:error]||![self renameOwned:working to:@"Books" error:error]||
+       ![self makeOwnedDirectory:@"Airlock/Book" error:error]||![self installWorkingBooks:working error:error]||
        ![self runATC:error])return NO;
     if([operation isEqual:@"replace"]&&self.batchActive)[self recordBatchSetupPhase:6];
     [self recordKnownFileStage:@"Prepared" error:nil];return YES;
