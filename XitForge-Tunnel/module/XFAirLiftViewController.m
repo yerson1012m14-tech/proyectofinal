@@ -2,6 +2,7 @@
 #import "XFAirLiftBackend.h"
 #import "XFOnDevicePairing.h"
 #import "XFAirLiftProfessionalUI.h"
+#import "../shared/XFUserFacingError.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <QuickLook/QuickLook.h>
 #import <math.h>
@@ -128,10 +129,12 @@ static NSString *XFString(id value) {
 }
 
 static NSString *XFErrorMessage(NSError *error) {
-    return error.localizedDescription.length ? error.localizedDescription : @"El servicio no devolvió una respuesta válida.";
+    NSLog(@"XITFORGE diagnóstico del túnel: %@",error);
+    return XFUserFacingError(error.localizedDescription);
 }
 
 static void XFPresentError(UIViewController *controller, NSString *title, NSString *message) {
+    message=XFUserFacingError(message);
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
                                                                   message:message
                                                            preferredStyle:UIAlertControllerStyleAlert];

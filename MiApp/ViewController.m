@@ -428,7 +428,7 @@ canEditRowAtIndexPath:(NSIndexPath *)indexPath {
         
         if (!p) {
             UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Sin contenedor"
-                message:[NSString stringWithFormat:@"%@ no devolvió ruta (no instalada?)", bid]
+                message:@"No se pudo acceder a esta app. Comprueba que esté instalada y que hayas seleccionado la app correcta."
                 preferredStyle:UIAlertControllerStyleAlert];
             [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:a animated:YES completion:nil];

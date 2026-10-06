@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import "../XitForge-Tunnel/shared/XFUserFacingError.h"
 
 static IMP XFOriginalFinishActivationUI = NULL;
 
@@ -9,6 +10,8 @@ static void XFFinishActivationUIWithDiagnostics(id self, SEL _cmd, BOOL success,
     }
 
     if (success || ![message isKindOfClass:NSString.class] || message.length == 0) return;
+    NSLog(@"XITFORGE diagnóstico de activación: %@",message);
+    message=XFUserFacingError(message);
 
     dispatch_async(dispatch_get_main_queue(), ^{
         if (![self isKindOfClass:UIViewController.class]) return;

@@ -1,6 +1,7 @@
 #import "XFFileCreationProbeController.h"
 #import "XFAirLiftBackend.h"
 #import "XFFileCreationProbe.h"
+#import "../shared/XFUserFacingError.h"
 
 static NSString *const XFProbeRecordKey=@"XitForge.FileCreationProbe.Active.v1";
 static UILabel *XFProbeLabel(NSString *text, UIFontTextStyle style) {
@@ -106,6 +107,7 @@ static UILabel *XFProbeLabel(NSString *text, UIFontTextStyle style) {
         self.record=saved;[NSUserDefaults.standardUserDefaults setObject:saved forKey:XFProbeRecordKey];}
 }
 - (void)alert:(NSString *)title message:(NSString *)message {
+    message=XFUserFacingError(message);
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"Entendido" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];

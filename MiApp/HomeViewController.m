@@ -3,6 +3,7 @@
 #import "XITForgeFileEngine.h"
 #import "XITForgeDeactivationPlan.h"
 #import "XITForgeOriginalDownload.h"
+#import "../XitForge-Tunnel/shared/XFUserFacingError.h"
 #import "XFTunnelV2Config.h"
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -1212,6 +1213,8 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 }
 
 - (void)showError:(NSString *)message {
+    NSLog(@"XITFORGE error de opciones: %@",message);
+    message=XFUserFacingError(message);
     [self.activityIndicator stopAnimating];
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
     self.statusLabel.text = message;
@@ -1334,6 +1337,8 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 }
 
 - (void)showCenteredActivationError:(NSString *)message {
+    NSLog(@"XITFORGE error de activación: %@",message);
+    message=XFUserFacingError(message);
     if (self.presentedViewController) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"NO SE PUDO ACTIVAR"
         message:message ?: @"Comprueba tu key y conexión con el servidor."

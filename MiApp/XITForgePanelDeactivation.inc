@@ -22,6 +22,8 @@
 }
 
 - (void)showPanelDeactivationError:(NSString *)message {
+    NSLog(@"XITFORGE diagnóstico de desactivación: %@",message);
+    message=XFUserFacingError(message);
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"NO SE PUDO DESACTIVAR" message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"Entendido" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
