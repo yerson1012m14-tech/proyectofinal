@@ -1124,6 +1124,42 @@ closeKnownFile:;
     if(![observed isEqual:data]){if(error&&!*error)*error=XFATCError(2212,@"Los bytes preparados no coinciden con el archivo elegido.");return NO;}
     return YES;
 }
+- (BOOL)restoreBatchLinkForAutomaticRecovery:(NSError **)error {
+    NSMutableDictionary *file=self.journal[@"knownFile"];
+    if(![file[@"batchLinkReset"] boolValue])return YES;
+    NSString *external=self.journal[@"link"];
+    NSString *staged=[self.journal[@"source"] stringByAppendingPathComponent:@"p0/p1/p2/link"];
+    BOOL externalMissing=NO;NSDictionary *externalInfo=[self info:external missing:&externalMissing error:error];
+    if(externalInfo&&!externalMissing) {
+        if(![externalInfo[@"kind"] isEqual:@"S_IFLNK"]||
+           ![externalInfo[@"linkTarget"] isEqual:[@"../../../" stringByAppendingString:self.journal[@"tail"]]]){
+            if(error&&!*error)*error=XFATCError(2226,@"El enlace temporal de recuperación cambió; se conservaron todos los objetos.");return NO;
+        }
+        return YES;
+    }
+    if(!externalMissing)return NO;
+    BOOL stagedMissing=NO;NSDictionary *stagedInfo=[self info:staged missing:&stagedMissing error:error];
+    if(!stagedInfo||stagedMissing||![stagedInfo[@"kind"] isEqual:@"S_IFLNK"]||
+       ![stagedInfo[@"linkTarget"] isEqual:[@"../../../" stringByAppendingString:self.journal[@"tail"]]]){
+        if(error&&!*error)*error=XFATCError(2226,@"El enlace temporal de recuperación no se puede rearmar de forma segura.");return NO;
+    }
+    return [self renameOwned:staged to:external error:error]&&[self verifyKnownTargetLink:error];
+}
+- (BOOL)discardKnownIncomingForAutomaticRecovery:(NSError **)error {
+    NSMutableDictionary *file=self.journal[@"knownFile"];
+    BOOL missing=NO;NSDictionary *info=[self info:file[@"Incoming"] missing:&missing error:error];
+    if(missing)return YES;
+    if(!info||![info[@"kind"] isEqual:@"S_IFREG"]||!XFATCHash(file[@"newDigest"])){
+        if(error&&!*error)*error=XFATCError(2227,@"El archivo nuevo pendiente no tiene una identidad verificable; se conservaron los datos.");return NO;
+    }
+    NSData *bytes=[self readKnownStage:file[@"Incoming"] limit:64u*1024u*1024u error:error];
+    if(!bytes||![XFATCDigest(bytes) isEqual:file[@"newDigest"]]){
+        if(error&&!*error)*error=XFATCError(2227,@"El archivo nuevo pendiente cambió; se conservaron los datos para revisión.");return NO;
+    }
+    if(![self removeOwned:file[@"Incoming"] expectedKind:@"S_IFREG" error:error])return NO;
+    file[@"incomingPlaceIntent"]=@NO;
+    return [self saveJournal:@"discard verified staged replacement before automatic original recovery" error:error];
+}
 - (BOOL)recoverKnownFile:(BOOL)explicitRestore error:(NSError **)error {
     NSMutableDictionary *file=self.journal[@"knownFile"];
     if(!file)return YES;
@@ -1171,10 +1207,14 @@ closeKnownFile:;
         safeOriginalReturn=safeOriginalReturn&&[file[@"originalCaptured"] boolValue]&&
             [file[@"originalMoveIntent"] boolValue]&&![file[@"originalReturned"] boolValue]&&
             original&&[original[@"kind"] isEqual:@"S_IFREG"]&&
-            incomingMissing&&verifyMissing&&targetMissing&&
-            ![file[@"placementIntent"] boolValue]&&! [file[@"incomingPlaceIntent"] boolValue]&&
-            ![file[@"verifyMoveIntent"] boolValue]&&! [file[@"newVerified"] boolValue]&&
+            verifyMissing&&targetMissing&&! [file[@"newVerified"] boolValue]&&
             ![file[@"returnNewIntent"] boolValue]&&! [file[@"committed"] boolValue];
+        if(safeOriginalReturn) {
+            NSData *originalBytes=[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:error];
+            safeOriginalReturn=originalBytes&&[XFATCDigest(originalBytes) isEqual:file[@"originalDigest"]];
+            if(!incomingMissing&&safeOriginalReturn)safeOriginalReturn=[self discardKnownIncomingForAutomaticRecovery:error];
+            if(safeOriginalReturn)safeOriginalReturn=[self restoreBatchLinkForAutomaticRecovery:error];
+        }
         if(safeOriginalReturn) {
             if(![self returnKnownOriginal:error requireDestinationAbsent:YES])return NO;
             [self recordKnownFileStage:@"OriginalAutoRestored" error:nil];
@@ -1257,7 +1297,7 @@ closeKnownFile:;
         // action, whose UI identifies the destination and requires its app closed.
         return [self returnKnownOriginal:error requireDestinationAbsent:NO];
     }
-    self.lastWarning=@"Hay un archivo pendiente de recuperar. Cierra la app de destino y usa Abrir ruta → Restaurar original pendiente. La copia y el estado se conservaron.";
+    self.lastWarning=@"Hay una recuperación pendiente. Se conservaron el original y el estado; XitForge volverá a intentarla automáticamente cuando la ruta sea segura.";
     [self recordKnownFileStage:@"RecoveryPending" error:nil];
     if(error)*error=[self knownFilePending:self.lastWarning];return NO;
 }
@@ -1340,7 +1380,7 @@ closeKnownFile:;
         NSString *backupNote=@"Reemplazo verificado. La copia original se conservó con su registro de recuperación.";
         self.lastWarning=self.lastWarning.length?[backupNote stringByAppendingFormat:@"\n%@",self.lastWarning]:backupNote;
     }
-    if(!ok&&error)*error=failure?:XFATCError(2216,@"El reemplazo no se completó. Usa Restaurar original pendiente antes de continuar.");
+    if(!ok&&error)*error=failure?:XFATCError(2216,@"El reemplazo no se completó; se conservaron el original y el estado para reintentar la recuperación.");
     return ok;
 }
 - (BOOL)requireProbeDestinationAbsent:(NSError **)error {
@@ -1479,7 +1519,7 @@ closeKnownFile:;
         NSData *original=[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:&failure];
         if(!original||![self persistKnownOriginal:original error:&failure])break;
         if(expected&&![original isEqual:expected]) {
-            failure=XFATCError(2242,@"El contenido ya no coincide con la prueba. No se confirmó la eliminación; se conservó el original para recuperarlo desde Abrir ruta → Restaurar original pendiente.");
+            failure=XFATCError(2242,@"El contenido ya no coincide con la prueba. No se confirmó la eliminación; se conservó el original para una recuperación segura.");
             break;
         }
         BOOL absence=NO;
