@@ -2,6 +2,7 @@
 #import "LicenseValidator.h"
 #import "XITForgeFileEngine.h"
 #import "XITForgeDeactivationPlan.h"
+#import "XITForgeOriginalDownload.h"
 #import "XFTunnelV2Config.h"
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -1518,17 +1519,29 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 
     NSURL *downloadURL = item[@"downloadURL"];
     NSURL *destinationURL = [item[@"destinationURL"] isKindOfClass:NSURL.class] ? item[@"destinationURL"] : nil;
-    if (!downloadURL) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
+    if (!downloadURL) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; [self showPanelDeactivationError:@"La descarga del original no tiene una URL válida."]; return; }
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:downloadURL];
+    request.timeoutInterval = 60;
+    request.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
     [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
-    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; }); return; }
+    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; [self showPanelDeactivationError:@"El panel no autorizó descargar el original. Comprueba tu conexión y licencia."]; }); return; }
     NSURLSessionDownloadTask *task = [[NSURLSession sharedSession] downloadTaskWithRequest:request completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
         [LicenseValidator handleProtectedHTTPResponse:response];
         BOOL httpOK = http && (http.statusCode >= 200 && http.statusCode <= 299);
         if (error || !location || !httpOK) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
+            NSString *failure=error.localizedDescription?:[NSString stringWithFormat:@"El panel no entregó el original (HTTP %ld).",(long)http.statusCode];
+            dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; [self showPanelDeactivationError:failure]; });
+            return;
+        }
+
+        NSError *sizeError=nil;
+        NSDictionary *attributes=[NSFileManager.defaultManager attributesOfItemAtPath:location.path error:&sizeError];
+        NSNumber *actualSize=attributes[NSFileSize];
+        NSNumber *expectedSize=item[@"expectedSize"];
+        if(!actualSize||(expectedSize&&actualSize.unsignedLongLongValue!=expectedSize.unsignedLongLongValue)) {
+            dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; [self showPanelDeactivationError:sizeError.localizedDescription?:@"El original descargado está incompleto. No se aplicó el archivo."]; });
             return;
         }
 
@@ -1549,7 +1562,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
         // Si FilzaSlop/MCM no pudo restaurar el original, usar el mismo archivo
         // descargado a través del backend compartido del Túnel.
         if (![XITForgeFileEngine tunnelFallbackConfigured]) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
+            dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; [self showPanelDeactivationError:@"Conecta el túnel para aplicar el original del panel."]; });
             return;
         }
 
@@ -1558,12 +1571,14 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
                                                   route:item[@"route"] ?: @""
                                                fileName:item[@"fileName"] ?: @""
                                              completion:^(BOOL success, NSString *message) {
-            (void)message;
-            if (!success) {
-                [self finishDeactivationUIWithSuccess:NO noOriginals:NO];
-                return;
-            }
-            [self restoreOriginalItems:items index:(index + 1)];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!success) {
+                    [self finishDeactivationUIWithSuccess:NO noOriginals:NO];
+                    [self showPanelDeactivationError:message.length?message:@"El túnel no confirmó el reemplazo del original."];
+                    return;
+                }
+                [self restoreOriginalItems:items index:(index + 1)];
+            });
         }];
     }];
     [task resume];

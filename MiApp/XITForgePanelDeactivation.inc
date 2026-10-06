@@ -53,16 +53,17 @@
                     XITForgeOption *option=[XITForgeOption new];
                     option.route=action[@"route"];option.fileName=action[@"fileName"];
                     option.bundleId=[action[@"bundleId"] isKindOfClass:NSString.class]?action[@"bundleId"]:self.bundleId;
-                    NSString *tunnelID=[XFTunnelV2Config tunnelBundleIdFromOptionDictionary:action];
-                    if(tunnelID.length&&option.bundleId.length)[XFTunnelV2Config rememberTunnelBundleId:tunnelID forLegacyBundleId:option.bundleId];
+                    // Keep the destination mapping established by activation. An original
+                    // is a payload for that destination, not a different app selection.
                     NSMutableDictionary *item=[@{@"action":action[@"action"],@"route":option.route,@"fileName":option.fileName,
                         @"bundleID":option.bundleId?:@"",@"relativePath":action[@"relativePath"]} mutableCopy];
                     NSURL *destination=[self destinationURLForOption:option error:NULL];
                     if(destination)item[@"destinationURL"]=destination;
                     if([action[@"action"] isEqual:@"replace"]) {
-                        NSURL *download=[self absoluteServerURLForString:action[@"originalFileUrl"]];
+                        NSURL *download=XFPanelOriginalDownloadURL(action, self.apiBaseURL);
                         if(!download){[self finishDeactivationUIWithSuccess:NO noOriginals:NO];[self showPanelDeactivationError:@"La URL del original configurado no es válida."];return;}
                         item[@"downloadURL"]=download;
+                        if([action[@"originalFileSize"] isKindOfClass:NSNumber.class])item[@"expectedSize"]=action[@"originalFileSize"];
                     }
                     [items addObject:item];
                 }
