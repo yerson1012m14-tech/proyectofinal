@@ -1,0 +1,19 @@
+*** MiApp/XITForgeDeleteOnDeactivate.m
+--- MiApp/XITForgeDeleteOnDeactivate.m
+@@
+ #import "LicenseValidator.h"
+ #import "XITForgeFileEngine.h"
++#import "XFTunnelV2Config.h"
+
+@@
+   NSString *bundleId =
+     [rule[@"bundleId"] isKindOfClass:NSString.class] ? rule[@"bundleId"] : self.bundleId;
++  NSString *tunnelBundleId =
++    [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:rule];
++  if (!tunnelBundleId.length) tunnelBundleId = bundleId;
+
+@@
+-  [XITForgeFileEngine deleteFileViaTunnelForBundleID:bundleId
++  [XITForgeFileEngine deleteFileViaTunnelForBundleID:tunnelBundleId
+                                                route:route
+                                             fileName:fileName

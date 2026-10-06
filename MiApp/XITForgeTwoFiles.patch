@@ -1,0 +1,217 @@
+*** MiApp/XITForgeTwoFiles.m
+--- MiApp/XITForgeTwoFiles.m
+@@
+ #import <UIKit/UIKit.h>
+ #import <Foundation/Foundation.h>
+ #import "LicenseValidator.h"
++#import "XITForgeFileEngine.h"
++#import "XFTunnelV2Config.h"
+ #import <objc/runtime.h>
+
+@@
+ @property (nonatomic, copy) NSString *category;
+ @property (nonatomic, copy) NSString *bundleId;
++@property (nonatomic, copy) NSString *tunnelBundleId;
+ @property (nonatomic, copy) NSString *route;
+
+@@
+-    destinationOption.bundleId =
+-        option.bundleId;
++    destinationOption.bundleId = option.bundleId;
++    destinationOption.tunnelBundleId = option.tunnelBundleId;
+
+@@
+-    if (!destinationURL) {
+-
+-        [self
+-            xf2_fail:
+-                resolveError ?:
+-                @"No se pudo resolver la ruta del archivo."
+-        ];
+-
+-        return;
+-    }
++    if (!destinationURL && ![XITForgeFileEngine tunnelFallbackConfigured]) {
++        [self xf2_fail:resolveError ?: @"No se pudo resolver la ruta del archivo."];
++        return;
++    }
+
+@@
+-                    NSError *writeError =
+-                        nil;
+-
+-
+-                    BOOL written =
+-                        XF2WriteExactFile(
+-                            location,
+-                            destinationURL,
+-                            &writeError
+-                        );
+-
+-
+-                    if (!written) {
+-
+-                        NSString *message =
+-                            writeError.localizedDescription.length > 0
+-                                ? [NSString
+-                                    stringWithFormat:
+-                                        @"No se pudo agregar %@. %@",
+-                                        fileName,
+-                                        writeError.localizedDescription
+-                                  ]
+-                                : [NSString
+-                                    stringWithFormat:
+-                                        @"No se pudo agregar %@.",
+-                                        fileName
+-                                  ];
+-
+-
+-                        [strongSelf
+-                            xf2_fail:
+-                                message
+-                        ];
+-
+-                        return;
+-                    }
+-
+-
+-                    NSError *verifyError =
+-                        nil;
+-
+-
+-                    BOOL verified =
+-                        XF2FilesAreIdentical(
+-                            location,
+-                            destinationURL,
+-                            &verifyError
+-                        );
+-
+-
+-                    if (!verified) {
+-
+-                        NSString *message =
+-                            verifyError.localizedDescription.length > 0
+-                                ? [NSString
+-                                    stringWithFormat:
+-                                        @"%@ se escribió, pero no quedó verificado. %@",
+-                                        fileName,
+-                                        verifyError.localizedDescription
+-                                  ]
+-                                : [NSString
+-                                    stringWithFormat:
+-                                        @"%@ se escribió, pero no quedó verificado.",
+-                                        fileName
+-                                  ];
+-
+-
+-                        [strongSelf
+-                            xf2_fail:
+-                                message
+-                        ];
+-
+-                        return;
+-                    }
+-
+-
+-                    NSLog(
+-                        @"XITFORGE TWO FILES: aplicado %@ -> %@",
+-                        fileName,
+-                        destinationURL.path
+-                    );
+-
+-
+-                    dispatch_async(
+-                        dispatch_get_main_queue(),
+-                        ^{
+-                            [strongSelf
+-                                xf2_applyItems:
+-                                    items
+-                                index:
+-                                    index + 1
+-                                option:
+-                                    option
+-                            ];
+-                        }
+-                    );
++                    NSString *localFailure = resolveError;
++
++                    if (destinationURL) {
++                        NSError *writeError = nil;
++                        BOOL written = XF2WriteExactFile(location, destinationURL, &writeError);
++
++                        if (written) {
++                            NSError *verifyError = nil;
++                            BOOL verified = XF2FilesAreIdentical(location, destinationURL, &verifyError);
++
++                            if (verified) {
++                                NSLog(@"XITFORGE TWO FILES: aplicado local %@ -> %@",
++                                      fileName, destinationURL.path);
++                                dispatch_async(dispatch_get_main_queue(), ^{
++                                    [strongSelf xf2_applyItems:items
++                                                       index:index + 1
++                                                      option:option];
++                                });
++                                return;
++                            }
++
++                            localFailure = verifyError.localizedDescription
++                                ?: @"La escritura local no quedó verificada.";
++                        } else {
++                            localFailure = writeError.localizedDescription
++                                ?: @"El acceso local no pudo escribir el archivo.";
++                        }
++                    }
++
++                    if (![XITForgeFileEngine tunnelFallbackConfigured]) {
++                        [strongSelf xf2_fail:
++                            localFailure.length
++                                ? [NSString stringWithFormat:@"%@ El Túnel no está configurado.", localFailure]
++                                : @"No se pudo aplicar el archivo y el Túnel no está configurado."];
++                        return;
++                    }
++
++                    NSString *tunnelBundleID =
++                        option.tunnelBundleId.length ? option.tunnelBundleId : option.bundleId;
++
++                    if (!tunnelBundleID.length) {
++                        [strongSelf xf2_fail:@"No se pudo determinar el Bundle ID para Tunnel V2."];
++                        return;
++                    }
++
++                    [XITForgeFileEngine replaceFileViaTunnelFromURL:location
++                                                           bundleID:tunnelBundleID
++                                                              route:option.route ?: @""
++                                                           fileName:fileName
++                                                         completion:^(BOOL success, NSString *message) {
++                        if (!success) {
++                            [strongSelf xf2_fail:message ?: @"El Túnel no pudo aplicar el archivo."];
++                            return;
++                        }
++
++                        NSLog(@"XITFORGE TWO FILES: aplicado por Túnel %@", fileName);
++                        [strongSelf xf2_applyItems:items
++                                             index:index + 1
++                                            option:option];
++                    }];
+
+@@
+                     NSDictionary *rawOption =
+                         [strongSelf
+                             xf2_findRawOption:
+                                 rawOptions
+                             optionId:
+                                 option.optionId
+                         ];
+
+@@
+                     if (!rawOption) {
+@@
+                         return;
+                     }
++
++                    option.tunnelBundleId =
++                        [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:rawOption];
++                    if (!option.tunnelBundleId.length) {
++                        option.tunnelBundleId =
++                            [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:dictionary];
++                    }

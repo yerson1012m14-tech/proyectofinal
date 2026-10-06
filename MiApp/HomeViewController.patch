@@ -1,0 +1,49 @@
+*** MiApp/HomeViewController.m
+--- MiApp/HomeViewController.m
+@@
+ #import "HomeViewController.h"
+ #import "LicenseValidator.h"
+ #import "XITForgeFileEngine.h"
++#import "XFTunnelV2Config.h"
+
+@@
+ @property (nonatomic, copy) NSString *category;
+ @property (nonatomic, copy) NSString *bundleId;
++@property (nonatomic, copy) NSString *tunnelBundleId;
+ @property (nonatomic, copy) NSString *route;
+
+@@
+                 if ([raw[@"bundleId"] isKindOfClass:[NSString class]]) option.bundleId = raw[@"bundleId"];
+                 else if ([dictionary[@"bundleId"] isKindOfClass:[NSString class]]) option.bundleId = dictionary[@"bundleId"];
+                 else option.bundleId = self.bundleId;
++                option.tunnelBundleId = [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:raw];
++                if (!option.tunnelBundleId.length) {
++                    option.tunnelBundleId = [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:dictionary];
++                }
+                 if ([raw[@"route"] isKindOfClass:[NSString class]]) option.route = raw[@"route"];
+
+@@
+-        NSString *responseBundleId = [dictionary[@"bundleId"] isKindOfClass:[NSString class]] ? dictionary[@"bundleId"] : self.bundleId;
++        NSString *responseBundleId = [dictionary[@"bundleId"] isKindOfClass:[NSString class]] ? dictionary[@"bundleId"] : self.bundleId;
++        NSString *responseTunnelBundleId = [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:dictionary];
+         NSMutableArray *items = [NSMutableArray array];
+
+@@
+             XITForgeOption *option = [[XITForgeOption alloc] init];
+             option.bundleId = [raw[@"bundleId"] isKindOfClass:[NSString class]] ? raw[@"bundleId"] : responseBundleId;
++            option.tunnelBundleId = [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:raw];
++            if (!option.tunnelBundleId.length) option.tunnelBundleId = responseTunnelBundleId;
+             option.route = [raw[@"route"] isKindOfClass:[NSString class]] ? raw[@"route"] : nil;
+
+@@
+-                @"bundleID": option.bundleId.length ? option.bundleId : self.bundleId ?: @"",
++                @"bundleID": option.tunnelBundleId.length
++                    ? option.tunnelBundleId
++                    : (option.bundleId.length ? option.bundleId : self.bundleId ?: @""),
+
+@@
+-        NSString *bundleID = option.bundleId.length ? option.bundleId : self.bundleId;
++        NSString *bundleID = option.tunnelBundleId.length
++            ? option.tunnelBundleId
++            : (option.bundleId.length ? option.bundleId : self.bundleId);
+         NSMutableDictionary *context = [NSMutableDictionary dictionaryWithDictionary:@{
