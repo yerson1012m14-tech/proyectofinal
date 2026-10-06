@@ -460,42 +460,11 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
             }
         }
         self->_connected = success;
-        BOOL tunnelEstablished = success;
-        if (success) {
-            XFATCDirectory *directory = [self atcDirectoryNativeWithError:&failure];
-            if (!directory || ![directory recoverPendingTransaction:&failure]) {
-                id pending = failure.userInfo[@"KnownFileRecoveryPending"];
-                BOOL manualFileRecovery = directory && [failure.domain isEqualToString:@"XitForge.ATCDirectory"] &&
-                    failure.code == 2210 && [pending isKindOfClass:NSNumber.class] && [pending boolValue];
-                if (manualFileRecovery) {
-                    // The validated journal requires explicit action for this
-                    // exact file. Keep metadata/tunnel access for that action;
-                    // the ATC module blocks new moves until recovery resolves it.
-                    id deletionCommitted=failure.userInfo[@"KnownFileDeleteCommitted"];
-                    BOOL retainedDelete=[deletionCommitted isKindOfClass:NSNumber.class]&&[deletionCommitted boolValue];
-                    NSString *recoveryMessage = retainedDelete?
-                        @"El retiro ya se confirmó y se conservó la copia. El archivo no se restaurará automáticamente.":
-                        @"Hay un original pendiente de recuperar. XitForge intentará restaurarlo automáticamente cuando la ruta esté vacía; si el contenido cambió, la recuperación manual seguirá disponible.";
-                    NSString *detail = failure.localizedDescription ?: @"";
-                    self->_directoryWarning = [detail isEqualToString:recoveryMessage] || !detail.length
-                        ? recoveryMessage : [NSString stringWithFormat:@"%@ %@", recoveryMessage, detail];
-                    self->_routeResultCodes[@"AirTrafficRecovery"] = @(2210);
-                } else {
-                    success = NO;
-                    [self disconnectNative];
-                }
-            } else {
-                self->_directoryWarning = [directory.lastWarning copy] ?: @"";
-            }
-            if (directory.deletedFileBackupURL) {
-                self->_lastDeletedFileBackupURL = [directory.deletedFileBackupURL copy];
-                self->_lastDeletionAbsenceConfirmed = directory.deletionAbsenceConfirmed;
-            }
-        }
+        // Connecting a tunnel never restores or relocates application files.
+        // Home uses downloaded payloads; legacy recovery is explicitly invoked only.
+        self->_directoryWarning = @"";
         if (!success) {
-            failure = tunnelEstablished
-                ? XFError(failure.code ?: 1029, [NSString stringWithFormat:@"El túnel respondió, pero hay una recuperación de la exploración que debe completarse antes de continuar. %@", failure.localizedDescription ?: @"No se pudo verificar el estado pendiente."])
-                : XFError(failure.code ?: 1006, [NSString stringWithFormat:@"No se pudo verificar la conexión con el iPhone. Activa LocalDevVPN y comprueba que el pairing corresponde a este dispositivo. %@", failure.localizedDescription ?: @""]);
+            failure = XFError(failure.code ?: 1006, [NSString stringWithFormat:@"No se pudo verificar la conexión con el iPhone. Activa LocalDevVPN y comprueba que el pairing corresponde a este dispositivo. %@", failure.localizedDescription ?: @""]);
         }
     }];
     if (!success && error) *error = failure;
@@ -530,11 +499,11 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
     if (_atcDirectory) return _atcDirectory;
     if (!_adapter || !_handshake) return nil;
     char *nativeUUID = NULL;
-    if (!XFConsume(rsd_get_uuid(_handshake, &nativeUUID), @"Identificar dispositivo para recuperar la operación", error)) return nil;
+    if (!XFConsume(rsd_get_uuid(_handshake, &nativeUUID), @"Identificar dispositivo del túnel", error)) return nil;
     NSString *identity = nativeUUID ? [NSString stringWithUTF8String:nativeUUID] : nil;
     if (nativeUUID) rsd_free_string(nativeUUID);
     if (!identity.length) {
-        if (error) *error = XFError(1023, @"El dispositivo no devolvió una identidad válida para recuperar operaciones pendientes.");
+        if (error) *error = XFError(1023, @"El dispositivo no devolvió una identidad válida para el túnel.");
         return nil;
     }
     NSDictionary *record = [NSPropertyListSerialization propertyListWithData:_pairingData options:NSPropertyListImmutable format:NULL error:NULL];
@@ -553,22 +522,14 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
             [material appendData:deviceCertificate]; data = material;
         }
     }
-    // RSD UUID alone has no documented cross-boot guarantee. Pending journals
-    // from every other identity are checked below before allowing a new one.
+    // Namespace temporary operations by the approved pairing identity.
     if (!data) data = [[@"RSD:" stringByAppendingString:identity] dataUsingEncoding:NSUTF8StringEncoding];
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
     NSMutableString *key = [NSMutableString new];
     for (NSUInteger index = 0; index < sizeof(digest); index++) [key appendFormat:@"%02x", digest[index]];
     NSURL *recoveryRoot = [self.pairingURL.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"ATCRecovery" isDirectory:YES];
-    NSArray<NSURL *> *previous = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:recoveryRoot includingPropertiesForKeys:nil options:NSDirectoryEnumerationSkipsHiddenFiles error:NULL];
-    for (NSURL *other in previous) {
-        if ([other.lastPathComponent isEqualToString:key]) continue;
-        if ([[NSFileManager defaultManager] fileExistsAtPath:[[other URLByAppendingPathComponent:@"active.plist"] path]]) {
-            if (error) *error = XFError(1024, @"Hay una operación de carpetas pendiente de recuperar con otro emparejamiento. Vuelve a conectar el iPhone y el registro usados en esa operación antes de iniciar otra.");
-            return nil;
-        }
-    }
+    // Old recovery records are retained but do not block direct downloaded writes.
     NSURL *journal = [recoveryRoot URLByAppendingPathComponent:key isDirectory:YES];
     __weak XFAirLiftBackend *owner=self;
     XFATCTunnelFactory factory=^BOOL(AdapterHandle **adapter,RsdHandshakeHandle **rsd,NSError **failure) {
@@ -1182,7 +1143,7 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
         NSString *absolute = relative ? [self atcAbsolutePathForIdentifier:identifier shared:NO path:relative error:&failure] : nil;
         XFATCDirectory *directory = absolute ? [self atcDirectoryNativeWithError:&failure] : nil;
         if (directory) {
-            replaced = [directory replaceAbsoluteFile:absolute data:replacement error:&failure];
+            replaced = [directory writeDownloadedAbsoluteFile:absolute data:replacement error:&failure];
             self->_directoryWarning = [directory.lastWarning copy] ?: @"";
         }
         self->_routeResultCodes[@"AirTrafficReplace"] = @(replaced ? 0 : failure.code ?: -1);

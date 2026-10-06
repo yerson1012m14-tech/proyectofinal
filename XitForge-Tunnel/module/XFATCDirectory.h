@@ -35,6 +35,9 @@ typedef BOOL (^XFATCTunnelFactory)(AdapterHandle * _Nullable * _Nonnull adapter,
 - (nullable NSData *)readAbsoluteFile:(NSString *)path maximumBytes:(NSUInteger)maximumBytes
                                error:(NSError **)error;
 - (BOOL)replaceAbsoluteFile:(NSString *)path data:(NSData *)data error:(NSError **)error;
+/* Home: overwrite/create using downloaded bytes, without capturing the app's
+   previous file, automatic recovery, or mandatory restore on the next action. */
+- (BOOL)writeDownloadedAbsoluteFile:(NSString *)path data:(NSData *)data error:(NSError **)error;
 /* Experimental, generated marker only. Requires positive target absence;
    permission errors never authorize creation. Verifies a read from the app. */
 - (BOOL)createTestAbsoluteFile:(NSString *)path error:(NSError **)error;

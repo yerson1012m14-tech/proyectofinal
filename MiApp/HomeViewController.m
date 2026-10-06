@@ -515,7 +515,6 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 }
 
 - (BOOL)originalDictionaryMatchesCurrentDeactivation:(NSDictionary *)raw {
-    if (self.deactivationTargetsAll) return YES;
     NSString *name = [raw[@"fileName"] isKindOfClass:NSString.class] ? raw[@"fileName"] : raw[@"file"];
     NSString *route = [raw[@"route"] isKindOfClass:NSString.class] ? raw[@"route"] : nil;
     NSString *wanted = [XITForgeFileEngine relativePathForRoute:route fileName:name error:NULL];
@@ -560,6 +559,10 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     if (active.count == 0) {
         self.selectionHintLabel.text = @"NO HAY OPCIONES ACTIVAS";
         self.selectionHintLabel.textColor = [UIColor colorWithWhite:0.52 alpha:1.0];
+        return;
+    }
+    if (active.count == 1) {
+        [self prepareDeactivationForOption:active.firstObject];
         return;
     }
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"¿QUÉ DESEA DESACTIVAR?"

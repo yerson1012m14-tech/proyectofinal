@@ -613,7 +613,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
                 return;
             }
             [owner setBusyUI:YES];
-            NSString *message = [NSString stringWithFormat:@"App: %@\nDestino: %@\nArchivo nuevo: %@\nTamaño: %lu bytes\n\nEl archivo elegido sustituirá el contenido del destino. Se conservará el original hasta verificar el reemplazo. Cierra la app de destino durante la operación.\n\nSi se interrumpe, vuelve a conectar para recuperar el original. No desinstales XitForge mientras haya una recuperación pendiente.", application, target, sourceName, (unsigned long)payload.length];
+            NSString *message = [NSString stringWithFormat:@"App: %@\nDestino: %@\nArchivo nuevo: %@\nTamaño: %lu bytes\n\nEl archivo elegido sustituirá el contenido del destino, sin guardar el archivo anterior. Cierra la app de destino durante la operación.", application, target, sourceName, (unsigned long)payload.length];
             UIAlertController *confirmation = [UIAlertController alertControllerWithTitle:@"Confirmar reemplazo" message:message preferredStyle:UIAlertControllerStyleAlert];
             [confirmation addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) { [owner setBusyUI:NO]; }]];
             [confirmation addAction:[UIAlertAction actionWithTitle:@"Reemplazar" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {

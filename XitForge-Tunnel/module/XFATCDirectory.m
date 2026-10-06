@@ -136,6 +136,7 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *syncAttempts;
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *batchEvents;
 @property (nonatomic) BOOL batchActive;
+@property (nonatomic) BOOL directWriteActive;
 @property (nonatomic) NSUInteger batchLastPhase;
 @property (nonatomic, readwrite, nullable) NSURL *deletedFileBackupURL;
 @property (nonatomic, readwrite) BOOL deletionAbsenceConfirmed;
@@ -153,6 +154,8 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
 @end
 
 @implementation XFATCDirectory
+#include "XFATCDirectWrite.inc"
+
 - (void)recordBatchSetupPhase:(NSUInteger)phase {
     if(!self.batchActive||phase<1||phase>12||phase<=self.batchLastPhase)return;
     NSArray *labels=@[@"RPPairing record loaded",@"RSD tunnel established",@"AFC connected",@"preflight OK",
@@ -203,8 +206,11 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
              @"knownFileOperation":self.fileOperationDiagnostics?:@{},
              @"booksMarker":[self.booksMarkerDiagnostics copy]?:@{},
              @"syncAttempts":[self.syncAttempts copy]?:@[],
-             @"batchWrite":@{@"mode":@"replace",@"filesPerBatch":@1,@"events":[self.batchEvents copy]?:@[],
-                 @"completed":@(self.batchLastPhase==12),@"originalBackupBeforePlacement":@YES}};
+             @"batchWrite":@{@"mode":[self.fileOperationDiagnostics[@"operation"] isEqual:@"directWrite"]?@"directWrite":@"replace",
+                 @"filesPerBatch":@1,@"events":[self.batchEvents copy]?:@[],
+                 @"completed":[self.fileOperationDiagnostics[@"operation"] isEqual:@"directWrite"]?
+                     @([self.fileOperationDiagnostics[@"committed"] boolValue]):@(self.batchLastPhase==12),
+                 @"originalBackupBeforePlacement":@(![self.fileOperationDiagnostics[@"operation"] isEqual:@"directWrite"])}};
 }
 - (void)recordServicePort:(const char *)name tunnel:(XFATCServiceTunnel *)tunnel {
     CRsdService *service=NULL;
@@ -228,7 +234,10 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
     if(ok)[self recordBatchSetupPhase:2];
     if(!ok)[self closeAFC];else [self recordBatchSetupPhase:3];return ok;
 }
-- (NSURL *)activeURL { return [self.journalURL URLByAppendingPathComponent:@"active.plist"]; }
+- (NSURL *)activeURL {
+    NSString *name=self.directWriteActive?[NSString stringWithFormat:@"direct-%@.plist",self.journal[@"token"]]:@"active.plist";
+    return [self.journalURL URLByAppendingPathComponent:name];
+}
 - (BOOL)saveJournal:(NSString *)intent error:(NSError **)error {
     self.journal[@"intent"]=intent;
     self.journal[@"updatedAt"]=[NSDate date];
@@ -433,7 +442,8 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
     if(!ok)return NO;
     info=[self info:path missing:&missing error:error];
     NSData *observed=info?[self readSnapshot:path expectedSize:[info[@"size"] unsignedIntegerValue] error:error]:nil;
-    if(![observed isEqual:bytes]){if(error&&!*error)*error=XFATCError(2255,@"El estado escrito no coincide con su copia. Se conserva la recuperación.");return NO;}
+    if(![observed isEqual:bytes]){if(error&&!*error)*error=XFATCError(2255,self.directWriteActive?
+        @"No se pudo verificar el manifiesto de sincronización.":@"El estado escrito no coincide con su copia. Se conserva la recuperación.");return NO;}
     return YES;
 }
 - (BOOL)beginBooksInPlace:(NSError **)error {
@@ -761,7 +771,8 @@ closeATC:;
         if(!missing&&!info)break;
         [NSThread sleepForTimeInterval:0.125];
     }
-    if(!ok&&error&&!*error)*error=XFATCError(2121,@"AirTraffic no trasladó el enlace generado. El estado temporal se recuperará antes del siguiente intento.");
+    if(!ok&&error&&!*error)*error=XFATCError(2121,self.directWriteActive?
+        @"AirTraffic no trasladó el enlace generado para el archivo descargado.":@"AirTraffic no trasladó el enlace generado. El estado temporal se recuperará antes del siguiente intento.");
     return ok;
 }
 - (BOOL)validKnownFileJournal:(NSDictionary *)journal {
@@ -957,7 +968,8 @@ closeATC:;
                 BOOL missing=NO;NSDictionary *link=[self info:self.journal[@"link"] missing:&missing error:error];
                 if(!link||missing||![link[@"kind"] isEqual:@"S_IFLNK"]||
                    ![link[@"linkTarget"] isEqual:[@"../../../" stringByAppendingString:self.journal[@"tail"]]]){
-                    if(error&&!*error)*error=XFATCError(2220,@"El enlace de retorno cambió o desapareció. Se conservaron el original y la recuperación, sin enviarlo a otro destino.");goto closeKnownFile;}
+                    if(error&&!*error)*error=XFATCError(2220,self.directWriteActive?
+                        @"El enlace del destino cambió o desapareció; no se envió el archivo descargado.":@"El enlace de retorno cambió o desapareció. Se conservaron el original y la recuperación, sin enviarlo a otro destino.");goto closeKnownFile;}
                 if(([@[@"createProbe",@"create"] containsObject:file[@"operation"]])&&![self requireProbeDestinationAbsent:error])goto closeKnownFile;
             }
             if(![self saveJournal:@"send persisted known-file move" error:error])goto closeKnownFile;
@@ -982,7 +994,7 @@ closeKnownFile:;
         if(wantMissing?missing:info!=nil)return YES;
         [NSThread sleepForTimeInterval:0.125];
     }while(deadline.timeIntervalSinceNow>0);
-    if(error)*error=XFATCError(2203,@"No se confirmó el traslado del archivo. Se conserva la recuperación pendiente.");
+    if(error)*error=XFATCError(2203,self.directWriteActive?@"No se confirmó la transferencia del archivo descargado.":@"No se confirmó el traslado del archivo. Se conserva la recuperación pendiente.");
     return NO;
 }
 - (NSData *)readKnownStage:(NSString *)path limit:(NSUInteger)limit error:(NSError **)error {
