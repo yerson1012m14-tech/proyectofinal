@@ -49,6 +49,7 @@ __HELPERS__
 @property NSString *failWrite;
 @property BOOL partialWrite;
 @property NSString *failRemoval;
+@property BOOL failRemovalAfterRestore;
 @property BOOL mutateSourceAfterBookWrite;
 @property BOOL failRootIdentityInfo;
 @property NSUInteger serial;
@@ -129,7 +130,10 @@ __HELPERS__
 - (BOOL)removeOwned:(NSString *)path expectedKind:(NSString *)kind error:(NSError **)error {
     NSDictionary *node=self.nodes[path];if(!node)return YES;
     if(![node[@"kind"] isEqual:kind])return NO;
-    if([path isEqual:self.failRemoval]) {self.failRemoval=nil;if(error)*error=XFATCError(1,@"Injected interrupted marker removal");return NO;}
+    if([path isEqual:self.failRemoval] &&
+       (!self.failRemovalAfterRestore || [self.journal[@"legacyCopyRestored"] boolValue])) {
+        self.failRemoval=nil;if(error)*error=XFATCError(1,@"Injected interrupted marker removal");return NO;
+    }
     if([kind isEqual:@"S_IFDIR"]&&[[self names:path error:error] count])return NO;
     if(![self saveJournal:[@"remove " stringByAppendingString:path] error:error])return NO;
     [self.nodes removeObjectForKey:path];return YES;
@@ -168,7 +172,7 @@ static void reconnect(LegacyBooksFixture *f) {
     f.journal=[NSPropertyListSerialization propertyListWithData:[NSData dataWithContentsOfURL:f.activeURL]
         options:NSPropertyListMutableContainersAndLeaves format:NULL error:NULL];
 }
-#define CHECK(x) do{if(!(x)){fprintf(stderr,"Legacy Books fixture failed at line %d\n",__LINE__);return 1;}}while(0)
+#define CHECK(x) do{if(!(x)){fprintf(stderr,"Legacy Books fixture failed at line %d: %s\n",__LINE__,#x);return 1;}}while(0)
 int main(void){@autoreleasepool{
     NSError *error=nil;LegacyBooksFixture *f=make(YES);NSDictionary *before=backupNodes(f);
     CHECK([f restoreLegacyBooksCopy:&error]);CHECK(error==nil);CHECK(f.renames==0);
@@ -210,8 +214,16 @@ int main(void){@autoreleasepool{
     reconnect(f);f.failWrite=nil;f.nodes[@"Books/Sync/Books.plist"][@"data"]=bytes(@"new external manifest");foreign=[f.nodes copy];
     CHECK(![f restoreLegacyBooksCopy:NULL]);CHECK([f.nodes isEqual:foreign]);
 
-    /* Durable completion permits a crash before marker removal, and new inode timestamps. */
+    /* Failure removing the old temporary marker must not claim restoration. */
     f=make(YES);before=backupNodes(f);f.failRemoval=@"Books/XitForgeOwner.plist";
+    CHECK(![f restoreLegacyBooksCopy:NULL]);CHECK(![f.journal[@"legacyCopyRestored"] boolValue]);
+    CHECK([backupNodes(f) isEqual:before]);CHECK(f.nodes[@"Books/XitForgeOwner.plist"]!=nil);
+    reconnect(f);CHECK([f restoreLegacyBooksCopy:NULL]);CHECK([backupNodes(f) isEqual:before]);
+
+    /* Fail only the restored-copy marker removal, after durable completion.
+       The same path is also removed earlier when clearing the old temporary. */
+    f=make(YES);before=backupNodes(f);f.failRemoval=@"Books/XitForgeOwner.plist";
+    f.failRemovalAfterRestore=YES;
     CHECK(![f restoreLegacyBooksCopy:NULL]);CHECK([f.journal[@"legacyCopyRestored"] boolValue]);CHECK(f.nodes[@"Books/XitForgeOwner.plist"]!=nil);
     reconnect(f);CHECK([f restoreLegacyBooksCopy:NULL]);CHECK(f.nodes[@"Books/XitForgeOwner.plist"]==nil);CHECK([backupNodes(f) isEqual:before]);
 
@@ -249,4 +261,4 @@ else:
     subprocess.run(["xcrun", "clang", "-fobjc-arc", "-fblocks", "-Wall", "-Wextra",
                     "-Wno-unused-parameter", str(path), "-framework", "Foundation", "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True, timeout=60)
-    print("PASS: production legacy Books copy, 12 scenarios; mocked AFC, full original tree retained.")
+    print("PASS: production legacy Books copy, 13 scenarios; mocked AFC, full original tree retained.")
