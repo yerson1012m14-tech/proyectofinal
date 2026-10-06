@@ -1241,7 +1241,7 @@ static void XFCloseFileServiceSession(XFFileServiceSession *session) {
         NSString *absolute = relative ? [self atcAbsolutePathForIdentifier:identifier shared:NO path:relative error:&failure] : nil;
         XFATCDirectory *directory = absolute ? [self atcDirectoryNativeWithError:&failure] : nil;
         if (directory) {
-            deleted = [directory deleteAbsoluteFile:absolute error:&failure];
+            deleted = [directory deleteConfiguredAbsoluteFile:absolute error:&failure];
             self->_directoryWarning = [directory.lastWarning copy] ?: @"";
             self->_lastDeletedFileBackupURL = [directory.deletedFileBackupURL copy];
             self->_lastDeletionAbsenceConfirmed = directory.deletionAbsenceConfirmed;

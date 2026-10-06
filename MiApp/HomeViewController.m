@@ -1,6 +1,7 @@
 #import "HomeViewController.h"
 #import "LicenseValidator.h"
 #import "XITForgeFileEngine.h"
+#import "XITForgeDeactivationPlan.h"
 #import "XFTunnelV2Config.h"
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -1491,180 +1492,30 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     [self xfBeginAutoCleanupWithCompletion:self.xfCleanupCompletion];
 }
 
-- (void)processOriginalManifestDictionary:(NSDictionary *)dictionary originals:(NSArray *)rawOriginals legacy:(BOOL)legacy {
-    if (rawOriginals.count == 0) {
-        if (!legacy) { [self deactivateUsingLegacyOptionsFallback]; return; }
-        dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:YES]; });
-        return;
-    }
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSString *responseBundleId = [dictionary[@"bundleId"] isKindOfClass:[NSString class]] ? dictionary[@"bundleId"] : self.bundleId;
-        NSMutableArray *items = [NSMutableArray array];
-        NSMutableSet<NSString *> *configuredPaths = [NSMutableSet new];
-        for (id rawItem in rawOriginals) {
-            if (![rawItem isKindOfClass:[NSDictionary class]]) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
-            NSDictionary *raw = (NSDictionary *)rawItem;
-            BOOL matches = [self originalDictionaryMatchesCurrentDeactivation:raw];
-            // Only /options shares IDs with activated options. /originals IDs
-            // belong to another table and must continue matching by full path.
-            if (!matches && legacy) {
-                NSNumber *optionId = [raw[@"id"] isKindOfClass:NSNumber.class] ? raw[@"id"] : nil;
-                NSString *key = optionId ? [NSString stringWithFormat:@"id:%@",optionId.stringValue] : nil;
-                matches = key.length && [self.deactivationTargetKeys containsObject:key];
-            }
-            if (!matches) { continue; }
-            XITForgeOption *option = [[XITForgeOption alloc] init];
-            option.bundleId = [raw[@"bundleId"] isKindOfClass:[NSString class]] ? raw[@"bundleId"] : responseBundleId;
-            NSString *tunnelID = [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:raw] ?: [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:dictionary];
-            if (tunnelID.length && option.bundleId.length)
-                [XFTunnelV2Config rememberTunnelBundleId:tunnelID forLegacyBundleId:option.bundleId];
-            option.route = [raw[@"route"] isKindOfClass:[NSString class]] ? raw[@"route"] : nil;
-            option.fileName = [raw[@"fileName"] isKindOfClass:[NSString class]] ? raw[@"fileName"] :
-                ([raw[@"file"] isKindOfClass:NSString.class] ? raw[@"file"] : nil);
-            option.originalFileUrl = [raw[@"originalFileUrl"] isKindOfClass:[NSString class]] ? raw[@"originalFileUrl"] : nil;
-            if (option.originalFileUrl.length == 0) {
-                NSNumber *itemId = [raw[@"id"] isKindOfClass:[NSNumber class]] ? raw[@"id"] : nil;
-                if (itemId.longLongValue > 0) option.originalFileUrl = legacy ? [NSString stringWithFormat:@"/api/app/options/%@/original-file", itemId] : [NSString stringWithFormat:@"/api/app/originals/%@/file", itemId];
-            }
-            if (option.route.length == 0 || option.fileName.length == 0 || option.originalFileUrl.length == 0) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
-            NSString *resolveError = nil;
-            NSURL *destinationURL = [self destinationURLForOption:option error:&resolveError];
-            NSURL *downloadURL = [self absoluteServerURLForString:option.originalFileUrl];
-            NSString *relativeError = nil;
-            NSString *relativePath = [XITForgeFileEngine relativePathForRoute:option.route fileName:option.fileName error:&relativeError];
-            if (!downloadURL || !relativePath) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
-            if ([configuredPaths containsObject:relativePath]) continue;
-            if (!destinationURL && ![XITForgeFileEngine tunnelFallbackConfigured]) {
-                [self finishDeactivationUIWithSuccess:NO noOriginals:NO];
-                return;
-            }
-            NSMutableDictionary *restoreItem = [NSMutableDictionary dictionaryWithDictionary:@{
-                @"downloadURL": downloadURL,
-                @"bundleID": option.bundleId.length ? option.bundleId : self.bundleId ?: @"",
-                @"route": option.route ?: @"",
-                @"fileName": option.fileName ?: @"",
-                @"relativePath": relativePath
-            }];
-            if (destinationURL) restoreItem[@"destinationURL"] = destinationURL;
-            if (resolveError.length) restoreItem[@"localResolveError"] = resolveError;
-            [items addObject:restoreItem];
-            [configuredPaths addObject:relativePath];
-        }
-        BOOL missingRequiredOriginal = NO;
-        for (XITForgeOption *active in self.options) {
-            if (![self.deactivationTargetKeys containsObject:[self activationKeyForOption:active]]) continue;
-            NSArray *destinations = active.fileItems;
-            if (!destinations.count && active.route.length && active.fileName.length)
-                destinations = @[@{@"route":active.route,@"fileName":active.fileName}];
-            for (NSDictionary *destination in destinations) {
-                NSString *path = [XITForgeFileEngine relativePathForRoute:destination[@"route"] fileName:destination[@"fileName"] error:NULL];
-                if (!path.length || ![configuredPaths containsObject:path]) missingRequiredOriginal = YES;
-            }
-        }
-        if (items.count == 0 || missingRequiredOriginal) {
-            if (!legacy) { [self deactivateUsingLegacyOptionsFallback]; return; }
-            [self finishDeactivationUIWithSuccess:NO noOriginals:YES];
-            return;
-        }
-        [self restoreOriginalItems:items index:0];
-    });
-}
-
-- (void)deactivateUsingLegacyOptionsFallback {
-    NSString *encodedGame = [self.game stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
-    NSString *urlString = [NSString stringWithFormat:@"%@/api/app/options?game=%@", [self apiBaseURL], encodedGame ?: @""];
-    NSURL *url = [NSURL URLWithString:urlString];
-    if (!url) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.HTTPMethod = @"GET";
-    request.timeoutInterval = 20.0;
-    [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
-    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; }); return; }
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-        NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
-        [LicenseValidator handleProtectedHTTPResponse:response];
-        if (error || !data || !http || http.statusCode < 200 || http.statusCode > 299) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
-            return;
-        }
-        NSError *jsonError = nil;
-        id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
-        if (jsonError || ![json isKindOfClass:[NSDictionary class]]) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
-            return;
-        }
-        NSDictionary *dictionary = (NSDictionary *)json;
-        NSNumber *ok = dictionary[@"ok"];
-        NSArray *rawOptions = dictionary[@"options"];
-        if (![ok isKindOfClass:[NSNumber class]] || !ok.boolValue || ![rawOptions isKindOfClass:[NSArray class]]) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; });
-            return;
-        }
-        NSMutableArray *legacyOriginals = [NSMutableArray array];
-        for (id item in rawOptions) {
-            if (![item isKindOfClass:[NSDictionary class]]) continue;
-            NSDictionary *raw = (NSDictionary *)item;
-            NSString *originalURL = [raw[@"originalFileUrl"] isKindOfClass:[NSString class]] ? raw[@"originalFileUrl"] : nil;
-            BOOL hasOriginal = [raw[@"hasOriginalFile"] isKindOfClass:[NSNumber class]] ? [raw[@"hasOriginalFile"] boolValue] : (originalURL.length > 0);
-            // Multi-file options can expose each original on its file row.
-            NSArray *files = [raw[@"files"] isKindOfClass:NSArray.class] ? raw[@"files"] : @[];
-            for (id value in files) {
-                if (![value isKindOfClass:NSDictionary.class]) continue;
-                NSDictionary *file = value;
-                NSString *url = [file[@"originalFileUrl"] isKindOfClass:NSString.class] ? file[@"originalFileUrl"] : nil;
-                if (!url.length) continue;
-                NSMutableDictionary *row = [file mutableCopy];
-                row[@"originalFileUrl"] = url;
-                if ([raw[@"id"] isKindOfClass:NSNumber.class]) row[@"id"] = raw[@"id"];
-                if (![row[@"route"] isKindOfClass:NSString.class] && [raw[@"route"] isKindOfClass:NSString.class]) row[@"route"] = raw[@"route"];
-                if (![row[@"bundleId"] isKindOfClass:NSString.class] && [raw[@"bundleId"] isKindOfClass:NSString.class]) row[@"bundleId"] = raw[@"bundleId"];
-                NSString *tunnelID = [XFTunnelV2Config tunnelBundleIdFromOptionDictionary:raw];
-                if (tunnelID.length) row[@"tunnelBundleId"] = tunnelID;
-                [legacyOriginals addObject:row];
-            }
-            // Explicit per-file URLs take precedence over the single-file fallback.
-            if (hasOriginal || originalURL.length) [legacyOriginals addObject:raw];
-        }
-        [self processOriginalManifestDictionary:dictionary originals:legacyOriginals legacy:YES];
-    }];
-    [task resume];
-    }];
-}
+#include "XITForgePanelDeactivation.inc"
 
 - (void)deactivateAllOptions {
     if (self.activationInProgress || self.deactivationInProgress) return;
     [self beginDeactivationUI];
-    NSString *encodedGame = [self.game stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
-    NSString *urlString = [NSString stringWithFormat:@"%@/api/app/originals?game=%@", [self apiBaseURL], encodedGame ?: @""];
-    NSURL *url = [NSURL URLWithString:urlString];
-    if (!url) { [self deactivateUsingLegacyOptionsFallback]; return; }
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.HTTPMethod = @"GET";
-    request.timeoutInterval = 20.0;
-    [LicenseValidator authorizeRequest:request completion:^(BOOL authorized) {
-    if (!authorized) { dispatch_async(dispatch_get_main_queue(), ^{
-        [self finishDeactivationUIWithSuccess:NO noOriginals:NO];
-    }); return; }
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-        NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
-        [LicenseValidator handleProtectedHTTPResponse:response];
-        if (error || !data || !http || http.statusCode < 200 || http.statusCode > 299) { [self deactivateUsingLegacyOptionsFallback]; return; }
-        NSError *jsonError = nil;
-        id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
-        if (jsonError || ![json isKindOfClass:[NSDictionary class]]) { [self deactivateUsingLegacyOptionsFallback]; return; }
-        NSDictionary *dictionary = (NSDictionary *)json;
-        NSNumber *ok = dictionary[@"ok"];
-        NSArray *rawOriginals = dictionary[@"originals"];
-        if (![ok isKindOfClass:[NSNumber class]] || !ok.boolValue || ![rawOriginals isKindOfClass:[NSArray class]]) { [self deactivateUsingLegacyOptionsFallback]; return; }
-        [self processOriginalManifestDictionary:dictionary originals:rawOriginals legacy:NO];
-    }];
-    [task resume];
-    }];
+    [self beginPanelDeactivation];
 }
 
 - (void)restoreOriginalItems:(NSArray<NSDictionary *> *)items index:(NSUInteger)index {
     if (index >= items.count) { [self finishDeactivationUIWithSuccess:YES noOriginals:NO]; return; }
     NSDictionary *item = items[index];
+    if ([item[@"action"] isEqual:@"delete"]) {
+        [self deletePanelItem:item completion:^(BOOL success,NSString *message) {
+            dispatch_async(dispatch_get_main_queue(),^{
+                if (success) [self restoreOriginalItems:items index:index+1];
+                else {
+                    [self finishDeactivationUIWithSuccess:NO noOriginals:NO];
+                    [self showPanelDeactivationError:message];
+                }
+            });
+        }];
+        return;
+    }
+
     NSURL *downloadURL = item[@"downloadURL"];
     NSURL *destinationURL = [item[@"destinationURL"] isKindOfClass:NSURL.class] ? item[@"destinationURL"] : nil;
     if (!downloadURL) { [self finishDeactivationUIWithSuccess:NO noOriginals:NO]; return; }

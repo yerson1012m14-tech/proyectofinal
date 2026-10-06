@@ -155,6 +155,7 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
 
 @implementation XFATCDirectory
 #include "XFATCDirectWrite.inc"
+#include "XFATCDirectDelete.inc"
 
 - (void)recordBatchSetupPhase:(NSUInteger)phase {
     if(!self.batchActive||phase<1||phase>12||phase<=self.batchLastPhase)return;
@@ -196,6 +197,7 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
     if(self.protocolEvents.count>96)[self.protocolEvents removeObjectAtIndex:0];
 }
 - (NSDictionary *)protocolDiagnostics {
+    BOOL direct=[self.fileOperationDiagnostics[@"operation"] hasPrefix:@"direct"];
     return @{@"phase":self.protocolPhase?:@"NotStarted",@"events":[self.protocolEvents copy]?:@[],
              @"grappaParameters":self.grappaParameters?:@{},@"archiveProfile":@"3105-directory-v1",
              @"tunnelMode":self.tunnelFactory?@"FreshPerService":@"SharedAdapter",
@@ -206,11 +208,11 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
              @"knownFileOperation":self.fileOperationDiagnostics?:@{},
              @"booksMarker":[self.booksMarkerDiagnostics copy]?:@{},
              @"syncAttempts":[self.syncAttempts copy]?:@[],
-             @"batchWrite":@{@"mode":[self.fileOperationDiagnostics[@"operation"] isEqual:@"directWrite"]?@"directWrite":@"replace",
+             @"batchWrite":@{@"mode":direct?self.fileOperationDiagnostics[@"operation"]:@"replace",
                  @"filesPerBatch":@1,@"events":[self.batchEvents copy]?:@[],
-                 @"completed":[self.fileOperationDiagnostics[@"operation"] isEqual:@"directWrite"]?
+                 @"completed":direct?
                      @([self.fileOperationDiagnostics[@"committed"] boolValue]):@(self.batchLastPhase==12),
-                 @"originalBackupBeforePlacement":@(![self.fileOperationDiagnostics[@"operation"] isEqual:@"directWrite"])}};
+                 @"originalBackupBeforePlacement":@(!direct)}};
 }
 - (void)recordServicePort:(const char *)name tunnel:(XFATCServiceTunnel *)tunnel {
     CRsdService *service=NULL;
