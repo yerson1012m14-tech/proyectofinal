@@ -161,6 +161,8 @@ static UILabel *XFLabel(NSString *text, UIFontTextStyle style, UIColor *color) {
 @interface XFConnectionStatusView : UIStackView
 @property (nonatomic, strong) UILabel *tunnelLabel;
 @property (nonatomic, strong) UILabel *pairingLabel;
+@property (nonatomic, strong) UIImageView *tunnelIcon;
+@property (nonatomic, strong) UIImageView *pairingIcon;
 - (void)showConnected:(BOOL)connected pairingAvailable:(BOOL)available;
 - (void)showConnecting;
 - (void)showPairingInProgress:(BOOL)inProgress available:(BOOL)available;
@@ -169,37 +171,54 @@ static UILabel *XFLabel(NSString *text, UIFontTextStyle style, UIColor *color) {
 @implementation XFConnectionStatusView
 - (instancetype)init {
     if ((self = [super init])) {
-        self.axis = UILayoutConstraintAxisVertical;
-        self.spacing = 8;
-        self.layoutMarginsRelativeArrangement = YES;
-        self.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(12, 14, 12, 14);
-        self.backgroundColor = [UIColor colorWithRed:0.075 green:0.075 blue:0.085 alpha:1];
-        self.layer.cornerRadius = 18;
-        self.layer.borderWidth = 1;
-        self.layer.borderColor = [UIColor colorWithRed:0.26 green:0.12 blue:0.15 alpha:1].CGColor;
-        self.tunnelLabel = XFLabel(@"Túnel: comprobando…", UIFontTextStyleHeadline, UIColor.secondaryLabelColor);
-        self.pairingLabel = XFLabel(@"Emparejamiento: comprobando…", UIFontTextStyleHeadline, UIColor.secondaryLabelColor);
+        self.axis = UILayoutConstraintAxisHorizontal;
+        self.distribution = UIStackViewDistributionFillEqually;
+        self.spacing = 10;
+        self.tunnelLabel = XFLabel(@"Comprobando…", UIFontTextStyleSubheadline, UIColor.labelColor);
+        self.pairingLabel = XFLabel(@"Comprobando…", UIFontTextStyleSubheadline, UIColor.labelColor);
+        self.tunnelIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"antenna.radiowaves.left.and.right"]];
+        self.pairingIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"checkmark.shield"]];
+        NSArray *labels=@[self.tunnelLabel,self.pairingLabel];
+        NSArray *icons=@[self.tunnelIcon,self.pairingIcon];
+        for(NSUInteger index=0;index<labels.count;index++) {
+            UILabel *label=labels[index];UIImageView *icon=icons[index];
+            label.font=[UIFontMetrics.defaultMetrics scaledFontForFont:[UIFont systemFontOfSize:14 weight:UIFontWeightSemibold]];
+            label.textAlignment=NSTextAlignmentCenter;
+            [label setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+            icon.contentMode=UIViewContentModeScaleAspectFit;
+            icon.tintColor=[UIColor colorWithRed:0.93 green:0.12 blue:0.19 alpha:1];
+            icon.isAccessibilityElement=NO;
+            [NSLayoutConstraint activateConstraints:@[[icon.widthAnchor constraintEqualToConstant:18],[icon.heightAnchor constraintEqualToConstant:18]]];
+            UIStackView *pill=[[UIStackView alloc] initWithArrangedSubviews:@[icon,label]];
+            pill.axis=UILayoutConstraintAxisHorizontal;pill.alignment=UIStackViewAlignmentCenter;pill.spacing=6;
+            pill.layoutMarginsRelativeArrangement=YES;
+            pill.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(12,10,12,10);
+            pill.backgroundColor=[UIColor colorWithRed:0.075 green:0.075 blue:0.095 alpha:1];
+            pill.layer.cornerRadius=13;
+            [pill.heightAnchor constraintGreaterThanOrEqualToConstant:48].active=YES;
+            [self addArrangedSubview:pill];
+        }
         self.tunnelLabel.accessibilityTraits = UIAccessibilityTraitUpdatesFrequently;
         self.pairingLabel.accessibilityTraits = UIAccessibilityTraitUpdatesFrequently;
-        [self addArrangedSubview:self.tunnelLabel];
-        [self addArrangedSubview:self.pairingLabel];
-        [self addArrangedSubview:XFLabel(@"Estado de conexión del iPhone", UIFontTextStyleCaption1, UIColor.secondaryLabelColor)];
     }
     return self;
 }
 - (void)showConnected:(BOOL)connected pairingAvailable:(BOOL)available {
-    self.tunnelLabel.text = connected ? @"Túnel: conectado" : @"Túnel: desconectado";
-    self.tunnelLabel.textColor = connected ? UIColor.systemGreenColor : UIColor.systemRedColor;
+    self.tunnelLabel.text = connected ? @"Conectado" : @"Desconectado";
+    self.tunnelLabel.accessibilityLabel=connected?@"Túnel conectado":@"Túnel desconectado";
+    self.tunnelIcon.tintColor = connected ? UIColor.systemGreenColor : UIColor.systemRedColor;
     [self showPairingInProgress:NO available:available];
 }
 - (void)showConnecting {
-    self.tunnelLabel.text = @"Túnel: conectando…";
-    self.tunnelLabel.textColor = UIColor.secondaryLabelColor;
+    self.tunnelLabel.text = @"Conectando…";
+    self.tunnelLabel.accessibilityLabel=@"Túnel conectando";
+    self.tunnelIcon.tintColor = UIColor.systemRedColor;
 }
 - (void)showPairingInProgress:(BOOL)inProgress available:(BOOL)available {
-    self.pairingLabel.text = inProgress ? @"Emparejamiento: esperando aprobación…" :
-        (available ? @"Emparejamiento: guardado" : @"Emparejamiento: pendiente");
-    self.pairingLabel.textColor = inProgress || !available ? UIColor.systemOrangeColor : UIColor.systemGreenColor;
+    self.pairingLabel.text = inProgress ? @"Emparejando…" :
+        (available ? @"Emparejado" : @"Sin emparejar");
+    self.pairingLabel.accessibilityLabel=inProgress?@"Emparejamiento en curso":self.pairingLabel.text;
+    self.pairingIcon.tintColor = inProgress || !available ? UIColor.systemRedColor : UIColor.systemGreenColor;
 }
 @end
 
@@ -861,6 +880,16 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     self.navigationItem.leftBarButtonItem = nil;
     self.navigationItem.rightBarButtonItem = nil;
+    self.navigationItem.title=@"TÚNEL";
+    UINavigationBarAppearance *appearance=[UINavigationBarAppearance new];
+    [appearance configureWithOpaqueBackground];
+    appearance.backgroundColor=[UIColor colorWithRed:0.025 green:0.025 blue:0.035 alpha:1];
+    appearance.shadowColor=[UIColor colorWithWhite:0.12 alpha:1];
+    appearance.titleTextAttributes=@{NSForegroundColorAttributeName:[UIColor colorWithRed:0.93 green:0.12 blue:0.19 alpha:1],NSFontAttributeName:[UIFont systemFontOfSize:21 weight:UIFontWeightBold]};
+    appearance.largeTitleTextAttributes=appearance.titleTextAttributes;
+    self.navigationItem.standardAppearance=appearance;
+    self.navigationItem.scrollEdgeAppearance=appearance;
+    self.navigationItem.compactAppearance=appearance;
     self.view.tintColor = [UIColor colorWithRed:0.93 green:0.12 blue:0.19 alpha:1];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 64;
@@ -868,38 +897,36 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     self.headerStack.axis = UILayoutConstraintAxisVertical;
     self.headerStack.spacing = 16;
     self.headerStack.translatesAutoresizingMaskIntoConstraints = NO;
-    UILabel *heading=XFLabel(@"Conecta tu iPhone", UIFontTextStyleTitle2, UIColor.labelColor);
-    heading.font=[[UIFontMetrics metricsForTextStyle:UIFontTextStyleTitle2] scaledFontForFont:[UIFont systemFontOfSize:26 weight:UIFontWeightBold]];
-    [self.headerStack addArrangedSubview:heading];
-    [self.headerStack addArrangedSubview:XFLabel(@"Empareja, importa tu registro y conecta el túnel.", UIFontTextStyleSubheadline, UIColor.secondaryLabelColor)];
     self.connectionStatus = [[XFConnectionStatusView alloc] init];
     [self.headerStack addArrangedSubview:self.connectionStatus];
-    [self.headerStack addArrangedSubview:XFLabel(@"Mantén el Wi-Fi encendido y activa LocalDevVPN antes de conectar. Después usa Activar o Desactivar desde Home.", UIFontTextStyleSubheadline, UIColor.secondaryLabelColor)];
-    self.statusLabel = XFLabel(@"Comprobando el emparejamiento…", UIFontTextStyleFootnote, UIColor.secondaryLabelColor);
+    [self.headerStack setCustomSpacing:32 afterView:self.connectionStatus];
+    self.statusLabel = XFLabel(@"", UIFontTextStyleSubheadline, UIColor.secondaryLabelColor);
+    self.statusLabel.hidden=YES;
+    self.statusLabel.textAlignment=NSTextAlignmentCenter;
     self.statusLabel.accessibilityTraits = UIAccessibilityTraitUpdatesFrequently;
-    [self.headerStack addArrangedSubview:self.statusLabel];
     self.pairingGuideLabel = XFLabel(@"", UIFontTextStyleSubheadline, UIColor.labelColor);
     self.pairingGuideLabel.hidden = YES;
-    [self.headerStack addArrangedSubview:self.pairingGuideLabel];
+    self.pairingGuideLabel.textAlignment=NSTextAlignmentCenter;
 
     self.pairButton = [self buttonWithTitle:@"Emparejar" selector:@selector(pairingAction) prominent:NO];
     [self.headerStack addArrangedSubview:self.pairButton];
     self.cancelPairButton = [self buttonWithTitle:@"Cancelar emparejamiento" selector:@selector(cancelOnDevicePairing) prominent:NO];
     self.cancelPairButton.hidden = YES;
 
-    [self.headerStack addArrangedSubview:XFLabel(@"Emparejar desde este iPhone requiere iOS 27. En otras versiones puedes importar un registro válido.", UIFontTextStyleFootnote, UIColor.secondaryLabelColor)];
     self.importButton = [self buttonWithTitle:@"Importar" selector:@selector(importPairing) prominent:NO];
     [self.headerStack addArrangedSubview:self.importButton];
 
     self.connectButton = [self buttonWithTitle:@"Conectar túnel" selector:@selector(connectAndLoad) prominent:YES];
     self.connectButton.enabled = NO;
     [self.headerStack addArrangedSubview:self.connectButton];
+    [self.headerStack addArrangedSubview:self.pairingGuideLabel];
+    [self.headerStack addArrangedSubview:self.statusLabel];
     UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 340)];
     [header addSubview:self.headerStack];
     [NSLayoutConstraint activateConstraints:@[
         [self.headerStack.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:20],
         [self.headerStack.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-20],
-        [self.headerStack.topAnchor constraintEqualToAnchor:header.topAnchor constant:20],
+        [self.headerStack.topAnchor constraintEqualToAnchor:header.topAnchor constant:28],
         [self.headerStack.bottomAnchor constraintEqualToAnchor:header.bottomAnchor constant:-20]
     ]];
     self.tableView.tableHeaderView = header;
@@ -949,6 +976,8 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 }
 
 - (void)updateButtons {
+    BOOL failed=[self.statusLabel.text hasPrefix:@"No "]||[self.statusLabel.text hasPrefix:@"Se perdió"]||[self.statusLabel.text containsString:@"pero no"];
+    self.statusLabel.hidden=!(failed||(self.busy&&!self.pairingInProgress));
     [self.connectionStatus showConnected:self.tunnelConnected pairingAvailable:self.pairingAvailable];
     [self.connectionStatus showPairingInProgress:self.pairingInProgress available:self.pairingAvailable];
     self.importButton.enabled = !self.busy;
@@ -1002,7 +1031,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     NSUInteger attempt = ++self.pairingAttempt;
     [self clearPairingPIN];
     self.pairingGuideLabel.hidden = NO;
-    self.pairingGuideLabel.text = @"Preparando el emparejamiento. Puedes volver a XitForge sin cancelar; para detenerlo usa «Cancelar emparejamiento».";
+    self.pairingGuideLabel.text = @"Preparando el emparejamiento…";
     self.statusLabel.text = @"Preparando el servicio de emparejamiento…";
     [self updateButtons];
     [self.view setNeedsLayout];
@@ -1014,7 +1043,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
         typeof(self) self = weakSelf;
         if (!self || self.pairingAttempt != attempt || !self.pairingInProgress) return;
         self.statusLabel.text = @"Servicio listo. Abre Ajustes para iniciar el emparejamiento.";
-        self.pairingGuideLabel.text = @"Abre Ajustes > Privacidad y seguridad > Modo de desarrollador > Emparejar con XitForge. Recibirás el código en una notificación para introducirlo allí.";
+        self.pairingGuideLabel.text = @"En Ajustes, abre «Emparejar con XitForge» dentro de Modo de desarrollador.";
         [self.view setNeedsLayout];
     };
     service.pinHandler = ^(NSString *PIN) {
@@ -1034,7 +1063,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
                 self.statusLabel.text=@"No se pudo enviar el código por notificación. Comprueba los permisos y vuelve a emparejar.";
             } else {
                 self.statusLabel.text=@"Código enviado por notificación. Esperando tu aprobación.";
-                self.pairingGuideLabel.text=@"Consulta la notificación de XITFORGE e introduce el código en Ajustes. El emparejamiento sigue activo al cambiar de app.";
+                self.pairingGuideLabel.text=@"Introduce el código recibido en Ajustes.";
             }
             [self.view setNeedsLayout];
         });
