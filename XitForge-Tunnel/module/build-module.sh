@@ -21,7 +21,6 @@ objects=()
 
 for source in \
   XFAirLiftBackend.m \
-  XFAirLiftFastReplace.m \
   XFOnDevicePairing.m \
   XFAirLiftViewController.m \
   XFAirLiftInstaller.m \

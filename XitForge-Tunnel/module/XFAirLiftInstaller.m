@@ -33,19 +33,27 @@
     UITabBarController *tabController = candidate;
     NSArray<UIViewController *> *existing = tabController.viewControllers;
     if (!existing.count) return;
+    UIViewController *selected = tabController.selectedViewController;
+    NSMutableArray<UIViewController *> *updated = [existing mutableCopy];
+    UIViewController *tunnel = nil;
     for (UIViewController *controller in existing) {
         UIViewController *root = [controller isKindOfClass:UINavigationController.class]
             ? ((UINavigationController *)controller).viewControllers.firstObject : controller;
-        if ([root isKindOfClass:XFAirLiftViewController.class]) return;
+        if ([root isKindOfClass:XFAirLiftViewController.class]) { tunnel = controller; break; }
     }
-
-    XFAirLiftViewController *browser = [[XFAirLiftViewController alloc] init];
-    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:browser];
-    navigation.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Túnel"
-                                                       image:[UIImage systemImageNamed:@"network"] tag:73105];
-    NSMutableArray<UIViewController *> *updated = [existing mutableCopy];
-    [updated addObject:navigation];
-    [tabController setViewControllers:updated animated:NO];
+    if (!tunnel) {
+        XFAirLiftViewController *browser = [[XFAirLiftViewController alloc] init];
+        UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:browser];
+        navigation.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Túnel"
+            image:[UIImage systemImageNamed:@"network"] tag:73105];
+        tunnel = navigation;
+    }
+    [updated removeObjectIdenticalTo:tunnel];
+    [updated insertObject:tunnel atIndex:MIN((NSUInteger)1, updated.count)];
+    if (![existing isEqualToArray:updated]) {
+        [tabController setViewControllers:updated animated:NO];
+        if (selected && [updated containsObject:selected]) tabController.selectedViewController = selected;
+    }
 }
 
 @end
