@@ -129,6 +129,7 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
 @property (nonatomic, copy) NSDictionary *temporaryDirectoryFailure;
 @property (nonatomic, copy) NSDictionary *generatedAppLinkProbe;
 @property (nonatomic, copy) NSDictionary *fileOperationDiagnostics;
+@property (nonatomic, copy) NSDictionary *completedKnownWrite;
 @property (nonatomic) BOOL atcMoveAttempted;
 @property (nonatomic) NSUInteger atcSyncAttempt;
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *syncAttempts;
@@ -145,14 +146,16 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
 - (BOOL)recoverKnownFile:(BOOL)explicitRestore error:(NSError **)error;
 - (BOOL)publishDeleteReceipt:(NSError **)error;
 - (void)loadLatestDeletedBackup;
+- (BOOL)validLegacyBooksCopyJournal:(NSDictionary *)journal;
+- (BOOL)restoreLegacyBooksCopy:(NSError **)error;
 @end
 
 @implementation XFATCDirectory
 - (void)recordBatchSetupPhase:(NSUInteger)phase {
     if(!self.batchActive||phase<1||phase>12||phase<=self.batchLastPhase)return;
     NSArray *labels=@[@"RPPairing record loaded",@"RSD tunnel established",@"AFC connected",@"preflight OK",
-        @"stage zip reply = DataComplete",@"stage OK",@"Books/Sync/Books.plist written (4 rows)",
-        @"ATC sync to manifest OK",@"placement FileComplete sent (3 messages, mode=replace)",
+        @"stage zip reply = DataComplete",@"stage OK",@"Books/Sync/Books.plist written (5 rows)",
+        @"ATC sync to manifest OK",@"placement FileComplete sent (2 messages, mode=replace)",
         @"verify OK",@"move-back FileComplete sent",@"BATCH WRITE COMPLETE"];
     self.batchLastPhase=phase;
     [self.batchEvents addObject:@{@"step":@(phase),@"event":labels[phase-1],@"time":@([NSDate date].timeIntervalSince1970)}];
@@ -375,45 +378,13 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
     }
     return YES;
 }
-- (BOOL)renameOwned:(NSString *)source to:(NSString *)destination error:(NSError **)error {
-    BOOL missing=NO;NSDictionary *before=[self info:source missing:&missing error:error];
-    if(!before||missing)return NO;
-    [self info:destination missing:&missing error:error];
-    if(!missing){if(error&&!*error)*error=XFATCError(2107,@"El destino de un temporal ya existe. Se preservó el estado para recuperación.");return NO;}
-    if(![self saveJournal:[NSString stringWithFormat:@"rename %@ -> %@",source,destination] error:error])return NO;
-    NSError *failure=nil;
-    BOOL ok=XFATCConsume(afc_rename_path(_afc,source.UTF8String,destination.UTF8String),@"Reubicar temporal",&failure);
-    if(!ok && failure.code==106 && [failure.userInfo[@"NativeSubcode"] integerValue]==7) {
-        // Retry only the server's InvalidArg response, after confirming that no
-        // move occurred. Some AFC endpoints require root-relative absolute names.
-        BOOL sourceMissing=NO,destinationMissing=NO;
-        NSDictionary *current=[self info:source missing:&sourceMissing error:error];
-        [self info:destination missing:&destinationMissing error:error];
-        if(!current||sourceMissing||!destinationMissing||![current isEqual:before])return NO;
-        NSString *from=[source hasPrefix:@"/"]?source:[@"/" stringByAppendingString:source];
-        NSString *to=[destination hasPrefix:@"/"]?destination:[@"/" stringByAppendingString:destination];
-        if(![self saveJournal:@"retry rejected rename with absolute Media names" error:error])return NO;
-        ok=XFATCConsume(afc_rename_path(_afc,from.UTF8String,to.UTF8String),@"Reubicar temporal con rutas absolutas",&failure);
-    }
-    if(!ok){
-        if(error)*error=failure;return NO;
-    }
-    BOOL sourceMissing=NO,destinationMissing=NO;
-    NSDictionary *after=[self info:destination missing:&destinationMissing error:error];
-    [self info:source missing:&sourceMissing error:error];
-    if(!after||destinationMissing||!sourceMissing||![after[@"kind"] isEqual:before[@"kind"]]) {
-        if(error&&!*error)*error=XFATCError(2107,@"El traslado del temporal no se pudo confirmar. Se conservó el registro.");return NO;
-    }
-    return YES;
-}
-
 - (BOOL)writeOwned:(NSData *)data path:(NSString *)path error:(NSError **)error {
     BOOL missing=NO;[self info:path missing:&missing error:error];
     if(!missing){if(error&&!*error)*error=XFATCError(2108,@"El manifiesto temporal ya existe.");return NO;}
     if(![self saveJournal:[@"write " stringByAppendingString:path] error:error])return NO;
     AfcFileHandle *file=NULL;
-    if(!XFATCConsume(afc_file_open(_afc,path.UTF8String,AfcWrOnly,&file),@"Preparar el manifiesto temporal",error))return NO;
-    BOOL ok=XFATCConsume(afc_file_write(file,data.bytes,data.length),@"Escribir el manifiesto temporal",error);
+    if(!XFATCConsume(afc_file_open(_afc,path.UTF8String,AfcWrOnly,&file),@"Preparar el manifiesto temporal",error)||!file)return NO;
+    BOOL ok=!data.length||XFATCConsume(afc_file_write(file,data.bytes,data.length),@"Escribir el manifiesto temporal",error);
     NSError *closeError=nil;
     if(!XFATCConsume(afc_file_close(file),@"Cerrar el manifiesto temporal",&closeError)){ok=NO;if(error&&!*error)*error=closeError;}
     return ok;
@@ -471,7 +442,7 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
     [self info:@"Books/XitForgeOwner.plist" missing:&markerMissing error:error];
     if(!markerMissing){if(error&&!*error)*error=XFATCError(2256,@"Books ya contiene un marcador ajeno. No se modificó.");return NO;}
     self.journal[@"booksInPlace"]=@YES;
-    if(![self saveJournal:@"Books rename rejected; preserve root and use durable file snapshots" error:error])return NO;
+    if(![self saveJournal:@"preserve Books root and use durable file snapshots" error:error])return NO;
     if(missing&&![self makeOwnedDirectory:@"Books" error:error])return NO;
     NSData *owner=XFATCPlist(self.ownerRecord,error);
     if(!owner||![self writeOwned:owner path:@"Books/XitForgeOwner.plist" error:error])return NO;
@@ -487,22 +458,10 @@ static NSArray<NSString *> *XFATCDirectories(NSString *tail) {
 }
 - (BOOL)isolateBooks:(NSError **)error {
     if(![self.journal[@"booksOriginallyPresent"] boolValue])return YES;
-    NSError *failure=nil;
-    if([self renameOwned:@"Books" to:[self.journal[@"backup"] stringByAppendingPathComponent:@"Books"] error:&failure])return YES;
-    if(failure.code==106&&[failure.userInfo[@"NativeSubcode"] integerValue]==7) {
-        // Only a positively unchanged original permits switching strategies.
-        return [self beginBooksInPlace:error];
-    }
-    if(error)*error=failure;return NO;
+    return [self beginBooksInPlace:error];
 }
 - (BOOL)installWorkingBooks:(NSString *)working error:(NSError **)error {
-    if(![self.journal[@"booksInPlace"] boolValue]) {
-        NSError *failure=nil;
-        if([self renameOwned:working to:@"Books" error:&failure])return YES;
-        if(failure.code!=106||[failure.userInfo[@"NativeSubcode"] integerValue]!=7||
-           [self.journal[@"booksOriginallyPresent"] boolValue]){if(error)*error=failure;return NO;}
-        if(![self beginBooksInPlace:error])return NO;
-    }
+    if(![self.journal[@"booksInPlace"] boolValue] && ![self beginBooksInPlace:error])return NO;
     if(![self booksOwnerMatches:@"Books" error:error])return NO;
     NSData *bytes=XFATCPlist(XFATCBooksManifest(self.journal),error);
     self.journal[@"inPlaceManifestWriteStarted"]=@YES;
@@ -850,6 +809,7 @@ closeATC:;
     if(ids.count!=5)return NO;
     if(file[@"batchPlacement"]&&![file[@"batchPlacement"] isKindOfClass:NSNumber.class])return NO;
     if(file[@"batchLinkReset"]&&![file[@"batchLinkReset"] isKindOfClass:NSNumber.class])return NO;
+    if(file[@"readBackMismatch"]&&![file[@"readBackMismatch"] isKindOfClass:NSNumber.class])return NO;
     if([file[@"batchPlacement"] boolValue]) {
         if(![file[@"operation"] isEqual:@"replace"]||![file[@"originalCaptured"] boolValue])return NO;
         ids=@[ids[0],ids[3],ids[1],ids[4]];
@@ -912,7 +872,7 @@ closeATC:;
     if(!info||missing||[info[@"size"] unsignedLongLongValue]!=bytes.length)return NO;
     NSData *observed=[self readSnapshot:path expectedSize:bytes.length error:error];
     if(![observed isEqual:bytes]){if(error&&!*error)*error=XFATCError(2251,@"El manifiesto del lote no se verificó.");return NO;}
-    if(batch)[self recordBatchSetupPhase:7];
+    [self recordBatchSetupPhase:7];
     return YES;
 }
 - (NSArray *)batchPlacementPairs {
@@ -932,13 +892,6 @@ closeATC:;
     [self info:self.journal[@"link"] missing:&missing error:error];
     if(!missing){if(error&&!*error)*error=XFATCError(2252,@"El destino del enlace del lote ya existe o no pudo comprobarse.");return NO;}
     return YES;
-}
-- (BOOL)rearmBatchLink:(NSError **)error {
-    if(![self verifyKnownTargetLink:error])return NO;
-    self.journal[@"knownFile"][@"batchLinkReset"]=@YES;
-    if(![self saveJournal:@"persist link rearm intent for grouped placement" error:error])return NO;
-    NSString *staged=[self.journal[@"source"] stringByAppendingPathComponent:@"p0/p1/p2/link"];
-    return [self renameOwned:self.journal[@"link"] to:staged error:error]&&[self verifyBatchStagedLink:error];
 }
 - (BOOL)runKnownFilePairs:(NSArray<NSDictionary *> *)pairs error:(NSError **)error {
     return [self retryATCPreparation:^BOOL(NSError **attemptError){return [self runKnownFilePairsOnce:pairs error:attemptError];} error:error];
@@ -978,18 +931,18 @@ closeATC:;
            ![self sendDictionary:[self message:@"FinishedSyncingMetadata" session:@1 params:@{@"SyncTypes":@{@"Book":@1},@"DataclassAnchors":@{}}] stream:stream littleEndian:YES error:error])break;
         NSDictionary *assetManifestMessage=[self waitFor:@"AssetManifest" stream:stream seconds:30 support:NULL error:error];
         if(!assetManifestMessage)break;
-        if(grouped) {
+        {
             id books=assetManifestMessage[@"Params"][@"AssetManifest"][@"Book"];
-            if(![books isKindOfClass:NSArray.class]){if(error)*error=XFATCError(2120,@"El manifiesto agrupado de AirTraffic no tiene una lista Book válida. No se enviará FileComplete.");break;}
+            if(![books isKindOfClass:NSArray.class]){if(error)*error=XFATCError(2120,@"El manifiesto de AirTraffic no tiene una lista Book válida. No se enviará FileComplete.");break;}
             BOOL authorized=YES;
             for(NSDictionary *pair in pairs) {
                 BOOL found=NO;
                 for(id item in books) if([item isKindOfClass:NSDictionary.class]&&[item[@"AssetID"] isEqual:pair[@"AssetID"]]&&[item[@"IsDownload"] isKindOfClass:NSNumber.class]&&[item[@"IsDownload"] boolValue]){found=YES;break;}
                 if(!found){authorized=NO;break;}
             }
-            if(!authorized){if(error)*error=XFATCError(2120,@"El manifiesto agrupado de AirTraffic no autorizó todos los archivos del lote. No se enviará FileComplete.");break;}
+            if(!authorized){if(error)*error=XFATCError(2120,@"El manifiesto de AirTraffic no autorizó todos los archivos solicitados. No se enviará FileComplete.");break;}
         }
-        if(grouped)[self recordBatchSetupPhase:8];
+        if(grouped || (pairs.count==2 && [file[@"operation"] isEqual:@"replace"]))[self recordBatchSetupPhase:8];
         for(NSDictionary *pair in pairs) {
             if(!grouped&&[pair[@"AssetPath"] isEqual:[self knownFileDestination]]){
                 BOOL missing=NO;NSDictionary *link=[self info:self.journal[@"link"] missing:&missing error:error];
@@ -1300,7 +1253,9 @@ closeKnownFile:;
        ![stagedInfo[@"linkTarget"] isEqual:[@"../../../" stringByAppendingString:self.journal[@"tail"]]]){
         if(error&&!*error)*error=XFATCError(2226,@"El enlace temporal de recuperación no se puede rearmar de forma segura.");return NO;
     }
-    return [self renameOwned:staged to:external error:error]&&[self verifyKnownTargetLink:error];
+    // Old grouped transactions may have left this link in the zip tree.
+    // Move it with the same ATC operation used by initial setup, not AFC rename.
+    return [self runATC:error]&&[self verifyKnownTargetLink:error];
 }
 - (BOOL)discardKnownIncomingForAutomaticRecovery:(NSError **)error {
     NSMutableDictionary *file=self.journal[@"knownFile"];
@@ -1377,6 +1332,10 @@ closeKnownFile:;
     }
     if(![file[@"originalMoveIntent"] boolValue])return YES; // No app-file movement was authorized.
     if(![self validKnownFileJournal:self.journal])return NO;
+    if(!explicitRestore && [file[@"readBackMismatch"] boolValue]) {
+        if(error)*error=[self knownFilePending:@"La app cambió el archivo durante la operación. Se conservaron los bytes observados y el original; no se repetirá el movimiento automáticamente."];
+        return NO;
+    }
     BOOL committedDelete=[file[@"operation"] isEqual:@"delete"]&&[file[@"committed"] boolValue];
     if(committedDelete&&explicitRestore) {
         if(error)*error=XFATCError(2224,@"Este archivo se retiró intencionalmente. Su copia sigue conservada; esta acción no volverá a crearlo en la app.");return NO;
@@ -1388,10 +1347,38 @@ closeKnownFile:;
     if(!verify&&!verifyMissing)return NO;
     NSDictionary *incoming=[self info:file[@"Incoming"] missing:&incomingMissing error:error];
     if(!incoming&&!incomingMissing)return NO;
+    if(!explicitRestore && [file[@"operation"] isEqual:@"replace"] &&
+       [file[@"incomingPlaceIntent"] boolValue] && [file[@"originalCaptured"] boolValue] &&
+       ![file[@"committed"] boolValue] && ![file[@"originalReturned"] boolValue] &&
+       ![file[@"newVerified"] boolValue] && ![file[@"returnNewIntent"] boolValue] &&
+       incomingMissing && verifyMissing && original) {
+        // The first placement may have completed before the second message was sent.
+        // Read the destination through ATC; absence of Incoming alone is never success.
+        if(![self restoreBatchLinkForAutomaticRecovery:error] ||
+           ![self readBackInterruptedReplacement:error])return NO;
+        incoming=nil;incomingMissing=YES;verify=nil;verifyMissing=YES;
+    }
+    if(!explicitRestore && [file[@"operation"] isEqual:@"replace"] &&
+       [file[@"incomingPlaceIntent"] boolValue] && [file[@"originalCaptured"] boolValue] &&
+       ![file[@"committed"] boolValue] && ![file[@"originalReturned"] boolValue] &&
+       incoming && verifyMissing && original) {
+        NSData *localOriginal=[self validatedLocalOriginal:file error:error];
+        NSData *remoteOriginal=[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:error];
+        NSData *payload=[self readKnownStage:file[@"Incoming"] limit:64u*1024u*1024u error:error];
+        if(!localOriginal||!remoteOriginal||![localOriginal isEqual:remoteOriginal]||
+           !payload||payload.length!=[file[@"newSize"] unsignedLongLongValue]||
+           ![XFATCDigest(payload) isEqual:file[@"newDigest"]])return NO;
+        if(![self restoreBatchLinkForAutomaticRecovery:error] ||
+           ![self placePreparedReplacementData:payload error:error])return NO;
+        incoming=nil;incomingMissing=YES;verify=nil;verifyMissing=YES;
+    }
     if([file[@"operation"] isEqual:@"replace"] && ![file[@"committed"] boolValue] &&
-       [file[@"newVerified"] boolValue] && verify && incomingMissing) {
+       [file[@"incomingPlaceIntent"] boolValue] && [file[@"originalCaptured"] boolValue] && verify && incomingMissing) {
         NSData *bytes=[self readKnownStage:file[@"Verify"] limit:64u*1024u*1024u error:error];
-        if(!bytes || ![XFATCDigest(bytes) isEqual:file[@"newDigest"]])return NO;
+        if(!bytes || bytes.length!=[file[@"newSize"] unsignedLongLongValue] ||
+           ![XFATCDigest(bytes) isEqual:file[@"newDigest"]])return NO;
+        file[@"newVerified"]=@YES;
+        if(![self saveJournal:@"reconnected replacement read-back verified" error:error])return NO;
         if(![self restoreBatchLinkForAutomaticRecovery:error] ||
            ![self publishKnownManifestForBatch:NO error:error] ||
            ![self returnKnownReplacement:error])return NO;
@@ -1544,15 +1531,90 @@ closeKnownFile:;
     if(!data&&error)*error=failure?:XFATCError(2214,@"No se pudo leer y devolver el archivo; revisa la recuperación pendiente.");
     return data;
 }
+- (BOOL)completedWriteMatchesToken:(NSString *)token target:(NSString *)target digest:(NSString *)digest {
+    NSDictionary *result=self.completedKnownWrite;
+    return token.length && [result[@"token"] isEqual:token] && [result[@"target"] isEqual:target] &&
+        [result[@"newDigest"] isEqual:digest] && [result[@"newVerified"] boolValue] &&
+        [result[@"committed"] boolValue] && ![result[@"originalReturned"] boolValue] &&
+        [@[@"replace",@"create"] containsObject:result[@"operation"]];
+}
+- (BOOL)readBackInterruptedReplacement:(NSError **)error {
+    NSMutableDictionary *file=self.journal[@"knownFile"];
+    NSData *local=[self validatedLocalOriginal:file error:error];
+    NSData *remote=[self readKnownStage:file[@"Original"] limit:64u*1024u*1024u error:error];
+    if(!local||!remote||![local isEqual:remote]||![self verifyKnownTargetLink:error])return NO;
+    for(NSString *key in @[@"Incoming",@"Verify"]) {
+        BOOL missing=NO;NSDictionary *info=[self info:file[key] missing:&missing error:error];
+        if(info||!missing)return NO;
+    }
+    if(![self publishKnownManifestForBatch:NO error:error])return NO;
+    file[@"verifyMoveIntent"]=@YES;
+    if(![self saveJournal:@"read back partially placed replacement before resuming" error:error] ||
+       ![self runKnownFilePairs:[self knownFilePair:1 destination:file[@"Verify"]] error:error] ||
+       ![self waitKnownFile:file[@"Verify"] missing:NO error:error])return NO;
+    NSData *bytes=[self readKnownStage:file[@"Verify"] limit:64u*1024u*1024u error:error];
+    if(!bytes)return NO;
+    if(bytes.length!=[file[@"newSize"] unsignedLongLongValue]||
+       ![XFATCDigest(bytes) isEqual:file[@"newDigest"]]){
+        file[@"readBackMismatch"]=@YES;
+        if(![self saveJournal:@"unexpected interrupted read-back retained without committing" error:error])return NO;
+        // A running app may have changed the target after the partial placement.
+        // Return the exact observed bytes only when its destination is positively
+        // absent. A denied lookup never authorizes an overwrite or a success.
+        NSError *returnError=nil;
+        if(bytes && [self requireProbeDestinationAbsent:&returnError] &&
+           [self saveJournal:@"return unchanged unexpected read-back to positively absent destination" error:&returnError]) {
+            [self runKnownFilePairs:[self knownFilePair:4 destination:[self knownFileDestination]] error:&returnError];
+            [self waitKnownFile:file[@"Verify"] missing:YES error:&returnError];
+        }
+        if(error&&!*error)*error=XFATCError(2261,@"El archivo colocado parcialmente no coincide. Se conservó junto al original.");return NO;
+    }
+    file[@"newVerified"]=@YES;
+    if(![self saveJournal:@"interrupted replacement read-back verified" error:error])return NO;
+    return [self returnKnownReplacement:error];
+}
+- (BOOL)placePreparedReplacementData:(NSData *)data error:(NSError **)error {
+    NSMutableDictionary *file=self.journal[@"knownFile"];
+    if(![self verifyKnownTargetLink:error])return NO;
+    BOOL missing=NO;
+    NSDictionary *verify=[self info:file[@"Verify"] missing:&missing error:error];
+    if(verify||!missing){if(error&&!*error)*error=XFATCError(2260,@"La zona de verificación contiene datos pendientes. Se conservaron.");return NO;}
+    NSData *staged=[self readKnownStage:file[@"Incoming"] limit:64u*1024u*1024u error:error];
+    if(![staged isEqual:data]||![XFATCDigest(staged) isEqual:file[@"newDigest"]])return NO;
+    if(![self publishKnownManifestForBatch:NO error:error])return NO;
+    file[@"incomingPlaceIntent"]=@YES;file[@"verifyMoveIntent"]=@YES;
+    if(![self saveJournal:@"place and read back replacement using the existing root link" error:error])return NO;
+    NSMutableArray *pairs=[NSMutableArray new];
+    [pairs addObjectsFromArray:[self knownFilePair:3 destination:[self knownFileDestination]]];
+    [pairs addObjectsFromArray:[self knownFilePair:1 destination:file[@"Verify"]]];
+    if(![self runKnownFilePairs:pairs error:error] ||
+       ![self waitKnownFile:file[@"Incoming"] missing:YES error:error] ||
+       ![self waitKnownFile:file[@"Verify"] missing:NO error:error])return NO;
+    [self recordBatchSetupPhase:9];
+    NSData *observed=[self readKnownStage:file[@"Verify"] limit:64u*1024u*1024u error:error];
+    if(![observed isEqual:data]){
+        if(error&&!*error)*error=XFATCError(2215,@"La lectura de verificación no coincide. El original permanece respaldado.");return NO;
+    }
+    file[@"newVerified"]=@YES;
+    if(![self saveJournal:@"replacement read-back bytes verified" error:error])return NO;
+    [self recordBatchSetupPhase:10];
+    if(![self returnKnownReplacement:error])return NO;
+    [self recordBatchSetupPhase:11];
+    return YES;
+}
+
 - (BOOL)replaceAbsoluteFile:(NSString *)path data:(NSData *)data error:(NSError **)error {
     NSString *target=XFATCPath(path);
     if(!target||!XFATCKnownFilePath(target)||!target.UTF8String||
        [target lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>4096||!data||data.length>64u*1024u*1024u){
         if(error)*error=XFATCError(2213,@"El destino debe ser un archivo de la app y el archivo nuevo no puede superar 64 MiB.");return NO;}
     self.batchActive=YES;self.batchLastPhase=0;self.batchEvents=[NSMutableArray new];
+    self.completedKnownWrite=nil;
+    NSString *transactionToken=nil;
     NSError *failure=nil;BOOL ok=NO;
     do {
         if(![self prepareKnownFile:target operation:@"replace" error:&failure])break;
+        transactionToken=[self.journal[@"token"] copy];
         NSError *absenceError=nil;
         if([self requireProbeDestinationAbsent:&absenceError]) {
             NSMutableDictionary *created=self.journal[@"knownFile"];
@@ -1570,29 +1632,14 @@ closeKnownFile:;
         file[@"newDigest"]=XFATCDigest(data);file[@"newSize"]=@(data.length);
         if(![self saveJournal:@"replacement bytes identified before staging" error:&failure]||![self writeKnownIncoming:data error:&failure])break;
 
-        // The first placement is grouped into one ATC session. The generated
-        // link is rearmed into the source tree so the three FileComplete
-        // messages use the same manifest that 3105 publishes for replacement.
-        file[@"incomingPlaceIntent"]=@YES;
-        if(![self saveJournal:@"place replacement into selected application path" error:&failure]||
-           ![self rearmBatchLink:&failure])break;
-        file[@"batchPlacement"]=@YES;
-        if(![self publishKnownManifestForBatch:YES error:&failure]||
-           ![self runKnownFilePairs:[self batchPlacementPairs] error:&failure]||
-           ![self waitKnownFile:file[@"Incoming"] missing:YES error:&failure]||
-           ![self waitKnownFile:file[@"Verify"] missing:NO error:&failure])break;
-
-        NSData *observed=[self readKnownStage:file[@"Verify"] limit:64u*1024u*1024u error:&failure];
-        if(![observed isEqual:data]){if(!failure)failure=XFATCError(2215,@"La verificación del reemplazo no coincide. Se conservaron el original y los datos recuperados.");break;}
-        file[@"newVerified"]=@YES;
-        if(![self saveJournal:@"replacement bytes verified" error:&failure])break;
-        [self recordBatchSetupPhase:10];
-        if(![self returnKnownReplacement:&failure]||
-           ![self publishKnownManifestForBatch:NO error:&failure])break;
+        if(![self placePreparedReplacementData:data error:&failure])break;
         [self recordKnownFileStage:@"ReplacementCommitted" error:nil];
         ok=YES;
     }while(0);
     if(![self finishKnownFileWithError:&failure])ok=NO;
+    else if(!ok && [self completedWriteMatchesToken:transactionToken target:target digest:XFATCDigest(data)]){
+        ok=YES;failure=nil;
+    }
     if(ok)[self recordBatchSetupPhase:12];
     self.batchActive=NO;
     if(ok){
@@ -1877,7 +1924,7 @@ closeKnownFile:;
         }
         index++;
     }
-    return YES;
+    return [self validLegacyBooksCopyJournal:journal];
 }
 - (NSDictionary *)ownerRecord {
     return @{@"module":@"XitForgeATCDirectory",@"version":@1,@"token":self.journal[@"token"],@"namespace":self.journal[@"namespace"]};
@@ -1945,10 +1992,10 @@ closeKnownFile:;
     if(![self removeOwned:[root stringByAppendingPathComponent:@"XitForgeOwner.plist"] expectedKind:@"S_IFREG" error:error])return NO;
     return [self removeOwned:root expectedKind:@"S_IFDIR" error:error];
 }
+#include "XFATCLegacyBooksRecovery.inc"
 - (BOOL)restoreBooks:(NSError **)error {
     if([self.journal[@"booksInPlace"] boolValue])return [self restoreBooksInPlace:error];
     NSString *backupBooks=[self.journal[@"backup"] stringByAppendingPathComponent:@"Books"];
-    NSString *temporary=[self.journal[@"backup"] stringByAppendingPathComponent:@"TemporaryBooks"];
     BOOL backupMissing=NO,currentMissing=NO;
     NSDictionary *backup=[self info:backupBooks missing:&backupMissing error:error];
     if(!backup&&!backupMissing)return NO;
@@ -1956,6 +2003,9 @@ closeKnownFile:;
     if(!current&&!currentMissing)return NO;
     BOOL original=[self.journal[@"booksOriginallyPresent"] boolValue];
     BOOL restoreAlready=[self.journal[@"booksRestored"] boolValue];
+    if(self.journal[@"legacyBooksCopy"] ||
+       (original && backup && [self.journal[@"booksIsolationStarted"] boolValue]))
+        return [self restoreLegacyBooksCopy:error];
     if(![self.journal[@"booksIsolationStarted"] boolValue]) {
         /* No original rename was ever authorized: Books is not ours to quarantine. */
         if(!backupMissing){if(error)*error=XFATCError(2141,@"Hay un respaldo de Books sin una operación de aislamiento registrada.");return NO;}
@@ -1975,32 +2025,10 @@ closeKnownFile:;
         if(!currentMissing){if(error)*error=XFATCError(2127,@"Books apareció después de la restauración. No se eliminará.");return NO;}
         return YES;
     }
-    if(backup&&![backup[@"kind"] isEqual:@"S_IFDIR"]){if(error)*error=XFATCError(2128,@"El respaldo original de Books no es un directorio.");return NO;}
-    BOOL unchanged=!original||[self preimageMatches:backupBooks error:error];
-    NSError *preimageError=error?*error:nil;
-    if(error)*error=nil;
-    if(!currentMissing) {
-        if(![current[@"kind"] isEqual:@"S_IFDIR"]){if(error)*error=XFATCError(2129,@"El Books temporal cambió de tipo. Se preservó todo para recuperación.");return NO;}
-        if(![self booksOwnerMatches:@"Books" error:error]){if(error&&!*error)*error=XFATCError(2143,@"Books contiene un directorio ajeno al temporal generado. Se preservó junto al respaldo original.");return NO;}
-        if(![self renameOwned:@"Books" to:temporary error:error])return NO;
-        self.journal[@"temporaryBooksQuarantined"]=@YES;
-        if(![self saveJournal:@"temporary Books retained" error:error])return NO;
-    }
-    if(original) {
-        if(backupMissing){if(error)*error=XFATCError(2130,@"El respaldo original de Books no está disponible.");return NO;}
-        if(![self renameOwned:backupBooks to:@"Books" error:error])return NO;
-        NSDictionary *restored=[self info:@"Books" missing:&currentMissing error:error];
-        if(!restored||![restored[@"kind"] isEqual:@"S_IFDIR"]||![self preimageMatches:@"Books" error:error])unchanged=NO;
-    }
-    if(!unchanged) {
-        /* Keep the actual original, including daemon writes through previously open file descriptors.
-           Never overwrite those bytes with the snapshot. Restoration is reported as unverified. */
-        self.journal[@"originalRestoredWithChanges"]=@YES;
-        [self saveJournal:@"original Books restored but preimage changed" error:NULL];
-        if(error)*error=preimageError?:XFATCError(2131,@"Books cambió durante la operación. Se devolvió la biblioteca original a su lugar y se conservaron los temporales; no se aprobó la exploración.");return NO;
-    }
+    if(original||!backupMissing){if(error)*error=XFATCError(2130,@"El respaldo original de Books requiere una recuperación verificada. Se conservó.");return NO;}
+    if(!currentMissing && ![self cleanExactTemporaryBooks:@"Books" error:error])return NO;
     self.journal[@"booksRestored"]=@YES;
-    return [self saveJournal:@"Books preimage restored and verified" error:error];
+    return [self saveJournal:@"remove only exact generated Books; original library was absent" error:error];
 }
 - (BOOL)validateGeneratedTree:(NSString *)path allowed:(NSDictionary<NSString *,NSString *> *)allowed error:(NSError **)error {
     BOOL missing=NO;NSDictionary *info=[self info:path missing:&missing error:error];
@@ -2135,6 +2163,10 @@ closeKnownFile:;
         NSDictionary *row=self.journal[@"trackedPreimage"][path];
         if([row[@"exists"] boolValue]&&row[@"snapshot"])[[NSFileManager defaultManager] removeItemAtURL:[self.journalURL URLByAppendingPathComponent:row[@"snapshot"]] error:NULL];
     }
+    if(file)self.completedKnownWrite=@{@"token":self.journal[@"token"],@"target":file[@"target"],
+        @"operation":file[@"operation"],@"newDigest":file[@"newDigest"]?:@"",
+        @"newVerified":file[@"newVerified"]?:@NO,@"committed":file[@"committed"]?:@NO,
+        @"originalReturned":file[@"originalReturned"]?:@NO};
     self.journal=nil;
     return YES;
 }

@@ -40,6 +40,7 @@ __HELPERS__
 @property NSString *failWrite;
 @property BOOL failMarkerRemoval;
 @property NSInteger renameSubcode;
+@property NSUInteger renameCalls;
 - (NSDictionary *)ownerRecord;
 - (NSDictionary *)info:(NSString *)path missing:(BOOL *)missing error:(NSError **)error;
 - (BOOL)preimageMatches:(NSString *)path error:(NSError **)error;
@@ -79,6 +80,7 @@ __HELPERS__
     return data&&[[NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:error] isEqual:self.ownerRecord];
 }
 - (BOOL)renameOwned:(NSString *)from to:(NSString *)to error:(NSError **)error {
+    self.renameCalls++;
     if(error)*error=[NSError errorWithDomain:@"Native" code:106 userInfo:@{@"NativeSubcode":@(self.renameSubcode)}];return NO;
 }
 - (NSData *)readSnapshot:(NSString *)path expectedSize:(NSUInteger)size error:(NSError **)error {
@@ -131,7 +133,8 @@ int main(void){@autoreleasepool{
     CHECK(f.nodes[@"Books/Sync/Upload.plist"]==nil);CHECK(f.nodes[@"Books/XitForgeOwner.plist"]==nil);
     CHECK([[NSFileManager.defaultManager contentsOfDirectoryAtURL:f.journalURL includingPropertiesForKeys:nil options:0 error:NULL] count]>=4);
     f=make(NO);CHECK([f installWorkingBooks:@"working" error:NULL]);CHECK([f restoreBooksInPlace:NULL]);CHECK(f.nodes.count==0);
-    f=make(YES);f.renameSubcode=10;CHECK(![f isolateBooks:NULL]);CHECK(f.journal[@"booksInPlace"]==nil);CHECK([f.nodes isEqual:f.seed]);
+    f=make(YES);f.renameSubcode=10;CHECK([f isolateBooks:NULL]);CHECK(f.renameCalls==0);
+    CHECK([f installWorkingBooks:@"working" error:NULL]);CHECK([f restoreBooksInPlace:NULL]);CHECK([f.nodes isEqual:f.seed]);
     f=make(YES);f.nodes[@"Books/XitForgeOwner.plist"]=bytes(@"foreign");CHECK(![f isolateBooks:NULL]);CHECK(f.journal[@"booksInPlace"]==nil);
     f=make(YES);f.failWrite=@"Books/Sync/Books.plist";CHECK([f isolateBooks:NULL]);CHECK(![f installWorkingBooks:@"working" error:NULL]);
     f.failWrite=nil;CHECK([f restoreBooksInPlace:NULL]);CHECK([f.nodes isEqual:f.seed]);
