@@ -299,10 +299,8 @@
 
     if (self.window && !self.versionCheckInProgress) {
         if (self.initialVersionGateCompleted && !self.lockWindow) {
-            // Prevent using an already-unlocked home while server auth runs.
-            UIViewController *waiting = [[UIViewController alloc] init];
-            waiting.view.backgroundColor = [UIColor blackColor];
-            self.window.rootViewController = waiting;
+            // Keep the current screen and navigation state while checking access.
+            self.window.userInteractionEnabled = NO;
         }
         [self verificarVersionDeApp];
     }
@@ -345,6 +343,7 @@
         }
 
         strongSelf.versionCheckInProgress = NO;
+        strongSelf.window.userInteractionEnabled = YES;
 
         /*
          * FAIL CLOSED:

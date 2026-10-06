@@ -95,7 +95,7 @@ static NSInteger currentLanguage = 0;
 
             @"protection":
                 @[
-                    @"PROTECCIÓN PARA REVISIÓN",
+                    @"Proteccion para revision",
                     @"SCREEN PROTECTION",
                     @"PROTEÇÃO DE TELA"
                 ],

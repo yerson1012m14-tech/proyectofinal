@@ -1,6 +1,7 @@
 #import "XFAirLiftViewController.h"
 #import "XFAirLiftBackend.h"
 #import "XFOnDevicePairing.h"
+#import "XFAirLiftProfessionalUI.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <QuickLook/QuickLook.h>
 #import <math.h>
@@ -172,15 +173,17 @@ static UILabel *XFLabel(NSString *text, UIFontTextStyle style, UIColor *color) {
         self.spacing = 8;
         self.layoutMarginsRelativeArrangement = YES;
         self.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(12, 14, 12, 14);
-        self.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
-        self.layer.cornerRadius = 12;
+        self.backgroundColor = [UIColor colorWithRed:0.075 green:0.075 blue:0.085 alpha:1];
+        self.layer.cornerRadius = 18;
+        self.layer.borderWidth = 1;
+        self.layer.borderColor = [UIColor colorWithRed:0.26 green:0.12 blue:0.15 alpha:1].CGColor;
         self.tunnelLabel = XFLabel(@"Túnel: comprobando…", UIFontTextStyleHeadline, UIColor.secondaryLabelColor);
-        self.pairingLabel = XFLabel(@"Pairing: comprobando…", UIFontTextStyleHeadline, UIColor.secondaryLabelColor);
+        self.pairingLabel = XFLabel(@"Emparejamiento: comprobando…", UIFontTextStyleHeadline, UIColor.secondaryLabelColor);
         self.tunnelLabel.accessibilityTraits = UIAccessibilityTraitUpdatesFrequently;
         self.pairingLabel.accessibilityTraits = UIAccessibilityTraitUpdatesFrequently;
         [self addArrangedSubview:self.tunnelLabel];
         [self addArrangedSubview:self.pairingLabel];
-        [self addArrangedSubview:XFLabel(@"Último estado comprobado. Se actualiza al conectar o consultar archivos.", UIFontTextStyleCaption1, UIColor.secondaryLabelColor)];
+        [self addArrangedSubview:XFLabel(@"Estado de conexión del iPhone", UIFontTextStyleCaption1, UIColor.secondaryLabelColor)];
     }
     return self;
 }
@@ -194,8 +197,8 @@ static UILabel *XFLabel(NSString *text, UIFontTextStyle style, UIColor *color) {
     self.tunnelLabel.textColor = UIColor.secondaryLabelColor;
 }
 - (void)showPairingInProgress:(BOOL)inProgress available:(BOOL)available {
-    self.pairingLabel.text = inProgress ? @"Pairing: esperando aprobación…" :
-        (available ? @"Pairing: guardado" : @"Pairing: pendiente");
+    self.pairingLabel.text = inProgress ? @"Emparejamiento: esperando aprobación…" :
+        (available ? @"Emparejamiento: guardado" : @"Emparejamiento: pendiente");
     self.pairingLabel.textColor = inProgress || !available ? UIColor.systemOrangeColor : UIColor.systemGreenColor;
 }
 @end
@@ -799,11 +802,8 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 @property (nonatomic, strong) UIButton *connectButton;
 @property (nonatomic, strong) UIButton *pairButton;
 @property (nonatomic, strong) UIButton *cancelPairButton;
-@property (nonatomic, strong) UIButton *pinCopyButton;
-@property (nonatomic, strong) UILabel *pairingPINLabel;
 @property (nonatomic, strong) UILabel *pairingGuideLabel;
 @property (nonatomic, strong) XFOnDevicePairing *pairingService;
-@property (nonatomic, copy) NSString *currentPairingPIN;
 @property (nonatomic, assign) NSUInteger pairingAttempt;
 @property (nonatomic, assign) BOOL pairingInProgress;
 @property (nonatomic, assign) BOOL pairingCancelling;
@@ -830,19 +830,34 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 }
 
 - (UIButton *)buttonWithTitle:(NSString *)title selector:(SEL)selector prominent:(BOOL)prominent {
-    UIButtonConfiguration *configuration = prominent ? UIButtonConfiguration.filledButtonConfiguration : UIButtonConfiguration.tintedButtonConfiguration;
+    UIColor *red = [UIColor colorWithRed:0.88 green:0.10 blue:0.18 alpha:1];
+    UIButtonConfiguration *configuration = UIButtonConfiguration.filledButtonConfiguration;
     configuration.title = title;
-    configuration.cornerStyle = UIButtonConfigurationCornerStyleMedium;
-    configuration.contentInsets = NSDirectionalEdgeInsetsMake(12, 14, 12, 14);
+    configuration.baseBackgroundColor = prominent ? red : [UIColor colorWithRed:0.10 green:0.10 blue:0.12 alpha:1];
+    configuration.baseForegroundColor = UIColor.whiteColor;
+    configuration.background.cornerRadius = 16;
+    configuration.background.strokeColor = prominent ? red : [UIColor colorWithRed:0.35 green:0.13 blue:0.18 alpha:1];
+    configuration.background.strokeWidth = 1;
+    configuration.contentInsets = NSDirectionalEdgeInsetsMake(16, 18, 16, 18);
+    configuration.imagePadding = 12;
+    configuration.image = [UIImage systemImageNamed:selector==@selector(pairingAction)?@"iphone.badge.play":selector==@selector(importPairing)?@"square.and.arrow.down":@"network"];
+    configuration.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *attributes) {
+        NSMutableDictionary *result=[attributes mutableCopy];
+        result[NSFontAttributeName]=[UIFontMetrics.defaultMetrics scaledFontForFont:[UIFont systemFontOfSize:16 weight:UIFontWeightSemibold]];
+        return result;
+    };
     UIButton *button = [UIButton buttonWithConfiguration:configuration primaryAction:nil];
     button.titleLabel.numberOfLines = 0;
     button.titleLabel.adjustsFontForContentSizeCategory = YES;
+    [button.heightAnchor constraintGreaterThanOrEqualToConstant:58].active = YES;
     [button addTarget:self action:selector forControlEvents:UIControlEventTouchUpInside];
     return button;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    self.tableView.backgroundColor = [UIColor colorWithRed:0.025 green:0.025 blue:0.035 alpha:1];
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     self.navigationItem.leftBarButtonItem = nil;
     self.navigationItem.rightBarButtonItem = nil;
@@ -851,26 +866,21 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     self.tableView.estimatedRowHeight = 64;
     self.headerStack = [[UIStackView alloc] init];
     self.headerStack.axis = UILayoutConstraintAxisVertical;
-    self.headerStack.spacing = 12;
+    self.headerStack.spacing = 16;
     self.headerStack.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.headerStack addArrangedSubview:XFLabel(@"Conecta tu iPhone", UIFontTextStyleTitle2, UIColor.labelColor)];
+    UILabel *heading=XFLabel(@"Conecta tu iPhone", UIFontTextStyleTitle2, UIColor.labelColor);
+    heading.font=[[UIFontMetrics metricsForTextStyle:UIFontTextStyleTitle2] scaledFontForFont:[UIFont systemFontOfSize:26 weight:UIFontWeightBold]];
+    [self.headerStack addArrangedSubview:heading];
+    [self.headerStack addArrangedSubview:XFLabel(@"Empareja, importa tu registro y conecta el túnel.", UIFontTextStyleSubheadline, UIColor.secondaryLabelColor)];
     self.connectionStatus = [[XFConnectionStatusView alloc] init];
     [self.headerStack addArrangedSubview:self.connectionStatus];
-    [self.headerStack addArrangedSubview:XFLabel(@"1. Con el Wi-Fi encendido, empareja este iPhone o importa su registro.\n2. Activa LocalDevVPN.\n3. Conecta el túnel y usa Activar o Desactivar desde Home.", UIFontTextStyleSubheadline, UIColor.secondaryLabelColor)];
+    [self.headerStack addArrangedSubview:XFLabel(@"Mantén el Wi-Fi encendido y activa LocalDevVPN antes de conectar. Después usa Activar o Desactivar desde Home.", UIFontTextStyleSubheadline, UIColor.secondaryLabelColor)];
     self.statusLabel = XFLabel(@"Comprobando el emparejamiento…", UIFontTextStyleFootnote, UIColor.secondaryLabelColor);
     self.statusLabel.accessibilityTraits = UIAccessibilityTraitUpdatesFrequently;
     [self.headerStack addArrangedSubview:self.statusLabel];
     self.pairingGuideLabel = XFLabel(@"", UIFontTextStyleSubheadline, UIColor.labelColor);
     self.pairingGuideLabel.hidden = YES;
     [self.headerStack addArrangedSubview:self.pairingGuideLabel];
-    self.pairingPINLabel = XFLabel(@"", UIFontTextStyleTitle1, UIColor.labelColor);
-    self.pairingPINLabel.font = [UIFont monospacedDigitSystemFontOfSize:30 weight:UIFontWeightSemibold];
-    self.pairingPINLabel.textAlignment = NSTextAlignmentCenter;
-    self.pairingPINLabel.accessibilityLabel = @"PIN de emparejamiento";
-    self.pairingPINLabel.hidden = YES;
-    [self.headerStack addArrangedSubview:self.pairingPINLabel];
-    self.pinCopyButton = [self buttonWithTitle:@"Copiar PIN" selector:@selector(copyPairingPIN) prominent:NO];
-    self.pinCopyButton.hidden = YES;
 
     self.pairButton = [self buttonWithTitle:@"Emparejar" selector:@selector(pairingAction) prominent:NO];
     [self.headerStack addArrangedSubview:self.pairButton];
@@ -954,21 +964,33 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 }
 
 - (void)clearPairingPIN {
-    self.currentPairingPIN = nil;
-    self.pairingPINLabel.text = @"";
-    self.pairingPINLabel.accessibilityValue = nil;
-    self.pairingPINLabel.hidden = YES;
-    self.pinCopyButton.hidden = YES;
-}
-
-- (void)copyPairingPIN {
-    if (!self.pairingInProgress || self.currentPairingPIN.length != 6) return;
-    [UIPasteboard.generalPasteboard setItems:@[@{@"public.utf8-plain-text":self.currentPairingPIN}]
-        options:@{UIPasteboardOptionLocalOnly:@YES, UIPasteboardOptionExpirationDate:[NSDate dateWithTimeIntervalSinceNow:120]}];
-    UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"PIN copiado");
+    XFClearPairingPINNotification();
 }
 
 - (void)startOnDevicePairing {
+    if(self.busy)return;
+    if(NSProcessInfo.processInfo.operatingSystemVersion.majorVersion<27) {
+        XFPresentError(self,@"Se requiere iOS 27",@"Puedes importar un registro válido para conectar en otras versiones.");
+        return;
+    }
+    self.busy=YES;[self updateButtons];
+    XFRequestPairingNotificationPermission(^(BOOL allowed,NSString *message) {
+        self.busy=NO;
+        if(!allowed) {
+            [self updateButtons];
+            UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Notificaciones de emparejamiento" message:message preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil]];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Abrir Ajustes" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                [UIApplication.sharedApplication openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString] options:@{} completionHandler:nil];
+            }]];
+            [self presentViewController:alert animated:YES completion:nil];
+            return;
+        }
+        [self beginOnDevicePairingWithNotifications];
+    });
+}
+
+- (void)beginOnDevicePairingWithNotifications {
     if (self.busy) return;
     if (NSProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27) {
         XFPresentError(self, @"Se requiere iOS 27", @"Esta forma de emparejar necesita iOS 27 y su opción de emparejamiento en Modo de desarrollador. Puedes seguir usando «Importar emparejamiento» con un registro válido.");
@@ -992,7 +1014,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
         typeof(self) self = weakSelf;
         if (!self || self.pairingAttempt != attempt || !self.pairingInProgress) return;
         self.statusLabel.text = @"Servicio listo. Abre Ajustes para iniciar el emparejamiento.";
-        self.pairingGuideLabel.text = @"Ajustes > Privacidad y seguridad > Modo de desarrollador > Emparejar con XitForge.\n\nCuando el iPhone se conecte, el PIN aparecerá aquí. Vuelve a XitForge para verlo y después introdúcelo en Ajustes.";
+        self.pairingGuideLabel.text = @"Abre Ajustes > Privacidad y seguridad > Modo de desarrollador > Emparejar con XitForge. Recibirás el código en una notificación para introducirlo allí.";
         [self.view setNeedsLayout];
     };
     service.pinHandler = ^(NSString *PIN) {
@@ -1005,15 +1027,17 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
             [self.view setNeedsLayout];
             return;
         }
-        self.currentPairingPIN = PIN;
-        self.pairingPINLabel.text = PIN;
-        self.pairingPINLabel.accessibilityValue = PIN;
-        self.pairingPINLabel.hidden = NO;
-        self.pinCopyButton.hidden = NO;
-        self.statusLabel.text = @"PIN recibido. Falta aprobar el emparejamiento en Ajustes.";
-        self.pairingGuideLabel.text = @"Introduce este PIN en Ajustes > Privacidad y seguridad > Modo de desarrollador > Emparejar con XitForge. El proceso seguirá activo mientras cambias de app.";
-        [self.view setNeedsLayout];
-        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"PIN de emparejamiento disponible");
+        XFPostPairingPINNotification(PIN, ^(NSError *error) {
+            if(self.pairingAttempt!=attempt||!self.pairingInProgress)return;
+            if(error) {
+                [self cancelOnDevicePairing];
+                self.statusLabel.text=@"No se pudo enviar el código por notificación. Comprueba los permisos y vuelve a emparejar.";
+            } else {
+                self.statusLabel.text=@"Código enviado por notificación. Esperando tu aprobación.";
+                self.pairingGuideLabel.text=@"Consulta la notificación de XITFORGE e introduce el código en Ajustes. El emparejamiento sigue activo al cambiar de app.";
+            }
+            [self.view setNeedsLayout];
+        });
     };
     service.completionHandler = ^(NSURL *recordURL, NSError *error) {
         typeof(self) self = weakSelf;

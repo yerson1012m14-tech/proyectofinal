@@ -1392,7 +1392,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     self.activateButton.alpha = 0.45;
     self.deactivateButton.enabled = NO;
     self.deactivateButton.alpha = 1.0;
-    [self.deactivateButton setTitle:@"DESACTIVAR" forState:UIControlStateNormal];
+    [self.deactivateButton setTitle:@"DESACTIVAR…" forState:UIControlStateNormal];
     self.statusLabel.hidden = YES;
     [self.activityIndicator stopAnimating];
 }

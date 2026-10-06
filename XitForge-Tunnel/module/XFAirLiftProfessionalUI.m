@@ -1,113 +1,81 @@
-#import <UIKit/UIKit.h>
+#import "XFAirLiftProfessionalUI.h"
 #import <UserNotifications/UserNotifications.h>
-#import <objc/runtime.h>
-#import <objc/message.h>
 
-#import "XFAirLiftViewController.h"
-#import "XFOnDevicePairing.h"
-#import "XFFileCreationProbeController.h"
+static NSString * const XFPINNotificationID = @"com.xitforge.pairing.pin";
+static NSString *XFPINActiveNotification;
 
-static void XFSwizzle(Class cls, SEL original, SEL replacement) {
-    Method originalMethod = class_getInstanceMethod(cls, original);
-    Method replacementMethod = class_getInstanceMethod(cls, replacement);
-    if (!originalMethod || !replacementMethod) return;
-    method_exchangeImplementations(originalMethod, replacementMethod);
+@interface XFPairingNotificationPresenter : NSObject <UNUserNotificationCenterDelegate>
+@property (nonatomic, weak) id<UNUserNotificationCenterDelegate> previousDelegate;
+@end
+@implementation XFPairingNotificationPresenter
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+      willPresentNotification:(UNNotification *)notification
+        withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completion {
+    if ([notification.request.identifier hasPrefix:XFPINNotificationID]) {
+        completion(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionList | UNNotificationPresentationOptionSound);
+    } else if ([self.previousDelegate respondsToSelector:_cmd]) {
+        [self.previousDelegate userNotificationCenter:center willPresentNotification:notification withCompletionHandler:completion];
+    } else { completion(UNNotificationPresentationOptionNone); }
+}
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center didReceiveNotificationResponse:(UNNotificationResponse *)response
+        withCompletionHandler:(void (^)(void))completion {
+    if ([self.previousDelegate respondsToSelector:_cmd]) {
+        [self.previousDelegate userNotificationCenter:center didReceiveNotificationResponse:response withCompletionHandler:completion];
+    } else { completion(); }
+}
+@end
+
+static void XFInstallPINPresenter(void) {
+    static XFPairingNotificationPresenter *presenter;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ presenter=[XFPairingNotificationPresenter new]; });
+    UNUserNotificationCenter *center=UNUserNotificationCenter.currentNotificationCenter;
+    if (center.delegate!=presenter) { presenter.previousDelegate=center.delegate; center.delegate=presenter; }
 }
 
-
-static NSString * const XFPINDeliveredInternalNotification =
-    @"XITFORGE.PairingPINDelivered";
-
-static BOOL XFNotificationsAllowed(UNNotificationSettings *settings) {
-    return settings.authorizationStatus == UNAuthorizationStatusAuthorized ||
-           settings.authorizationStatus == UNAuthorizationStatusProvisional ||
-           settings.authorizationStatus == UNAuthorizationStatusEphemeral;
-}
-
-static void XFSendPairingPINNotification(NSString *PIN) {
-    if (![PIN isKindOfClass:NSString.class] || PIN.length != 6) return;
-
-    UNUserNotificationCenter *center =
-        UNUserNotificationCenter.currentNotificationCenter;
-
-    [center getNotificationSettingsWithCompletionHandler:
-        ^(UNNotificationSettings *settings) {
-        if (!XFNotificationsAllowed(settings)) return;
-
-        UNMutableNotificationContent *content =
-            [[UNMutableNotificationContent alloc] init];
-
-        content.title = @"XITFORGE";
-        content.subtitle = @"CÓDIGO DE EMPAREJAMIENTO";
-        content.body =
-            [NSString stringWithFormat:@"Código: %@", PIN];
-        content.sound = UNNotificationSound.defaultSound;
-        content.threadIdentifier = @"com.xitforge.pairing";
-
-        UNTimeIntervalNotificationTrigger *trigger =
-            [UNTimeIntervalNotificationTrigger
-                triggerWithTimeInterval:0.10
-                                repeats:NO];
-
-        NSString *identifier =
-            [NSString stringWithFormat:@"xitforge-pair-%@",
-                                       NSUUID.UUID.UUIDString];
-
-        UNNotificationRequest *request =
-            [UNNotificationRequest requestWithIdentifier:identifier
-                                                 content:content
-                                                 trigger:trigger];
-
-        [center addNotificationRequest:request
-                 withCompletionHandler:^(NSError *error) {
-            if (error) {
-                NSLog(@"XITFORGE pairing notification error: %@", error);
-            }
-        }];
+void XFRequestPairingNotificationPermission(void (^completion)(BOOL, NSString *)) {
+    XFInstallPINPresenter();
+    UNUserNotificationCenter *center=UNUserNotificationCenter.currentNotificationCenter;
+    void (^finish)(BOOL)=^(BOOL allowed) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(allowed, allowed?nil:@"Activa las notificaciones de XITFORGE en Ajustes para recibir el código de emparejamiento.");
+        });
+    };
+    [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+        if(settings.authorizationStatus==UNAuthorizationStatusNotDetermined) {
+            [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert|UNAuthorizationOptionSound
+                completionHandler:^(BOOL granted,NSError *error) { finish(granted&&!error); }];
+        } else { finish(settings.authorizationStatus==UNAuthorizationStatusAuthorized||settings.authorizationStatus==UNAuthorizationStatusProvisional||settings.authorizationStatus==UNAuthorizationStatusEphemeral); }
     }];
 }
 
-#pragma mark - Pairing PIN notification delivery
-
-@implementation XFOnDevicePairing (XFSystemPINNotification)
-
-+ (void)load {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        XFSwizzle(self, @selector(start), @selector(xfn_start));
-    });
+void XFPostPairingPINNotification(NSString *PIN, void (^completion)(NSError *)) {
+    XFInstallPINPresenter();
+    XFClearPairingPINNotification();
+    NSString *identifier=[XFPINNotificationID stringByAppendingFormat:@".%@",NSUUID.UUID.UUIDString];
+    XFPINActiveNotification=identifier;
+    UNMutableNotificationContent *content=[UNMutableNotificationContent new];
+    content.title=@"XITFORGE · Emparejamiento";
+    content.body=[NSString stringWithFormat:@"Código: %@. Introdúcelo en Ajustes para aprobar el emparejamiento.",PIN];
+    content.sound=UNNotificationSound.defaultSound;
+    content.threadIdentifier=@"com.xitforge.pairing";
+    UNNotificationRequest *request=[UNNotificationRequest requestWithIdentifier:identifier content:content trigger:nil];
+    [UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:request withCompletionHandler:^(NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if(![XFPINActiveNotification isEqual:identifier]) {
+                [UNUserNotificationCenter.currentNotificationCenter removePendingNotificationRequestsWithIdentifiers:@[identifier]];
+                [UNUserNotificationCenter.currentNotificationCenter removeDeliveredNotificationsWithIdentifiers:@[identifier]];
+            }
+            if(completion)completion(error);
+        });
+    }];
 }
 
-- (void)xfn_start {
-    static const void *XFPINHandlerWrappedKey = &XFPINHandlerWrappedKey;
-
-    if (![objc_getAssociatedObject(self, XFPINHandlerWrappedKey) boolValue]) {
-        void (^originalHandler)(NSString *) = [self.pinHandler copy];
-
-        self.pinHandler = ^(NSString *PIN) {
-            // Preserve the original pairing state machine first.
-            if (originalHandler) originalHandler(PIN);
-
-            // Deliver the PIN through iOS, not through the XITFORGE screen.
-            XFSendPairingPINNotification(PIN);
-
-            // Tell the UI only that delivery happened; never pass/display the PIN there.
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [NSNotificationCenter.defaultCenter
-                    postNotificationName:XFPINDeliveredInternalNotification
-                                  object:nil];
-            });
-        };
-
-        objc_setAssociatedObject(self,
-                                 XFPINHandlerWrappedKey,
-                                 @YES,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+void XFClearPairingPINNotification(void) {
+    UNUserNotificationCenter *center=UNUserNotificationCenter.currentNotificationCenter;
+    if(XFPINActiveNotification) {
+        [center removePendingNotificationRequestsWithIdentifiers:@[XFPINActiveNotification]];
+        [center removeDeliveredNotificationsWithIdentifiers:@[XFPINActiveNotification]];
+        XFPINActiveNotification=nil;
     }
-
-    // Calls the original XFOnDevicePairing -start after swizzling.
-    // At this point its pinHandler is already wrapped, so _activePIN captures it.
-    [self xfn_start];
 }
-
-@end
