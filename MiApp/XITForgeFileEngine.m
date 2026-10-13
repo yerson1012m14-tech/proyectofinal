@@ -89,10 +89,10 @@
 }
 
 + (BOOL)tunnelFallbackConfigured {
-    return [self sharedTunnelBackend] != nil;
+    return [self tunnelReadyForHome];
 }
 
- + (BOOL)tunnelReadyForHome {
++ (BOOL)tunnelReadyForHome {
     id backend = [self sharedTunnelBackend];
     return [self boolGetter:NSSelectorFromString(@"connected") object:backend];
 }

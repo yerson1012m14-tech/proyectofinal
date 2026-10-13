@@ -1758,7 +1758,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     NSString *localFailure = [context[@"localResolveError"] isKindOfClass:NSString.class] ? context[@"localResolveError"] : nil;
 
     // 1) Intento normal por FilzaSlop/MCM.
-    if (destinationPath.length) {
+    if (destinationPath.length && ![XITForgeFileEngine tunnelReadyForHome]) {
         NSURL *destinationURL = [NSURL fileURLWithPath:destinationPath];
         NSError *writeError = nil;
         BOOL written = XITForgeWriteExactFile(location, destinationURL, &writeError);
