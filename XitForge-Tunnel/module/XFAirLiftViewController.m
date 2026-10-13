@@ -3,6 +3,7 @@
 #import "XFOnDevicePairing.h"
 #import "XFAirLiftProfessionalUI.h"
 #import "../shared/XFUserFacingError.h"
+#import "../shared/XFLocalVPNPolicy.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <QuickLook/QuickLook.h>
 #import <math.h>
@@ -1318,6 +1319,24 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 }
 - (void)xfPresentConnectionFailure:(NSError *)error {
     NSLog(@"XITFORGE conexión: %@",error);
+    if ([error.domain isEqualToString:@"XITFORGE.LocalVPN"] && error.code == XFLocalVPNExternalRequired) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Activa la conexión local"
+            message:@"Activa LocalDevVPN, vuelve a XITFORGE y pulsa Conectar túnel. Mantén el Wi-Fi encendido."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Abrir LocalDevVPN" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [UIApplication.sharedApplication openURL:[NSURL URLWithString:@"localdevvpn://"] options:@{} completionHandler:^(BOOL opened) {
+                if (!opened) dispatch_async(dispatch_get_main_queue(), ^{
+                    [UIApplication.sharedApplication openURL:[NSURL URLWithString:@"https://apps.apple.com/app/id6755608044"] options:@{} completionHandler:nil];
+                });
+            }];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Entendido" style:UIAlertActionStyleCancel handler:nil]];
+        void (^presentAlert)(void) = ^{ [self presentViewController:alert animated:YES completion:nil]; };
+        if ([self.presentedViewController isKindOfClass:UIAlertController.class])
+            [self.presentedViewController dismissViewControllerAnimated:YES completion:presentAlert];
+        else presentAlert();
+        return;
+    }
     NSString *message = nil;
     if ([error.domain isEqualToString:@"XITFORGE.LocalVPN"]) message = XFUserFacingError(error.localizedDescription);
     else if ([error.domain isEqualToString:@"XitForge.AirLift"] && (error.code == 1001 || error.code == 1002 || error.code == 1003 || error.code == 1005))
