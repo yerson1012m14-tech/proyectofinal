@@ -11,10 +11,31 @@ targets:
       - path: MiApp
     dependencies:
       - sdk: AVFoundation.framework
+      - sdk: NetworkExtension.framework
+      - target: XFLocalTunnel
+        embed: true
       - sdk: QuartzCore.framework
     settings:
       base:
         INFOPLIST_FILE: MiApp/Info.plist
+        CODE_SIGN_ENTITLEMENTS: MiApp/NetworkExtensions.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.apple.mobile.MobileHouseArrest
         CODE_SIGNING_ALLOWED: NO
 
+
+  XFLocalTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: XFLocalTunnel
+    dependencies:
+      - sdk: NetworkExtension.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.apple.mobile.MobileHouseArrest.LocalTunnel
+        PRODUCT_NAME: XFLocalTunnel
+        INFOPLIST_FILE: XFLocalTunnel/Info.plist
+        CODE_SIGN_ENTITLEMENTS: XFLocalTunnel/NetworkExtensions.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        CODE_SIGNING_ALLOWED: NO
