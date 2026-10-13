@@ -15,6 +15,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// Enable only when the configured port was advertised as _remoted._tcp.
 /// The default raw transport expects _remotepairing._tcp.
 @property (nonatomic) BOOL usesRemoteXPC;
+@property (nonatomic,copy) NSArray<NSDictionary *> *endpointCandidates;
+@property (nonatomic,copy) NSDictionary *endpointDiscovery;
 @property (nonatomic, readonly, copy) NSString *pairingKind;
 /// Empty until a catalogue has been loaded; "CoreDevice AppService" or
 /// "Installation Proxy" after a successful query.
