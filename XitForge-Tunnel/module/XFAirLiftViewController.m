@@ -6,6 +6,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <QuickLook/QuickLook.h>
 #import <math.h>
+#import <objc/message.h>
 #import <arpa/inet.h>
 #import <sys/stat.h>
 #import <fcntl.h>
@@ -919,6 +920,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     self.importButton = [self buttonWithTitle:@"Importar" selector:@selector(importPairing) prominent:NO];
     [self.headerStack addArrangedSubview:self.importButton];
 
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(xfLocalNetworkDisconnected:) name:@"XITForgeLocalVPNDisconnected" object:nil];
     self.connectButton = [self buttonWithTitle:@"Conectar túnel" selector:@selector(connectAndLoad) prominent:YES];
     self.connectButton.enabled = NO;
     [self.headerStack addArrangedSubview:self.connectButton];
@@ -1145,7 +1147,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 - (void)configureEndpoint {
     if (self.busy) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Dirección del túnel"
-        message:@"Usa la dirección y el puerto de LocalDevVPN. Los valores iniciales son 10.7.0.1 y 49152."
+        message:@"Usa la dirección y el puerto de la red local integrada. Los valores iniciales son 10.7.0.1 y 49152."
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.placeholder = @"Dirección IPv4";
@@ -1253,11 +1255,55 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 }
 
 - (void)pairingAction {
-    if (self.pairingInProgress) [self cancelOnDevicePairing];
-    else [self startOnDevicePairing];
+    if (self.busy) return;
+    if (self.pairingInProgress) { [self cancelOnDevicePairing]; return; }
+    if (NSProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27) { [self startOnDevicePairing]; return; }
+    [self xfPrepareLocalNetwork:^(BOOL ready) { if (ready) [self startOnDevicePairing]; }];
 }
 
+- (void)xfLocalNetworkDisconnected:(NSNotification *)notification {
+    if (self.busy) return;
+    dispatch_async(self.operationQueue, ^{
+        [self.backend disconnect];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.tunnelConnected = NO;
+            self.statusLabel.text = @"La red local se desconectó. Pulsa Conectar túnel para recuperarla.";
+            [self updateButtons];
+        });
+    });
+}
 - (void)connectAndLoad {
+    if (self.busy) return;
+    if (!self.pairingAvailable) {
+        XFPresentError(self, @"Emparejamiento necesario", @"Empareja este iPhone o importa su registro."); return;
+    }
+    [self xfPrepareLocalNetwork:^(BOOL ready) { if (ready) [self xfConnectBackendAndLoad]; }];
+}
+- (void)xfPrepareLocalNetwork:(void (^)(BOOL))completion {
+    Class manager = NSClassFromString(@"XFLocalVPNManager");
+    SEL selector = NSSelectorFromString(@"connectWithPeerAddress:completion:");
+    if (!manager || ![manager respondsToSelector:selector]) {
+        XFPresentError(self, @"Actualiza XITFORGE", @"Instala la IPA completa con la extensión de red local integrada."); completion(NO); return;
+    }
+    self.busy = YES; self.statusLabel.text = @"Preparando red local…";
+    [self updateButtons]; [self.connectionStatus showConnecting];
+    ((void (*)(id, SEL, NSString *, void (^)(NSError *)))objc_msgSend)(manager, selector, self.backend.deviceAddress, ^(NSError *error) {
+        self.busy = NO;
+        if (error) {
+            self.statusLabel.text = @"No se pudo iniciar la red local.";
+            [self updateButtons];
+            if (self.presentedViewController) { completion(NO); return; }
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"VPN integrada no disponible"
+                message:[error.localizedDescription stringByAppendingString:@"\nSi ya tienes una red local activa, puedes intentar conectar con ella."]
+                preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) { completion(NO); }]];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Usar red activa" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { completion(YES); }]];
+            [self presentViewController:alert animated:YES completion:nil]; return;
+        }
+        completion(YES);
+    });
+}
+- (void)xfConnectBackendAndLoad {
     if (self.busy) return;
     if (!self.pairingAvailable) {
         XFPresentError(self, @"Emparejamiento necesario", @"Empareja este iPhone o importa su registro.");
@@ -1275,7 +1321,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
             self.busy = NO;
             self.tunnelConnected = connected;
             self.pairingAvailable = paired;
-            self.statusLabel.text = connected ? @"Túnel listo. Activa o desactiva las opciones desde Home." : @"No se pudo conectar. Comprueba LocalDevVPN y Wi-Fi.";
+            self.statusLabel.text = connected ? @"Túnel listo. Activa o desactiva las opciones desde Home." : @"No se pudo conectar. Comprueba la red local y vuelve a conectar.";
             if (!connected) XFPresentError(self, @"No se pudo conectar", XFErrorMessage(error));
             [self updateButtons];
             [self.view setNeedsLayout];

@@ -94,7 +94,7 @@
 
  + (BOOL)tunnelReadyForHome {
     id backend = [self sharedTunnelBackend];
-    return [self boolGetter:NSSelectorFromString(@"hasPairingRecord") object:backend];
+    return [self boolGetter:NSSelectorFromString(@"connected") object:backend];
 }
 
 + (BOOL)isSafeComponent:(NSString *)component {

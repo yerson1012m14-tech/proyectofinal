@@ -605,6 +605,13 @@
                     reason
                 );
 
+                if (![LicenseValidator isDefinitiveLicenseFailure:reason]) {
+                    // Keep the existing key and UI; protected operations still require the server.
+                    self.window.rootViewController = self.mainTabBar;
+                    [self xfStartLicenseRecheckTimer];
+                    [self applySavedScreenProtection];
+                    return;
+                }
                 // Do not erase the old key or show a new-key screen before restoration.
                 [self xfRequireNewLogin:nil];
             }
@@ -699,7 +706,7 @@
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf) return;
         strongSelf.licenseRecheckInProgress = NO;
-        if (!valid) { [strongSelf xfRequireNewLogin:nil]; return; }
+        if (!valid) { if ([LicenseValidator isDefinitiveLicenseFailure:reason]) [strongSelf xfRequireNewLogin:nil]; return; }
         if (expiresAt.length > 0) {
             [strongSelf xfWarnIfKeyApproachingExpiry:expiresAt];
             [[NSUserDefaults standardUserDefaults] setObject:expiresAt forKey:@"MiFilzaLicenseExpiresAt"];

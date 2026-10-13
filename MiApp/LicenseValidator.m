@@ -1,5 +1,7 @@
 #import "LicenseValidator.h"
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
+#import <mach/mach_time.h>
 
 static NSString * const kLicenseAPIURL =
     @"https://xitforge-license-server.onrender.com/api/license/validate";
@@ -7,7 +9,20 @@ static NSString * const kLicenseAPIURL =
 static NSString * const kLicenseAccessLevelDefaultsKey =
     @"XITForgeLicenseAccessLevel";
 
+// Unlike wall time or mach_absolute_time, this clock also advances while asleep.
+static CFTimeInterval XFContinuousSessionTime(void) {
+    static mach_timebase_info_data_t scale;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ mach_timebase_info(&scale); });
+    if (!scale.denom) return CACurrentMediaTime();
+    return (double)mach_continuous_time() * (double)scale.numer / (double)scale.denom / 1000000000.0;
+}
+
 static NSString *xfSessionToken = nil;
+static CFTimeInterval xfSessionRefreshDeadline;
+static NSUInteger xfSessionGeneration;
+static NSMutableDictionary<NSNumber *, NSDictionary *> *xfPresentations;
+static NSMutableDictionary<NSString *, NSMutableArray *> *xfValidationWaiters;
 // Retained only in memory to retrieve restore-only originals after an expiry.
 static NSString *xfOriginalsCleanupToken = nil;
 static NSDate *xfCleanupTokenCachedUntil = nil;
@@ -46,11 +61,35 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
     return nil;
 }
 
-+ (void)validateKey:(NSString *)key
++ (BOOL)isDefinitiveLicenseFailure:(NSString *)reason {
+    return [@[@"expired", @"revoked", @"not_found", @"inactive", @"device_limit",
+        @"device_mismatch", @"invalid_format", @"premium_required"] containsObject:reason ?: @""];
+}
++ (NSDictionary *)presentationForOptionId:(NSNumber *)optionId {
+    @synchronized(self) { return [xfPresentations[optionId] copy] ?: @{}; }
+}
++ (void)validateKey:(NSString *)key completion:(LicenseValidationCompletion)completion {
+    NSString *normalized = [[key stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] uppercaseString] ?: @"";
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!xfValidationWaiters) xfValidationWaiters = [NSMutableDictionary dictionary];
+        NSMutableArray *waiters = xfValidationWaiters[normalized];
+        if (waiters) { if (completion) [waiters addObject:[completion copy]]; return; }
+        waiters = [NSMutableArray array];
+        if (completion) [waiters addObject:[completion copy]];
+        xfValidationWaiters[normalized] = waiters;
+        [self performValidationForKey:normalized completion:^(BOOL valid, NSString *reason, NSString *expiresAt) {
+            NSArray *callbacks = [xfValidationWaiters[normalized] copy];
+            [xfValidationWaiters removeObjectForKey:normalized];
+            for (LicenseValidationCompletion callback in callbacks) callback(valid, reason, expiresAt);
+        }];
+    });
+}
++ (void)performValidationForKey:(NSString *)key
          completion:(LicenseValidationCompletion)completion {
 
-    // Do not keep the previous in-memory token if a fresh validation fails.
-    [self clearSession];
+    __block NSUInteger generation;
+    @synchronized(self) { generation = xfSessionGeneration; }
+    // A transient validation error must not erase an already valid session.
     NSString *normalizedKey =
         [[key stringByTrimmingCharactersInSet:
             [NSCharacterSet whitespaceAndNewlineCharacterSet]]
@@ -146,6 +185,12 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
 
         dispatch_async(dispatch_get_main_queue(), ^{
 
+            @synchronized(self) {
+                if (generation != xfSessionGeneration) {
+                    if (completion) completion(NO, @"session_changed", nil);
+                    return;
+                }
+            }
             if (error) {
 
                 if (completion) {
@@ -208,8 +253,11 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
             NSDictionary *json =
                 (NSDictionary *)object;
 
-            BOOL valid =
-                [json[@"valid"] boolValue];
+            if (![json[@"valid"] isKindOfClass:NSNumber.class]) {
+                if (completion) completion(NO, @"invalid_response", nil);
+                return;
+            }
+            BOOL valid = [json[@"valid"] boolValue];
 
             NSString *newToken = [json[@"sessionToken"] isKindOfClass:[NSString class]]
                 ? json[@"sessionToken"] : nil;
@@ -225,9 +273,14 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
             }
             NSPredicate *tokenFormat = [NSPredicate predicateWithFormat:
                 @"SELF MATCHES %@", @"^xf2_[0-9a-f]{64}$"];
+            NSDateFormatter *serverClock = [[NSDateFormatter alloc] init];
+            serverClock.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+            serverClock.dateFormat = @"EEE, dd MMM yyyy HH:mm:ss zzz";
+            NSDate *serverNow = [serverClock dateFromString:[httpResponse valueForHTTPHeaderField:@"Date"] ?: @""];
+            NSTimeInterval remaining = [newExpiry timeIntervalSinceDate:serverNow ?: NSDate.date];
             BOOL completeSession = [newToken isKindOfClass:[NSString class]] &&
                 [tokenFormat evaluateWithObject:newToken] &&
-                newExpiry && [newExpiry timeIntervalSinceNow] > 0;
+                newExpiry && remaining > 0;
             valid = valid && completeSession;
 
             NSString *reason =
@@ -270,6 +323,7 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
                         xfSessionToken = [newToken copy];
                         xfOriginalsCleanupToken = [newToken copy];
                         xfSessionExpiresAt = newExpiry;
+                        xfSessionRefreshDeadline = XFContinuousSessionTime() + remaining;
                     }
                     [defaults setObject:accessLevel
                                  forKey:kLicenseAccessLevelDefaultsKey];
@@ -331,6 +385,14 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
                         [json[@"authorized"] isKindOfClass:[NSNumber class]] &&
                         [json[@"authorized"] boolValue] &&
                         [returnedId isEqualToNumber:optionId];
+                    if (accepted) {
+                        @synchronized(self) {
+                            if (!xfPresentations) xfPresentations = [NSMutableDictionary dictionary];
+                            NSString *message = [json[@"warningMessage"] isKindOfClass:NSString.class] ? json[@"warningMessage"] : @"";
+                            NSString *color = [json[@"statusColor"] isKindOfClass:NSString.class] ? json[@"statusColor"] : @"green";
+                            xfPresentations[optionId] = @{@"warningMessage":message, @"statusColor":[@[@"green",@"yellow",@"red"] containsObject:color] ? color : @"green"};
+                        }
+                    }
                     warn = accepted && [json[@"warnOnActivate"] isKindOfClass:[NSNumber class]] &&
                         [json[@"warnOnActivate"] boolValue];
                 }
@@ -343,8 +405,10 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
 
 + (void)clearSession {
     @synchronized(self) {
+        xfSessionGeneration++;
         xfSessionToken = nil;
         xfSessionExpiresAt = nil;
+        xfSessionRefreshDeadline = 0;
     }
 }
 
@@ -363,10 +427,14 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
         }
         return;
     }
-    [self clearSession];
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[NSNotificationCenter defaultCenter] postNotificationName:kXFLockNotification object:nil];
-    });
+    // Revalidate without erasing a newer token because an older request failed.
+    // A 401/403 can mean a short-lived token or one disabled option.
+    NSString *key = [NSUserDefaults.standardUserDefaults stringForKey:@"MiFilzaLicenseKey"];
+    if (!key.length) return;
+    [self validateKey:key completion:^(BOOL valid, NSString *reason, NSString *expiresAt) {
+        if (!valid && [self isDefinitiveLicenseFailure:reason])
+            [NSNotificationCenter.defaultCenter postNotificationName:kXFLockNotification object:nil];
+    }];
 }
 
 + (void)authorizeRestoreRequest:(NSMutableURLRequest *)request
@@ -439,7 +507,7 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
     }
     NSString *token = nil;
     @synchronized(self) {
-        if (xfSessionToken.length > 0 && [xfSessionExpiresAt timeIntervalSinceNow] > 30.0) {
+        if (xfSessionToken.length > 0 && xfSessionRefreshDeadline - XFContinuousSessionTime() > 30.0) {
             token = [xfSessionToken copy];
         }
     }
@@ -456,10 +524,10 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
         return;
     }
     [self validateKey:key completion:^(BOOL valid, NSString *reason, NSString *expiresAt) {
-        (void)reason; (void)expiresAt;
+        (void)expiresAt;
         NSString *fresh = nil;
         @synchronized(self) {
-            if (valid && xfSessionToken.length > 0 && [xfSessionExpiresAt timeIntervalSinceNow] > 0) {
+            if (valid && xfSessionToken.length > 0 && xfSessionRefreshDeadline > XFContinuousSessionTime()) {
                 fresh = [xfSessionToken copy];
             }
         }
@@ -468,7 +536,7 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
             if (completion) completion(YES);
         } else {
             if (completion) completion(NO);
-            [[NSNotificationCenter defaultCenter] postNotificationName:kXFLockNotification object:nil];
+            if ([self isDefinitiveLicenseFailure:reason]) [[NSNotificationCenter defaultCenter] postNotificationName:kXFLockNotification object:nil];
         }
     }];
 }

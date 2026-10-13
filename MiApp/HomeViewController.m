@@ -175,6 +175,7 @@ static void XITForgeEnsureEngine(void) {
 }
 
 static NSString *XITForgeDataContainerPath(NSString *bundleId, NSString **errorOut) {
+    if ([XITForgeFileEngine tunnelReadyForHome]) { if (errorOut) *errorOut = @"Acceso por túnel seleccionado."; return nil; }
     if (errorOut) *errorOut = nil;
     if (bundleId.length == 0) {
         if (errorOut) *errorOut = @"bundleId vacío";
@@ -277,6 +278,8 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 @property (nonatomic, copy) NSString *fileUrl;
 @property (nonatomic, copy) NSString *originalFileUrl;
 @property (nonatomic, copy) NSArray<NSDictionary *> *fileItems;
+@property (nonatomic, copy) NSString *warningMessage;
+@property (nonatomic, copy) NSString *statusColor;
 @end
 @implementation XITForgeOption
 @end
@@ -286,6 +289,7 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
 @property (nonatomic, strong) UILabel *nameLabel;
 @property (nonatomic, strong) UILabel *descriptionLabel;
 @property (nonatomic, strong) UIView *radioOuter;
+@property (nonatomic, strong) UIView *statusDot;
 @property (nonatomic, strong) UIView *radioInner;
 - (void)configureSelected:(BOOL)selected accent:(UIColor *)accent;
 @end
@@ -308,6 +312,10 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
     self.cardView.layer.shadowRadius = 12.0;
     self.cardView.layer.shadowOffset = CGSizeMake(0.0, 7.0);
     [self.contentView addSubview:self.cardView];
+    self.statusDot = [[UIView alloc] init];
+    self.statusDot.translatesAutoresizingMaskIntoConstraints = NO;
+    self.statusDot.layer.cornerRadius = 4.0;
+    [self.cardView addSubview:self.statusDot];
     self.nameLabel = [[UILabel alloc] init];
     self.nameLabel.translatesAutoresizingMaskIntoConstraints = NO;
     self.nameLabel.textColor = [UIColor colorWithWhite:0.98 alpha:1.0];
@@ -347,7 +355,11 @@ static NSURL *XITForgeExistingDirectoryChild(NSURL *parent, NSString *requestedN
         [self.radioInner.widthAnchor constraintEqualToConstant:14.0],
         [self.radioInner.heightAnchor constraintEqualToConstant:14.0],
         [self.nameLabel.topAnchor constraintEqualToAnchor:self.cardView.topAnchor constant:17.0],
-        [self.nameLabel.leadingAnchor constraintEqualToAnchor:self.cardView.leadingAnchor constant:18.0],
+        [self.statusDot.leadingAnchor constraintEqualToAnchor:self.cardView.leadingAnchor constant:18.0],
+        [self.statusDot.centerYAnchor constraintEqualToAnchor:self.nameLabel.centerYAnchor],
+        [self.statusDot.widthAnchor constraintEqualToConstant:8.0],
+        [self.statusDot.heightAnchor constraintEqualToConstant:8.0],
+        [self.nameLabel.leadingAnchor constraintEqualToAnchor:self.statusDot.trailingAnchor constant:9.0],
         [self.nameLabel.trailingAnchor constraintLessThanOrEqualToAnchor:self.radioOuter.leadingAnchor constant:-14.0],
         [self.descriptionLabel.topAnchor constraintEqualToAnchor:self.nameLabel.bottomAnchor constant:6.0],
         [self.descriptionLabel.leadingAnchor constraintEqualToAnchor:self.nameLabel.leadingAnchor],
@@ -763,6 +775,9 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 }
 
 - (void)showActivationBannerForOptions:(NSArray<XITForgeOption *> *)options {
+    [self showBannerForOptions:options deactivated:NO];
+}
+- (void)showBannerForOptions:(NSArray<XITForgeOption *> *)options deactivated:(BOOL)deactivated {
     UIView *host = self.navigationController.view ?: self.view;
     if (!host) return;
     UIView *banner = [[UIView alloc] init];
@@ -781,7 +796,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     accentBar.layer.cornerRadius = 2.0;
     UILabel *title = [[UILabel alloc] init];
     title.translatesAutoresizingMaskIntoConstraints = NO;
-    title.text = options.count > 1 ? @"OPCIONES ACTIVADAS" : @"OPCIÓN ACTIVADA";
+    title.text = deactivated ? (options.count > 1 ? @"OPCIONES DESACTIVADAS" : @"OPCIÓN DESACTIVADA") : (options.count > 1 ? @"OPCIONES ACTIVADAS" : @"OPCIÓN ACTIVADA");
     title.textColor = [UIColor whiteColor];
     title.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightBold];
     UILabel *detail = [[UILabel alloc] init];
@@ -843,7 +858,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     }];
 }
 
-- (void)showAimbotWarning {
+- (void)showOptionWarning:(NSString *)text {
     UIView *host = self.navigationController.view ?: self.view;
     if (!host) return;
     if (self.aimbotWarningOverlay) { [self.aimbotWarningOverlay removeFromSuperview]; self.aimbotWarningOverlay = nil; }
@@ -874,7 +889,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     title.textColor = [UIColor whiteColor];
     title.font = [UIFont systemFontOfSize:17.0 weight:UIFontWeightBold];
     title.numberOfLines = 0;
-    UIView *messageBox = [[UIView alloc] init];
+    UIScrollView *messageBox = [[UIScrollView alloc] init];
     messageBox.translatesAutoresizingMaskIntoConstraints = NO;
     messageBox.backgroundColor = [UIColor colorWithWhite:0.085 alpha:1.0];
     messageBox.layer.cornerRadius = 14.0;
@@ -882,7 +897,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     messageBox.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.07].CGColor;
     UILabel *message = [[UILabel alloc] init];
     message.translatesAutoresizingMaskIntoConstraints = NO;
-    message.text = @"ANTES DE ENTRAR A LA CUENTA DARLE A DESACTIVAR";
+    message.text = text.length ? text : @"ANTES DE ENTRAR A LA CUENTA DARLE A DESACTIVAR";
     message.textAlignment = NSTextAlignmentCenter;
     message.textColor = [UIColor colorWithWhite:0.80 alpha:1.0];
     message.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightMedium];
@@ -924,13 +939,15 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
         [messageBox.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20.0],
         [messageBox.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20.0],
         [messageBox.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:18.0],
-        [message.leadingAnchor constraintEqualToAnchor:messageBox.leadingAnchor constant:18.0],
-        [message.trailingAnchor constraintEqualToAnchor:messageBox.trailingAnchor constant:-18.0],
-        [message.topAnchor constraintEqualToAnchor:messageBox.topAnchor constant:16.0],
-        [message.bottomAnchor constraintEqualToAnchor:messageBox.bottomAnchor constant:-16.0],
+        [messageBox.heightAnchor constraintEqualToConstant:text.length > 160 ? 160.0 : 96.0],
+        [message.widthAnchor constraintEqualToAnchor:messageBox.frameLayoutGuide.widthAnchor constant:-36.0],
+        [message.leadingAnchor constraintEqualToAnchor:messageBox.contentLayoutGuide.leadingAnchor constant:18.0],
+        [message.trailingAnchor constraintEqualToAnchor:messageBox.contentLayoutGuide.trailingAnchor constant:-18.0],
+        [message.topAnchor constraintEqualToAnchor:messageBox.contentLayoutGuide.topAnchor constant:16.0],
+        [message.bottomAnchor constraintEqualToAnchor:messageBox.contentLayoutGuide.bottomAnchor constant:-16.0],
         [understoodButton.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20.0],
         [understoodButton.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20.0],
-        [understoodButton.topAnchor constraintEqualToAnchor:messageBox.bottomAnchor constant:18.0],
+        [understoodButton.topAnchor constraintEqualToAnchor:messageBox.contentLayoutGuide.bottomAnchor constant:18.0],
         [understoodButton.heightAnchor constraintEqualToConstant:50.0],
         [understoodButton.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-20.0]
     ]];
@@ -1152,6 +1169,9 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
                 if (![rawItem isKindOfClass:[NSDictionary class]]) continue;
                 NSDictionary *raw = (NSDictionary *)rawItem;
                 XITForgeOption *option = [[XITForgeOption alloc] init];
+                option.warningMessage = [raw[@"warningMessage"] isKindOfClass:NSString.class] ? raw[@"warningMessage"] : nil;
+                NSString *color = [raw[@"statusColor"] isKindOfClass:NSString.class] ? raw[@"statusColor"] : @"green";
+                option.statusColor = [@[@"green",@"yellow",@"red"] containsObject:color] ? color : @"green";
                 if ([raw[@"id"] isKindOfClass:[NSNumber class]]) option.optionId = raw[@"id"];
                 if ([raw[@"name"] isKindOfClass:[NSString class]]) option.name = raw[@"name"];
                 if ([raw[@"description"] isKindOfClass:[NSString class]]) option.optionDescription = raw[@"description"];
@@ -1232,6 +1252,11 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
     XITForgeOption *option = [self optionAtIndexPath:indexPath];
     if (!option) return cell;
     BOOL selected = self.selectedOptionIndexPath && [self.selectedOptionIndexPath isEqual:indexPath];
+    cell.statusDot.backgroundColor = [option.statusColor isEqualToString:@"red"] ? UIColor.systemRedColor :
+        ([option.statusColor isEqualToString:@"yellow"] ? UIColor.systemYellowColor : UIColor.systemGreenColor);
+    cell.statusDot.accessibilityLabel = [option.statusColor isEqualToString:@"red"] ? @"Estado rojo" :
+        ([option.statusColor isEqualToString:@"yellow"] ? @"Estado amarillo" : @"Estado verde");
+    cell.statusDot.isAccessibilityElement = YES;
     cell.nameLabel.text = option.name ?: @"Opción";
     cell.descriptionLabel.text = option.optionDescription ?: @"";
     UIColor *accent = XITForgeAccentColor();
@@ -1303,7 +1328,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
         }
         [self showActivationBannerForOptions:activatedOptions];
         [self playActivationAudio];
-        if (self.warnOnCurrentActivation) [self showAimbotWarning];
+        if (self.warnOnCurrentActivation) [self showOptionWarning:activatedOptions.firstObject.warningMessage];
         self.warnOnCurrentActivation = NO;
         UINotificationFeedbackGenerator *feedback = [[UINotificationFeedbackGenerator alloc] init];
         [feedback notificationOccurred:UINotificationFeedbackTypeSuccess];
@@ -1371,7 +1396,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
         strongSelf.tableView.userInteractionEnabled = YES;
         if (!authorized) {
             [strongSelf updateActivateButtonForCurrentSelection];
-            [strongSelf showCenteredActivationError:@"Sin key válida o sin autorización para esta opción. Comprueba tu licencia y conexión."];
+            [strongSelf showCenteredActivationError:@"No se pudo verificar esta opción. Comprueba tu conexión e inténtalo de nuevo."];
             return;
         }
         // No aplicar otra opción si cambió la selección mientras se verificaba.
@@ -1379,6 +1404,9 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
             [strongSelf updateActivateButtonForCurrentSelection];
             return;
         }
+        NSDictionary *presentation = [LicenseValidator presentationForOptionId:option.optionId];
+        if ([presentation[@"warningMessage"] isKindOfClass:NSString.class]) option.warningMessage = presentation[@"warningMessage"];
+        if ([presentation[@"statusColor"] isKindOfClass:NSString.class]) option.statusColor = presentation[@"statusColor"];
         strongSelf.warnOnCurrentActivation = showWarning;
         [strongSelf beginActivationUI];
         strongSelf.pendingActivationOptions = @[option];
@@ -1403,6 +1431,11 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
 }
 
 - (void)finishDeactivationUIWithSuccess:(BOOL)success noOriginals:(BOOL)noOriginals {
+    NSMutableArray<XITForgeOption *> *deactivated = [NSMutableArray array];
+    for (XITForgeOption *option in self.options) {
+        if ([self isOptionActivated:option] && (self.deactivationTargetsAll ||
+            [self.deactivationTargetKeys containsObject:[self activationKeyForOption:option]])) [deactivated addObject:option];
+    }
     self.deactivationInProgress = NO;
     self.tableView.userInteractionEnabled = YES;
     [self.deactivateButton setTitle:@"DESACTIVAR" forState:UIControlStateNormal];
@@ -1432,6 +1465,7 @@ static NSMutableDictionary<NSString *, XITForgeOptionsViewController *> *XFActiv
         }
         self.deactivationTargetKeys = nil;
         self.deactivationTargetsAll = NO;
+        [self showBannerForOptions:deactivated deactivated:YES];
         self.selectionHintLabel.text = @"✓  DESACTIVADO";
         self.selectionHintLabel.textColor = [UIColor colorWithWhite:0.92 alpha:1.0];
         UINotificationFeedbackGenerator *feedback = [[UINotificationFeedbackGenerator alloc] init];

@@ -20,6 +20,8 @@ typedef void (^LicenseValidationCompletion)(BOOL valid,
 + (void)authorizeActivationForOptionId:(NSNumber *)optionId
                           completion:(void (^)(BOOL authorized, BOOL showWarning))completion;
 
++ (NSDictionary *)presentationForOptionId:(NSNumber *)optionId;
++ (BOOL)isDefinitiveLicenseFailure:(NSString * _Nullable)reason;
 + (void)clearSession;
 + (void)handleProtectedHTTPResponse:(NSURLResponse * _Nullable)response;
 
