@@ -79,6 +79,12 @@ static UILabel *XFProbeLabel(NSString *text, UIFontTextStyle style) {
         self.record=saved;self.applicationField.text=saved[@"app"];
         self.folderField.text=[saved[@"path"] stringByDeletingLastPathComponent];
         NSString *detail=[saved[@"report"] isKindOfClass:NSString.class]?saved[@"report"]:@"Prueba pendiente de comprobar. Su resultado no está confirmado.";
+        // Earlier builds saved internal reports alongside the active test. Keep
+        // its identity for cleanup, but never display or copy the old report.
+        if ([detail rangeOfString:@"diagnóst" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+            [detail rangeOfString:@"diagnost" options:NSCaseInsensitiveSearch].location != NSNotFound)
+            detail=@"Prueba pendiente de comprobar. Su resultado no está confirmado.";
+        else detail=XFUserFacingError(detail);
         [self showReport:detail];
     }
     [self updateControls];
@@ -168,30 +174,27 @@ static UILabel *XFProbeLabel(NSString *text, UIFontTextStyle style) {
     dispatch_async(self.queue, ^{
         NSError *error=nil;
         BOOL ok=NO,absent=NO,restart=NO;
-        NSString *warning=nil,*diagnostic=nil;
+        NSString *warning=nil;
         @try {
             ok=deleting?[self.backend deleteTestFileForApplication:app relativePath:path error:&error]:
                 [self.backend createTestFileForApplication:app relativePath:path error:&error];
             restart=[error.userInfo[@"ProbeException"] boolValue];
-            if(restart)diagnostic=[NSString stringWithFormat:@"Operación interrumpida por %@. No se consultó de nuevo el servicio.",error.userInfo[@"ExceptionName"]?:@"una excepción"];
-            else {
+            if(!restart) {
                 absent=deleting&&self.backend.lastDeletionAbsenceConfirmed;
                 warning=self.backend.lastDirectoryWarning;
-                diagnostic=self.backend.connectionDiagnostics;
             }
         } @catch(NSException *exception) {
             ok=NO;absent=NO;restart=YES;
             error=[NSError errorWithDomain:@"XitForge.Probe" code:1037 userInfo:@{
-                NSLocalizedDescriptionKey:[NSString stringWithFormat:@"La operación se interrumpió (%@). Cierra y vuelve a abrir XitForge. Su resultado no está confirmado.",exception.name?:@"NSException"]}];
-            diagnostic=@"Excepción al ejecutar la prueba o preparar su resultado. Registro conservado.";
+                NSLocalizedDescriptionKey:@"La operación se interrumpió. Cierra y vuelve a abrir XITFORGE. Su resultado no está confirmado."}];
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             self.busy=NO;self.requiresRestart=restart;
             NSString *result=ok?(deleting?(absent?@"LIMPIEZA CONFIRMADA: iOS confirmó la ausencia del archivo de prueba.":@"PRUEBA RETIRADA: se conservó respaldo, pero iOS no permitió confirmar su ausencia. No se declara limpieza completa."):
                 @"CREACIÓN VERIFICADA: se creó el archivo, se leyó desde esa misma ruta y el contenido coincidió. El servicio confirmó el retorno del archivo a la app."):
-                [NSString stringWithFormat:@"RESULTADO INCONCLUSO\n%@",error.localizedDescription?:@"El servicio no confirmó la operación."];
-            if(warning.length)result=[result stringByAppendingFormat:@"\n\nAviso: %@",warning];
-            result=[result stringByAppendingFormat:@"\n\nFecha: %@\n\nDiagnóstico:\n%@",[NSDateFormatter localizedStringFromDate:NSDate.date dateStyle:NSDateFormatterShortStyle timeStyle:NSDateFormatterMediumStyle],diagnostic?:@""];
+                [NSString stringWithFormat:@"RESULTADO INCONCLUSO\n%@",XFUserFacingError(error.localizedDescription)];
+            if(warning.length)result=[result stringByAppendingFormat:@"\n\nAviso: %@",XFUserFacingError(warning)];
+            result=[result stringByAppendingFormat:@"\n\nFecha: %@",[NSDateFormatter localizedStringFromDate:NSDate.date dateStyle:NSDateFormatterShortStyle timeStyle:NSDateFormatterMediumStyle]];
             [self showReport:result];
             if(ok&&deleting&&absent){self.record=nil;[NSUserDefaults.standardUserDefaults removeObjectForKey:XFProbeRecordKey];}
             [self updateControls];

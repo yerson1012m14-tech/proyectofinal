@@ -194,12 +194,13 @@ static NSString *XFString(id value) {
 }
 
 static NSString *XFErrorMessage(NSError *error) {
-    NSLog(@"XITFORGE diagnóstico del túnel: %@",error);
+    NSLog(@"XITFORGE error de conexión: %@",error);
     return XFUserFacingError(error.localizedDescription);
 }
 
 static void XFPresentError(UIViewController *controller, NSString *title, NSString *message) {
-    message=XFUserFacingError(message);
+    BOOL successNotice = [@[@"Archivo reemplazado",@"Original restaurado",@"Archivo eliminado",@"Archivo creado"] containsObject:title];
+    if (!successNotice) message=XFUserFacingError(message);
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
                                                                   message:message
                                                            preferredStyle:UIAlertControllerStyleAlert];
@@ -435,14 +436,14 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
         NSError *error = nil;
         NSArray<NSDictionary *> *entries = [self.backend listDirectoryForApplication:self.applicationID
                                                                        relativePath:self.relativePath error:&error];
-        NSString *warning = self.backend.lastDirectoryWarning;
+        NSString *warning = self.backend.lastDirectoryWarning.length ? XFUserFacingError(self.backend.lastDirectoryWarning) : @"";
         BOOL connected = self.backend.connected;
         BOOL paired = self.backend.hasPairingRecord;
         dispatch_async(dispatch_get_main_queue(), ^{
             [self setBusyUI:NO];
             [self.connectionStatus showConnected:connected pairingAvailable:paired];
             [self.view setNeedsLayout];
-            self.directoryWarning = warning;
+            self.directoryWarning = warning.length ? XFUserFacingError(warning) : @"";
             if (!entries) {
                 self.entries = @[];
                 [self.tableView reloadData];
@@ -523,7 +524,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     dispatch_async(self.operationQueue, ^{
         NSError *error = nil;
         NSData *data = [self.backend readFileForApplication:application relativePath:path error:&error];
-        NSString *warning = self.backend.lastDirectoryWarning;
+        NSString *warning = self.backend.lastDirectoryWarning.length ? XFUserFacingError(self.backend.lastDirectoryWarning) : @"";
         BOOL connected = self.backend.connected;
         BOOL paired = self.backend.hasPairingRecord;
         NSURL *fileURL = nil;
@@ -540,7 +541,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [self setBusyUI:NO];
             [self.connectionStatus showConnected:connected pairingAvailable:paired];
-            self.directoryWarning = warning;
+            self.directoryWarning = warning.length ? XFUserFacingError(warning) : @"";
             [self.view setNeedsLayout];
             if (!fileURL) {
                 NSString *message = XFErrorMessage(error);
@@ -718,12 +719,12 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     dispatch_async(self.operationQueue, ^{
         NSError *error = nil;
         BOOL replaced = [self.backend replaceFileForApplication:application relativePath:path data:payload error:&error];
-        NSString *warning = self.backend.lastDirectoryWarning;
+        NSString *warning = self.backend.lastDirectoryWarning.length ? XFUserFacingError(self.backend.lastDirectoryWarning) : @"";
         BOOL connected = self.backend.connected; BOOL paired = self.backend.hasPairingRecord;
         dispatch_async(dispatch_get_main_queue(), ^{
             [self setBusyUI:NO];
             [self.connectionStatus showConnected:connected pairingAvailable:paired];
-            self.directoryWarning = warning;
+            self.directoryWarning = warning.length ? XFUserFacingError(warning) : @"";
             [self.view setNeedsLayout];
             NSString *detail = replaced ? [NSString stringWithFormat:@"App: %@\nArchivo: %@", application, path] : XFErrorMessage(error);
             if (warning.length && [detail rangeOfString:warning].location == NSNotFound) detail = [detail stringByAppendingFormat:@"\n\n%@", warning];
@@ -758,17 +759,18 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
         BOOL removed = [self.backend deleteFileForApplication:application relativePath:path error:&error];
         BOOL absent = self.backend.lastDeletionAbsenceConfirmed;
         NSURL *backup = self.backend.lastDeletedFileBackupURL;
-        NSString *warning = self.backend.lastDirectoryWarning;
+        NSString *warning = self.backend.lastDirectoryWarning.length ? XFUserFacingError(self.backend.lastDirectoryWarning) : @"";
         BOOL connected = self.backend.connected; BOOL paired = self.backend.hasPairingRecord;
         dispatch_async(dispatch_get_main_queue(), ^{
             [self setBusyUI:NO];
             [self.connectionStatus showConnected:connected pairingAvailable:paired];
-            self.directoryWarning = warning;
+            self.directoryWarning = warning.length ? XFUserFacingError(warning) : @"";
             [self.view setNeedsLayout];
             NSString *title = !removed ? @"No se completó la eliminación" : (absent ? @"Archivo eliminado" : @"Archivo trasladado al respaldo");
             NSString *detail = removed ? [NSString stringWithFormat:@"App: %@\nArchivo: %@\n\n%@", application, path,
                 absent ? @"Se confirmó que la ruta ya no contiene el archivo. La copia original se conserva en XitForge." : @"El original se recuperó en el respaldo. iOS no permitió confirmar si la ruta de la app ya está ausente."] : XFErrorMessage(error);
             if (warning.length && [detail rangeOfString:warning].location == NSNotFound) detail = [detail stringByAppendingFormat:@"\n\n%@", warning];
+            if (!removed) detail = XFUserFacingError(detail);
             UIAlertController *result = [UIAlertController alertControllerWithTitle:title message:detail preferredStyle:UIAlertControllerStyleAlert];
             if (backup) [result addAction:[UIAlertAction actionWithTitle:@"Guardar copia original" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
                 [self exportDeletedBackup:backup filename:path.lastPathComponent];
@@ -828,12 +830,12 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
         dispatch_async(self.operationQueue, ^{
             NSError *failure = nil;
             BOOL restored = [self.backend restorePendingFileForApplication:application relativePath:target error:&failure];
-            NSString *warning = self.backend.lastDirectoryWarning;
+            NSString *warning = self.backend.lastDirectoryWarning.length ? XFUserFacingError(self.backend.lastDirectoryWarning) : @"";
             BOOL connected = self.backend.connected; BOOL paired = self.backend.hasPairingRecord;
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self setBusyUI:NO];
                 [self.connectionStatus showConnected:connected pairingAvailable:paired];
-                self.directoryWarning = warning;
+                self.directoryWarning = warning.length ? XFUserFacingError(warning) : @"";
                 [self.view setNeedsLayout];
                 NSString *detail = restored ? [NSString stringWithFormat:@"App: %@\nArchivo: %@", application, target] : XFErrorMessage(failure);
                 if (warning.length && [detail rangeOfString:warning].location == NSNotFound) detail = [detail stringByAppendingFormat:@"\n\n%@", warning];
@@ -1067,7 +1069,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 - (void)startOnDevicePairing {
     if(self.busy)return;
     if(NSProcessInfo.processInfo.operatingSystemVersion.majorVersion<27) {
-        XFPresentError(self,@"Se requiere iOS 27",@"Puedes importar un registro válido para conectar en otras versiones.");
+        XFPresentError(self,@"Importa tu emparejamiento",@"En este iPhone, usa Importar con un emparejamiento válido para conectar.");
         return;
     }
     self.busy=YES;[self updateButtons];
@@ -1090,7 +1092,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 - (void)beginOnDevicePairingWithNotifications {
     if (self.busy) return;
     if (NSProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27) {
-        XFPresentError(self, @"Se requiere iOS 27", @"Esta forma de emparejar necesita iOS 27 y su opción de emparejamiento en Modo de desarrollador. Puedes seguir usando «Importar emparejamiento» con un registro válido.");
+        XFPresentError(self, @"Importa tu emparejamiento", @"En este iPhone, usa Importar con un emparejamiento válido para conectar.");
         return;
     }
     self.busy = YES;
@@ -1178,7 +1180,7 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
                 if (imported) {
                     self.applications = @[];
                     [self updateSearchResultsForSearchController:self.appSearch];
-                    self.statusLabel.text = @"Emparejamiento guardado. Activa LocalDevVPN y pulsa «Conectar túnel».";
+                    self.statusLabel.text = @"Emparejamiento guardado. Pulsa Conectar túnel.";
                 } else {
                     self.statusLabel.text = [NSString stringWithFormat:@"Se recibió un registro, pero no se pudo importar. %@", XFErrorMessage(importError)];
                     if (UIApplication.sharedApplication.applicationState == UIApplicationStateActive && self.view.window && !self.presentedViewController) {
@@ -1258,26 +1260,8 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 }
 
 - (void)showTunnelHelp {
-    XFPresentError(self, @"Activar el túnel", @"Abre LocalDevVPN y activa su conexión VPN. Vuelve a XitForge con el Wi-Fi encendido y pulsa «Conectar túnel».\n\nLa conexión solo se mostrará como establecida cuando el dispositivo responda correctamente.");
+    XFPresentError(self, @"Conectar el túnel", @"Mantén el Wi-Fi encendido, pulsa Conectar túnel y permite añadir la VPN cuando iOS lo solicite.");
 }
-- (void)showConnectionDiagnostics {
-    if (self.busy || self.pairingInProgress) return;
-    self.busy = YES; [self updateButtons];
-    dispatch_async(self.operationQueue, ^{
-        NSString *report = self.backend.connectionDiagnostics;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            self.busy = NO; [self updateButtons];
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Diagnóstico del túnel"
-                message:report preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Copiar diagnóstico" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-                UIPasteboard.generalPasteboard.string = report;
-            }]];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Cerrar" style:UIAlertActionStyleCancel handler:nil]];
-            [self presentViewController:alert animated:YES completion:nil];
-        });
-    });
-}
-
 - (void)importPairing {
     if (self.busy) return;
     UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:YES];
@@ -1331,28 +1315,25 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
     }
     [self xfPrepareLocalNetwork:^(BOOL ready) { if (ready) [self xfConnectBackendAndLoad]; }];
 }
-- (void)xfPresentConnectionFailure:(NSError *)error report:(NSString *)report {
-    Class manager = NSClassFromString(@"XFLocalVPNManager");
-    SEL getter = NSSelectorFromString(@"diagnosticSnapshot");
-    NSDictionary *vpn = [manager respondsToSelector:getter] ? ((id (*)(id,SEL))objc_msgSend)(manager,getter) : @{};
-    NSData *reportData = [report dataUsingEncoding:NSUTF8StringEncoding];
-    id backend = reportData ? [NSJSONSerialization JSONObjectWithData:reportData options:0 error:NULL] : nil;
-    NSDictionary *diagnosis = @{@"vpn":vpn ?: @{}, @"tunnel":[backend isKindOfClass:NSDictionary.class] ? backend : @{}, @"failure":@{@"domain":error.domain ?: @"", @"code":@(error.code), @"message":error.localizedDescription ?: @""}};
-    NSData *json = [NSJSONSerialization dataWithJSONObject:diagnosis options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:NULL];
-    NSString *text = json ? [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] : @"No se pudo crear el diagnóstico.";
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No se pudo conectar" message:@"La conexión no se completó. Copia el diagnóstico para identificar en qué paso falló. No se modificaron archivos de otras apps." preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Copiar diagnóstico" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { UIPasteboard.generalPasteboard.string = text; }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Entendido" style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+- (void)xfPresentConnectionFailure:(NSError *)error {
+    NSLog(@"XITFORGE conexión: %@",error);
+    NSString *message = nil;
+    if ([error.domain isEqualToString:@"XITFORGE.LocalVPN"]) message = XFUserFacingError(error.localizedDescription);
+    else if ([error.domain isEqualToString:@"XitForge.AirLift"] && (error.code == 1001 || error.code == 1002 || error.code == 1003 || error.code == 1005))
+        message = @"El emparejamiento no está disponible. Importa uno válido de este iPhone y vuelve a conectar.";
+    else if ([error.domain isEqualToString:@"XitForge.AirLift"] && (error.code == 1004 || error.code == 1010))
+        message = @"Revisa la configuración de la conexión y vuelve a intentarlo.";
+    else message = @"No se pudo conectar con este iPhone. Comprueba el Wi-Fi y el emparejamiento y vuelve a intentarlo.";
+    XFPresentError(self, @"No se pudo conectar", message);
 }
 - (void)xfPrepareLocalNetwork:(void (^)(BOOL))completion {
     Class manager = NSClassFromString(@"XFLocalVPNManager");
     SEL selector = NSSelectorFromString(@"connectWithPeerAddress:completion:");
-    if (![manager respondsToSelector:selector]) { [self xfPresentConnectionFailure:[NSError errorWithDomain:@"XITFORGE.LocalVPN" code:1 userInfo:@{NSLocalizedDescriptionKey:@"No se encontró el gestor VPN en esta instalación."}] report:nil]; completion(NO); return; }
+    if (![manager respondsToSelector:selector]) { [self xfPresentConnectionFailure:[NSError errorWithDomain:@"XITFORGE.LocalVPN" code:1 userInfo:@{NSLocalizedDescriptionKey:@"La instalación está incompleta. Vuelve a instalar XITFORGE."}]]; completion(NO); return; }
     self.busy = YES; [self updateButtons]; [self.connectionStatus showConnecting];
     ((void (*)(id,SEL,NSString *,void (^)(NSError *)))objc_msgSend)(manager,selector,self.backend.deviceAddress,^(NSError *error) {
         self.busy = NO; [self updateButtons];
-        if (error) { [self xfPresentConnectionFailure:error report:nil]; completion(NO); return; }
+        if (error) { [self xfPresentConnectionFailure:error]; completion(NO); return; }
         completion(YES);
     });
 }
@@ -1383,13 +1364,12 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
         NSError *error = nil;
         BOOL connected = [self.backend connectWithError:&error];
         BOOL paired = self.backend.hasPairingRecord;
-        NSString *report = connected ? nil : self.backend.connectionDiagnostics;
         dispatch_async(dispatch_get_main_queue(), ^{
             self.busy = NO;
             self.tunnelConnected = connected;
             self.pairingAvailable = paired;
             self.statusLabel.text = connected ? @"Túnel listo. Activa o desactiva las opciones desde Home." : @"No se pudo conectar. Comprueba la red local y vuelve a conectar.";
-            if (!connected) [self xfPresentConnectionFailure:error report:report];
+            if (!connected) [self xfPresentConnectionFailure:error];
             [self updateButtons];
             [self.view setNeedsLayout];
         });
