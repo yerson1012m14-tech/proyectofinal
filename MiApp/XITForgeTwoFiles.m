@@ -142,7 +142,7 @@ static BOOL XF2WriteExactFile(
 
     BOOL ok = YES;
     int savedErrno = 0;
-    unsigned char buffer[256 * 1024];
+    unsigned char buffer[16 * 1024];
 
     for (;;) {
         ssize_t n = read(inFD, buffer, sizeof(buffer));
@@ -280,8 +280,8 @@ static BOOL XF2FilesAreIdentical(
         return NO;
     }
 
-    unsigned char left[256 * 1024];
-    unsigned char right[256 * 1024];
+    unsigned char left[16 * 1024];
+    unsigned char right[16 * 1024];
 
     BOOL identical = YES;
     int savedErrno = 0;

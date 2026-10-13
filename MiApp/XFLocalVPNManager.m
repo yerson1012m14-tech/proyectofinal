@@ -68,7 +68,7 @@
     [NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray<NETunnelProviderManager *> *managers, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (self.generation != generation || !self.waiters) return;
-            if (error) { [self finish:[self failure:@"Tu firma no permite configurar la VPN integrada. La app y su extensión necesitan el permiso Network Extensions."]]; return; }
+            if (error) { NSLog(@"XITFORGE LocalVPN preferences failure: %@", error); [self finish:[self failure:@"No se pudo consultar la configuración VPN. Hay que comprobar la firma y la instalación de su extensión; este fallo por sí solo no confirma que falte el permiso de red."]]; return; }
             NETunnelProviderManager *manager = nil;
             for (NETunnelProviderManager *item in managers) {
                 NETunnelProviderProtocol *protocol = (NETunnelProviderProtocol *)item.protocolConfiguration;

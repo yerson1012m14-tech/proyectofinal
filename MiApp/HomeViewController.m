@@ -72,7 +72,7 @@ static BOOL XITForgeWriteExactFile(NSURL *sourceURL, NSURL *destinationURL, NSEr
     }
     BOOL ok = YES;
     int savedErrno = 0;
-    unsigned char buffer[256 * 1024];
+    unsigned char buffer[16 * 1024];
     for (;;) {
         ssize_t bytesRead = read(inFD, buffer, sizeof(buffer));
         if (bytesRead == 0) break;
@@ -136,8 +136,8 @@ static BOOL XITForgeFilesAreIdentical(NSURL *sourceURL, NSURL *destinationURL, N
         if (errorOut) *errorOut = [NSError errorWithDomain:@"XITFORGE" code:2101 userInfo:@{NSLocalizedDescriptionKey: @"El archivo escrito no coincide en tamaño con la descarga."}];
         return NO;
     }
-    unsigned char left[256 * 1024];
-    unsigned char right[256 * 1024];
+    unsigned char left[16 * 1024];
+    unsigned char right[16 * 1024];
     BOOL identical = YES;
     int savedErrno = 0;
     for (;;) {
