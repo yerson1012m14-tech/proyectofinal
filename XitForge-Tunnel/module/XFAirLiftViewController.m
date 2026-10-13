@@ -1302,10 +1302,11 @@ static NSString *XFChildPath(NSString *parent, NSString *name) {
 }
 
 - (void)pairingAction {
-    if (self.busy) return;
     if (self.pairingInProgress) { [self cancelOnDevicePairing]; return; }
-    if (NSProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27) { [self startOnDevicePairing]; return; }
-    [self xfPrepareLocalNetwork:^(BOOL ready) { if (ready) [self startOnDevicePairing]; }];
+    if (self.busy) return;
+    // Pairing accepts a local incoming Bonjour connection; VPN preferences
+    // belong to Connect tunnel and must not prevent PIN approval from starting.
+    [self startOnDevicePairing];
 }
 
 - (void)connectAndLoad {
