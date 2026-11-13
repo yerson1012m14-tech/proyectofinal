@@ -3,6 +3,7 @@
 @interface XFLocalVPNManager : NSObject
 
 + (void)connectWithPeerAddress:(NSString *)address completion:(void (^)(NSError *error))completion;
++ (BOOL)isPreparingConnection;
 
 
 @end

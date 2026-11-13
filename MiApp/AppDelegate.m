@@ -2,6 +2,8 @@
 #import "ViewController.h"
 #import "HomeViewController.h"
 #import "MainSettingsViewController.h"
+#import "XFProxyViewController.h"
+#import "XFProxyVPNManager.h"
 #import "LicenseViewController.h"
 #import "LicenseValidator.h"
 #import "ScreenProtectionManager.h"
@@ -211,6 +213,16 @@
     settingsNav.navigationBar.tintColor =
         settingsRed;
 
+    XFProxyViewController *proxyVC = [[XFProxyViewController alloc] init];
+    UINavigationController *proxyNav = [[UINavigationController alloc] initWithRootViewController:proxyVC];
+    proxyNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Proxy"
+                                                      image:[UIImage systemImageNamed:@"point.3.connected.trianglepath.dotted"]
+                                                        tag:73106];
+    proxyNav.navigationBar.standardAppearance = settingsAppearance;
+    proxyNav.navigationBar.scrollEdgeAppearance = settingsAppearance;
+    proxyNav.navigationBar.compactAppearance = settingsAppearance;
+    proxyNav.navigationBar.tintColor = settingsRed;
+
     /*
      * =========================================================
      * TAB BAR PRINCIPAL
@@ -229,6 +241,7 @@
     self.mainTabBar.viewControllers =
         @[
             homeNav,
+            proxyNav,
             settingsNav
         ];
 
@@ -806,6 +819,7 @@
         return;
     }
     if (self.xfCleanupInProgress) return;
+    [XFProxyVPNManager.shared disconnect];
 
     [self.licenseRecheckTimer invalidate];
     self.licenseRecheckTimer = nil;
