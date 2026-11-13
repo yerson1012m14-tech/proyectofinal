@@ -36,7 +36,9 @@ NSNotificationName const XFProxyVPNDidChangeNotification = @"XFProxyVPNDidChange
 }
 
 - (NSURL *)profileURL {
-    NSURLComponents *parts = [NSURLComponents componentsWithURL:self.gatewayURL resolvingAgainstBaseURL:NO];
+    NSURL *gateway = self.gatewayURL;
+    if (!gateway) return nil;
+    NSURLComponents *parts = [NSURLComponents componentsWithURL:gateway resolvingAgainstBaseURL:NO];
     parts.scheme = @"https";
     parts.path = @"/ca.mobileconfig";
     return parts.URL;
