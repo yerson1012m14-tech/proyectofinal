@@ -53,6 +53,8 @@ jobs:
           cd ..
 
       - name: Compilar Mi App
+        env:
+          XF_PROXY_GATEWAY_URL: ${{ vars.XF_PROXY_GATEWAY_URL }}
         run: |
           xcodebuild clean build \
             -project MiApp.xcodeproj \
@@ -60,6 +62,7 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
+            "XF_PROXY_GATEWAY_URL=$XF_PROXY_GATEWAY_URL" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY=""
 
@@ -75,6 +78,7 @@ jobs:
 
           echo "App encontrada en: $APP_PATH"
           cp -r "$APP_PATH" Payload/
+          test -f Payload/MiApp.app/PlugIns/XFProxyTunnel.appex/XFProxyTunnel
 
           DYLIB_PATH=$(find motor_filza -name "FilzaApplySandboxExt.dylib" | head -n 1)
           if [ -z "$DYLIB_PATH" ]; then
@@ -163,6 +167,7 @@ jobs:
           test -f XITFORGE-UNIVERSAL.validation.json
 
           unzip -t XITFORGE-UNIVERSAL.ipa
+          unzip -p XITFORGE-UNIVERSAL.ipa Payload/MiApp.app/PlugIns/XFProxyTunnel.appex/Info.plist | plutil -lint -
           echo "IPA final creada correctamente"
 
       - name: Subir IPA final
