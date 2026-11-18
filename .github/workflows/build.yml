@@ -52,6 +52,43 @@ jobs:
           make package FINALPACKAGE=1
           cd ..
 
+      - name: Descargar worse_query y solo kexploit de 3105
+        run: |
+          set -euo pipefail
+          mkdir -p vendor
+
+          # Repositorio completo de worse_query
+          git clone --depth 1 \
+            https://github.com/forcequitOS/worse_query.git \
+            vendor/worse_query
+
+          # Checkout disperso: solo el directorio kexploit de 3105
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/YangJiiii/3105.git \
+            vendor/3105_temp
+
+          git -C vendor/3105_temp sparse-checkout set \
+            ThreeOneOSFive/kexploit
+
+          test -d vendor/3105_temp/ThreeOneOSFive/kexploit
+
+          mkdir -p vendor/3105_kexploit
+          cp -R vendor/3105_temp/ThreeOneOSFive/kexploit/. \
+            vendor/3105_kexploit/
+
+          # Conservar las licencias y atribuciones de los autores
+          cp vendor/3105_temp/LICENSE \
+            vendor/3105_kexploit/UPSTREAM_LICENSE
+          if test -f vendor/3105_temp/THIRD_PARTY_NOTICES.md; then
+            cp vendor/3105_temp/THIRD_PARTY_NOTICES.md \
+              vendor/3105_kexploit/UPSTREAM_THIRD_PARTY_NOTICES.md
+          fi
+
+          rm -rf vendor/3105_temp
+
+          echo "worse_query descargado en vendor/worse_query"
+          echo "kexploit descargado en vendor/3105_kexploit"
+
       - name: Compilar Mi App
         run: |
           xcodebuild clean build \
