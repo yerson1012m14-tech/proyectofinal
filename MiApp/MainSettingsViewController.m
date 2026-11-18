@@ -1,6 +1,7 @@
 #import "MainSettingsViewController.h"
 #import "Translations.h"
 #import "ScreenProtectionManager.h"
+#import "XITForgeEngineManager.h"
 #import <UIKit/UIKit.h>
 
 @interface MainSettingsViewController ()
@@ -1010,9 +1011,9 @@ numberOfRowsInSection:
 
     /*
      * INFORMACIÓN:
-     * versión
+     * versión + diagnóstico de motores
      */
-    return 1;
+    return 2;
 }
 
 - (UITableViewCell *)tableView:
@@ -1373,25 +1374,21 @@ numberOfRowsInSection:
      */
 
     if (indexPath.section == 2) {
+        if (indexPath.row == 1) {
+            cell.imageView.image =
+                [UIImage systemImageNamed:@"cpu.fill"];
+            cell.imageView.tintColor = [self accentColor];
+            cell.textLabel.text = @"Motores de XITFORGE";
+            cell.detailTextLabel.text = @"Ver estado y versiones";
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            return cell;
+        }
 
-        cell.imageView.image =
-            [UIImage
-                systemImageNamed:
-                    @"info.circle"];
-
-        cell.textLabel.text =
-            [Translations tr:@"app_version"];
-
-        NSString *appVersion =
-            [[NSBundle mainBundle]
-                objectForInfoDictionaryKey:
-                    @"CFBundleShortVersionString"];
-
-        cell.detailTextLabel.text =
-            appVersion.length > 0
-                ? appVersion
-                : @"-";
-
+        cell.imageView.image = [UIImage systemImageNamed:@"info.circle"];
+        cell.textLabel.text = [Translations tr:@"app_version"];
+        NSString *appVersion = [[NSBundle mainBundle]
+            objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+        cell.detailTextLabel.text = appVersion.length > 0 ? appVersion : @"-";
         return cell;
     }
 
@@ -1471,6 +1468,19 @@ heightForRowAtIndexPath:
     [tableView
         deselectRowAtIndexPath:indexPath
                       animated:YES];
+
+    // Diagnóstico informativo: no activa los motores.
+    if (indexPath.section == 2 && indexPath.row == 1) {
+        UIAlertController *alert =
+            [UIAlertController alertControllerWithTitle:@"Motores de XITFORGE"
+                                                message:[XITForgeEngineManager diagnosticReport]
+                                         preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cerrar"
+                                                    style:UIAlertActionStyleCancel
+                                                  handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
 
     /*
      * Cerrar sesión
