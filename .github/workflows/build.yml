@@ -39,9 +39,6 @@ jobs:
           sudo chmod +x /usr/local/bin/insert_dylib
           cd ..
 
-      - name: Generar proyecto Xcode con XcodeGen
-        run: xcodegen generate
-
       - name: Clonar y compilar el motor FilzaSlop
         run: |
           git clone --recursive https://github.com/0xjohnnydev/FilzaSlop.git motor_filza
@@ -84,10 +81,46 @@ jobs:
               vendor/3105_kexploit/UPSTREAM_THIRD_PARTY_NOTICES.md
           fi
 
+          git -C vendor/3105_temp rev-parse HEAD > vendor/3105_kexploit/UPSTREAM_COMMIT.txt
           rm -rf vendor/3105_temp
 
           echo "worse_query descargado en vendor/worse_query"
           echo "kexploit descargado en vendor/3105_kexploit"
+
+      - name: Crear manifiesto de motores (solo diagnóstico)
+        run: |
+          python3 - <<'PYBUILD'
+          import datetime
+          import json
+          from pathlib import Path
+          import subprocess
+
+          def revision(path):
+              return subprocess.check_output(
+                  ["git", "-C", str(path), "rev-parse", "HEAD"],
+                  text=True,
+              ).strip()
+
+          kexploit_rev = Path('vendor/3105_kexploit/UPSTREAM_COMMIT.txt').read_text().strip()
+          manifest = {
+              "schema": 1,
+              "createdUTC": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "components": [
+                  {"id": "FilzaSlop", "revision": revision('motor_filza'),
+                   "mode": "biblioteca incorporada por pipeline"},
+                  {"id": "worse_query", "revision": revision('vendor/worse_query'),
+                   "mode": "fuente descargada, no enlazada"},
+                  {"id": "3105 kexploit", "revision": kexploit_rev,
+                   "mode": "fuente descargada, no enlazada"},
+              ],
+          }
+          target = Path('MiApp/XITForgeEngineManifest.json')
+          target.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+          print('Generado:', target)
+          PYBUILD
+
+      - name: Generar proyecto Xcode con XcodeGen
+        run: xcodegen generate
 
       - name: Compilar Mi App
         run: |
@@ -112,6 +145,12 @@ jobs:
 
           echo "App encontrada en: $APP_PATH"
           cp -r "$APP_PATH" Payload/
+
+          # El manifiesto debe viajar con la app para el diagnóstico.
+          test -f Payload/MiApp.app/XITForgeEngineManifest.json || {
+            echo "ERROR: No se ha incluido el manifiesto de motores en MiApp.app"
+            exit 1
+          }
 
           DYLIB_PATH=$(find motor_filza -name "FilzaApplySandboxExt.dylib" | head -n 1)
           if [ -z "$DYLIB_PATH" ]; then
