@@ -496,9 +496,7 @@ static NSString * const kXFLockNotification = @"XITForgeLicenseNeedsLogin";
     NSURL *url = request.URL;
     BOOL isBackend = [url.scheme.lowercaseString isEqualToString:@"https"] &&
         [url.host.lowercaseString isEqualToString:kXFHost] &&
-        ([url.path hasPrefix:@"/api/app/"] ||
-         ([url.path isEqualToString:@"/api/proxy/session"] && [request.HTTPMethod isEqualToString:@"POST"] &&
-          !url.user && !url.password && !url.query && !url.fragment && (!url.port || url.port.integerValue == 443)));
+        [url.path hasPrefix:@"/api/app/"];
     if (!isBackend) { if (completion) completion(NO); return; }
     BOOL isRestore = [url.path isEqualToString:@"/api/app/originals"] ||
         [url.path hasPrefix:@"/api/app/originals/"] ||

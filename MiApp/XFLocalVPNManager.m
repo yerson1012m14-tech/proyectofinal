@@ -1,5 +1,4 @@
 #import "XFLocalVPNManager.h"
-#import "XFProxyVPNManager.h"
 #import <NetworkExtension/NetworkExtension.h>
 #import <arpa/inet.h>
 #import <ifaddrs.h>
@@ -40,9 +39,6 @@ static BOOL XFHasExistingLocalConnection(NSString *address) {
 }
 + (void)connectWithPeerAddress:(NSString *)address completion:(void (^)(NSError *))completion {
     dispatch_async(dispatch_get_main_queue(), ^{ [[self shared] connect:address completion:completion]; });
-}
-+ (BOOL)isPreparingConnection {
-    return [self shared].waiters != nil;
 }
 - (NSError *)failure:(NSString *)message {
     return [NSError errorWithDomain:@"XITFORGE.LocalVPN" code:1 userInfo:@{NSLocalizedDescriptionKey:message}];
@@ -92,11 +88,6 @@ static BOOL XFHasExistingLocalConnection(NSString *address) {
     if (!address.length || inet_pton(AF_INET, address.UTF8String, &ipv4) != 1) {
         if (completion) completion([self failure:@"Revisa la configuración de la conexión y vuelve a intentarlo."]); return;
     }
-    XFProxyVPNManager *proxy = XFProxyVPNManager.shared;
-    if (proxy.isConnecting || (proxy.status != NEVPNStatusDisconnected && proxy.status != NEVPNStatusInvalid)) {
-        if (completion) completion([self failure:@"Desconecta el proxy de XITFORGE antes de conectar el túnel."]);
-        return;
-    }
     if (self.waiters) {
         if ([self.peer isEqualToString:address]) { if(completion)[self.waiters addObject:[completion copy]]; }
         else if(completion)completion([self failure:@"Hay otra conexión en curso. Espera a que termine."]);
@@ -119,10 +110,7 @@ static BOOL XFHasExistingLocalConnection(NSString *address) {
             [self finishUnavailable:[self failure:@"La conexión está tardando demasiado."]];
         }
     });
-    NSURL *plugins = NSBundle.mainBundle.builtInPlugInsURL;
-    NSURL *extension = [plugins URLByAppendingPathComponent:@"XFLocalTunnel.appex"];
-    NSURL *proxyExtension = [plugins URLByAppendingPathComponent:@"XFProxyTunnel.appex"];
-    NSString *proxyID = proxyExtension ? [NSBundle bundleWithURL:proxyExtension].bundleIdentifier : nil;
+    NSURL *extension = [NSBundle.mainBundle.builtInPlugInsURL URLByAppendingPathComponent:@"XFLocalTunnel.appex"];
     if (!extension || ![NSFileManager.defaultManager fileExistsAtPath:extension.path]) {
         [self finishUnavailable:[self failure:@"La instalación no incluye la extensión VPN."]]; return;
     }
@@ -135,13 +123,7 @@ static BOOL XFHasExistingLocalConnection(NSString *address) {
             NETunnelProviderManager *manager = nil;
             for (NETunnelProviderManager *item in managers) {
                 NETunnelProviderProtocol *protocol = (NETunnelProviderProtocol *)item.protocolConfiguration;
-                if (![protocol isKindOfClass:NETunnelProviderProtocol.class]) continue;
-                if ([protocol.providerBundleIdentifier isEqualToString:proxyID] &&
-                    item.connection.status != NEVPNStatusDisconnected && item.connection.status != NEVPNStatusInvalid) {
-                    [self finish:[self failure:@"Desconecta el proxy de XITFORGE antes de conectar el túnel."]];
-                    return;
-                }
-                if ([protocol.providerBundleIdentifier isEqualToString:providerID]) manager = item;
+                if ([protocol isKindOfClass:NETunnelProviderProtocol.class] && [protocol.providerBundleIdentifier isEqualToString:providerID]) { manager = item; break; }
             }
             if (!manager) manager = [NETunnelProviderManager new];
             self.manager = manager;
