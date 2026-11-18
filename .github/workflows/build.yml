@@ -53,17 +53,13 @@ jobs:
           cd ..
 
       - name: Compilar Mi App
-        env:
-          XF_PROXY_GATEWAY_URL: ${{ vars.XF_PROXY_GATEWAY_URL }}
         run: |
-          : "${XF_PROXY_GATEWAY_URL:=wss://xitforge-proxy-vpn.onrender.com/v1/tunnel}"
           xcodebuild clean build \
             -project MiApp.xcodeproj \
             -scheme MiApp \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
-            "XF_PROXY_GATEWAY_URL=$XF_PROXY_GATEWAY_URL" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY=""
 
@@ -79,7 +75,6 @@ jobs:
 
           echo "App encontrada en: $APP_PATH"
           cp -r "$APP_PATH" Payload/
-          test -f Payload/MiApp.app/PlugIns/XFProxyTunnel.appex/XFProxyTunnel
 
           DYLIB_PATH=$(find motor_filza -name "FilzaApplySandboxExt.dylib" | head -n 1)
           if [ -z "$DYLIB_PATH" ]; then
@@ -168,23 +163,6 @@ jobs:
           test -f XITFORGE-UNIVERSAL.validation.json
 
           unzip -t XITFORGE-UNIVERSAL.ipa
-          unzip -p XITFORGE-UNIVERSAL.ipa Payload/MiApp.app/PlugIns/XFProxyTunnel.appex/Info.plist | plutil -lint -
-          python3 - <<'PY'
-          import plistlib
-          from urllib.parse import urlsplit
-          from zipfile import ZipFile
-
-          with ZipFile("XITFORGE-UNIVERSAL.ipa") as ipa:
-              info = plistlib.loads(ipa.read("Payload/MiApp.app/Info.plist"))
-
-          value = info.get("XFProxyGatewayURL")
-          if not isinstance(value, str) or not value or any(char.isspace() for char in value):
-              raise SystemExit("La IPA quedó sin una URL válida para Proxy. Revisa XF_PROXY_GATEWAY_URL.")
-          url = urlsplit(value)
-          if (url.scheme != "wss" or not url.hostname or url.path != "/v1/tunnel"
-                  or url.username is not None or url.password is not None or "?" in value or "#" in value):
-              raise SystemExit("XF_PROXY_GATEWAY_URL debe tener el formato wss://dominio/v1/tunnel.")
-          PY
           echo "IPA final creada correctamente"
 
       - name: Subir IPA final
